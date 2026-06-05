@@ -393,3 +393,132 @@ a:hover { color: var(--accent); }
   .ds-mobile-toggle { display: flex; }
   .ds-sidebar.ds-sidebar--open { display: flex; }
 }
+
+/* ===== Breadcrumb (W2) ===== */
+.ds-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  font-family: var(--font-display);
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-muted);
+}
+.ds-breadcrumb a {
+  color: var(--ink-muted);
+  text-decoration: none;
+  transition: color 0.15s;
+}
+.ds-breadcrumb a:hover { color: var(--accent); text-decoration: none; }
+.ds-breadcrumb-sep {
+  color: var(--rule);
+  font-weight: 400;
+}
+.ds-breadcrumb-current {
+  color: var(--ink);
+}
+
+/* ===== Toast / Alert Container (W2) ===== */
+.ds-toast-container {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  z-index: 1000;
+}
+.ds-toast {
+  padding: 0.75rem 1rem;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  font-family: var(--font-body);
+  font-size: 0.8125rem;
+  color: var(--ink);
+  min-width: 16rem;
+  max-width: 24rem;
+}
+.ds-toast--success {
+  border-color: var(--positive);
+  color: var(--positive);
+}
+.ds-toast--error {
+  border-color: var(--negative);
+  color: var(--negative);
+}
+
+/* ===== Sidebar Navigation Sub-sections (W2) ===== */
+.ds-sidebar-section-label {
+  font-family: var(--font-display);
+  font-size: 0.5rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--rule);
+  padding: 0.75rem 0.75rem 0.25rem;
+  margin-top: 0.5rem;
+}
+.ds-sidebar-section-label:first-child { margin-top: 0; }
+
+/* ===== Modal overlay (W2) ===== */
+.ds-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: oklch(0% 0 0 / 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 500;
+}
+.ds-modal {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  padding: 1.5rem;
+  min-width: 20rem;
+  max-width: 32rem;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+.ds-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--rule);
+}
+.ds-modal-title {
+  font-family: var(--font-display);
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+.ds-modal-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: 0.875rem;
+  color: var(--ink-muted);
+  padding: 0;
+}
+.ds-modal-close:hover { color: var(--negative); }
+
+/* ===== Card (for detail pages) ===== */
+.ds-card {
+  border: 1px solid var(--rule);
+  padding: 1rem;
+  background: var(--paper);
+}
+.ds-card-header {
+  font-family: var(--font-display);
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-muted);
+  margin-bottom: 0.5rem;
+}

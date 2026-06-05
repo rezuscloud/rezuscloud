@@ -359,3 +359,81 @@ func TestWebUI_EventsStream(t *testing.T) {
 		t.Errorf("event data = %q, expected to contain 'ADDED'", data)
 	}
 }
+
+// --- W2 Navigation shell tests ---
+
+func TestWebUI_ClustersAlias_WorksWithCookie(t *testing.T) {
+	s := newWebUIServer(t)
+	s.createUser(t, "alice", "secret", auth.RoleAdmin)
+	cookie := s.login(t, "alice", "secret")
+
+	// Create a tenant directly in the store so the page has content.
+	_, _ = s.store.CreateTenant("alpha", state.TenantSpec{KubernetesVersion: "1.35.0"}, nil, nil)
+
+	status, body := s.getWithCookie(t, "/clusters", cookie)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200", status)
+	}
+	if !strings.Contains(body, "alpha") {
+		t.Errorf("body should list tenant alpha")
+	}
+}
+
+func TestWebUI_ClusterDetail_BreadcrumbWorks(t *testing.T) {
+	s := newWebUIServer(t)
+	s.createUser(t, "alice", "secret", auth.RoleAdmin)
+	cookie := s.login(t, "alice", "secret")
+
+	_, _ = s.store.CreateTenant("prod", state.TenantSpec{KubernetesVersion: "1.35.0"}, nil, nil)
+
+	status, body := s.getWithCookie(t, "/clusters/prod", cookie)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200", status)
+	}
+	// Should have breadcrumb with Home / Clusters / prod
+	if !strings.Contains(body, "ds-breadcrumb") {
+		t.Error("body should contain breadcrumb")
+	}
+	if !strings.Contains(body, `href="/clusters"`) {
+		t.Error("breadcrumb should link to /clusters")
+	}
+}
+
+func TestWebUI_ToastFlashMessageRenders(t *testing.T) {
+	s := newWebUIServer(t)
+	s.createUser(t, "alice", "secret", auth.RoleAdmin)
+	cookie := s.login(t, "alice", "secret")
+
+	status, body := s.getWithCookie(t, "/?toast=hello&toast-type=success", cookie)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200", status)
+	}
+	if !strings.Contains(body, "hello") {
+		t.Errorf("body should contain toast message")
+	}
+	if !strings.Contains(body, "ds-toast--success") {
+		t.Errorf("body should have ds-toast--success class")
+	}
+}
+
+func TestWebUI_Sidebar_HasAllNavEntries(t *testing.T) {
+	s := newWebUIServer(t)
+	s.createUser(t, "alice", "secret", auth.RoleAdmin)
+	cookie := s.login(t, "alice", "secret")
+
+	status, body := s.getWithCookie(t, "/", cookie)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200", status)
+	}
+	expectedLinks := []string{
+		`href="/"`, `href="/clusters"`, `href="/machines"`,
+		`href="/machines/jointokens"`, `href="/providers"`,
+		`href="/settings/users"`, `href="/settings/api-tokens"`,
+		`href="/settings/audit"`, `href="/settings/backups"`,
+	}
+	for _, link := range expectedLinks {
+		if !strings.Contains(body, link) {
+			t.Errorf("body should contain sidebar link %q", link)
+		}
+	}
+}

@@ -41,6 +41,9 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /", h.AuthRequired(h.Dashboard))
 	mux.HandleFunc("GET /tenants", h.AuthRequired(h.TenantsList))
 	mux.HandleFunc("GET /tenants/{name}", h.AuthRequired(h.TenantDetail))
+	// /clusters is the user-facing alias for /tenants.
+	mux.HandleFunc("GET /clusters", h.AuthRequired(h.TenantsList))
+	mux.HandleFunc("GET /clusters/{name}", h.AuthRequired(h.TenantDetail))
 
 	// SSE stream — optional, only when bus is configured.
 	if h.bus != nil {
@@ -87,6 +90,20 @@ func (h *Handler) render(w http.ResponseWriter, r *http.Request, props layout.Ba
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = layout.Base(props).Render(r.Context(), w)
+}
+
+// popToast reads + clears a flash toast from a query-string param.
+// Supports ?toast=... (plain message) and optionally ?toast-type=success|error.
+// Returns zero-value ToastData if no message is present.
+func (h *Handler) popToast(r *http.Request) layout.ToastData {
+	msg := r.URL.Query().Get("toast")
+	if msg == "" {
+		return layout.ToastData{}
+	}
+	return layout.ToastData{
+		Type:    r.URL.Query().Get("toast-type"),
+		Message: msg,
+	}
 }
 
 // tenantSummaries loads tenants with computed phase and machine counts.
@@ -164,18 +181,23 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	// SSE hint: signal to the template that live updates are available.
 	data.LiveStream = h.bus != nil
 
+	toast := h.popToast(r)
 	h.render(w, r, layout.BaseProps{
 		Title:   "Dashboard",
 		Page:    "dashboard",
 		Content: pages.Dashboard(data),
+		Toast:   toast,
 	})
 }
 
 func (h *Handler) TenantsList(w http.ResponseWriter, r *http.Request) {
 	h.render(w, r, layout.BaseProps{
 		Title:   "Clusters",
-		Page:    "tenants",
+		Page:    "clusters",
 		Content: pages.TenantsList(h.tenantSummaries()),
+		Breadcrumb: []layout.BreadcrumbItem{
+			{Name: "Clusters", Current: true},
+		},
 	})
 }
 
@@ -261,10 +283,16 @@ func (h *Handler) TenantDetail(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	toast := h.popToast(r)
 	h.render(w, r, layout.BaseProps{
 		Title:   name,
-		Page:    "tenants",
+		Page:    "cluster",
 		Content: pages.TenantDetail(data),
+		Breadcrumb: []layout.BreadcrumbItem{
+			{Name: "Clusters", URL: "/clusters"},
+			{Name: name, Current: true},
+		},
+		Toast: toast,
 	})
 }
 
