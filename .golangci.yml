@@ -1,0 +1,47 @@
+version: "2"
+
+issues:
+  max-issues-per-linter: 50
+  max-same-issues: 3
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - unused
+    - ineffassign
+    - misspell
+
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+      - path: internal/web/layout/css\.go
+        linters:
+          - unused
+      - path: _templ\.go
+        linters:
+          - gofmt
+          - goimports
+          - staticcheck
+
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: false
+      exclude-functions:
+        - (net.Conn).Close
+        - (io.Closer).Close
+        - (net.Listener).Close
+        - (*encoding/json.Encoder).Encode
+        - (*encoding/json.Encoder).SetEscapeHTML
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

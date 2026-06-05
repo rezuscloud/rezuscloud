@@ -1,0 +1,63 @@
+package pages
+
+import "fmt"
+
+type DashboardData struct {
+	TenantCount    int
+	MachineCount   int
+	ProviderCount  int
+	NodeGroupCount int
+	Tenants        []TenantSummary
+}
+
+type TenantSummary struct {
+	Name  string
+	Phase string
+	Ready int
+	Total int
+}
+
+templ Dashboard(data DashboardData) {
+	<h1 class="ds-page-title">Overview</h1>
+	<div class="ds-grid ds-grid-4 ds-stats-row">
+		<div class="ds-stat-block">
+			<div class="ds-stat-label">Clusters</div>
+			<div class="ds-stat-value">{ fmt.Sprintf("%d", data.TenantCount) }</div>
+		</div>
+		<div class="ds-stat-block">
+			<div class="ds-stat-label">Machines</div>
+			<div class="ds-stat-value">{ fmt.Sprintf("%d", data.MachineCount) }</div>
+		</div>
+		<div class="ds-stat-block">
+			<div class="ds-stat-label">Providers</div>
+			<div class="ds-stat-value">{ fmt.Sprintf("%d", data.ProviderCount) }</div>
+		</div>
+		<div class="ds-stat-block">
+			<div class="ds-stat-label">Node Groups</div>
+			<div class="ds-stat-value">{ fmt.Sprintf("%d", data.NodeGroupCount) }</div>
+		</div>
+	</div>
+	if len(data.Tenants) > 0 {
+		<div class="ds-section-header">Clusters</div>
+		<div class="ds-table-wrapper">
+			<table class="ds-table">
+				<thead>
+					<tr>
+						<th class="ds-table-th">Name</th>
+						<th class="ds-table-th">Phase</th>
+						<th class="ds-table-th">Machines</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, t := range data.Tenants {
+						<tr class="ds-table-row">
+							<td class="ds-table-td"><a href={ templ.URL("/tenants/" + t.Name) }>{ t.Name }</a></td>
+							<td class="ds-table-td"><span class={ "ds-status-badge ds-status-badge--" + phaseBadgeClass(t.Phase) }>{ t.Phase }</span></td>
+							<td class="ds-table-td">{ fmt.Sprintf("%d / %d", t.Ready, t.Total) }</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	}
+}

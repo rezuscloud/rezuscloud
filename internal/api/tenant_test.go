@@ -1,0 +1,210 @@
+package api
+
+import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"testing"
+
+	"github.com/rezuscloud/rezuscloud/internal/state"
+)
+
+func setupTestAPI(t *testing.T) (*TenantAPI, *state.Store) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "test.db")
+	store, err := state.Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	return NewTenantAPI(store), store
+}
+
+func TestTenantAPI_Create(t *testing.T) {
+	api, _ := setupTestAPI(t)
+
+	body, _ := json.Marshal(CreateTenantRequest{
+		Metadata: state.Metadata{Name: "test"},
+		Spec:     state.TenantSpec{KubernetesVersion: "1.35.0"},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	api.Create(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusCreated)
+	}
+
+	var resp TenantResponse
+	_ = json.NewDecoder(w.Body).Decode(&resp)
+	if resp.Metadata.Name != "test" {
+		t.Errorf("name = %q, want %q", resp.Metadata.Name, "test")
+	}
+	if resp.Status.Phase != state.TenantForming {
+		t.Errorf("phase = %q, want %q", resp.Status.Phase, state.TenantForming)
+	}
+}
+
+func TestTenantAPI_Create_NoName(t *testing.T) {
+	api, _ := setupTestAPI(t)
+
+	body, _ := json.Marshal(CreateTenantRequest{
+		Spec: state.TenantSpec{KubernetesVersion: "1.35.0"},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+
+	api.Create(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
+func TestTenantAPI_Create_Duplicate(t *testing.T) {
+	api, _ := setupTestAPI(t)
+
+	body, _ := json.Marshal(CreateTenantRequest{
+		Metadata: state.Metadata{Name: "dup"},
+		Spec:     state.TenantSpec{KubernetesVersion: "1.35.0"},
+	})
+
+	// First create succeeds.
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	api.Create(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("first create: status = %d", w.Code)
+	}
+
+	// Second create fails with conflict.
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/tenants", bytes.NewReader(body))
+	w = httptest.NewRecorder()
+	api.Create(w, req)
+	if w.Code != http.StatusConflict {
+		t.Errorf("duplicate create: status = %d, want %d", w.Code, http.StatusConflict)
+	}
+}
+
+func TestTenantAPI_Get(t *testing.T) {
+	api, _ := setupTestAPI(t)
+
+	// Create first.
+	_, _ = api.store.CreateTenant("test", state.TenantSpec{KubernetesVersion: "1.35.0"}, nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tenants/test", nil)
+	req.SetPathValue("name", "test")
+	w := httptest.NewRecorder()
+
+	api.Get(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var resp TenantResponse
+	_ = json.NewDecoder(w.Body).Decode(&resp)
+	if resp.Metadata.Name != "test" {
+		t.Errorf("name = %q, want %q", resp.Metadata.Name, "test")
+	}
+}
+
+func TestTenantAPI_Get_NotFound(t *testing.T) {
+	api, _ := setupTestAPI(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tenants/nope", nil)
+	req.SetPathValue("name", "nope")
+	w := httptest.NewRecorder()
+
+	api.Get(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusNotFound)
+	}
+}
+
+func TestTenantAPI_List(t *testing.T) {
+	api, _ := setupTestAPI(t)
+
+	_, _ = api.store.CreateTenant("alpha", state.TenantSpec{KubernetesVersion: "1.35.0"}, nil, nil)
+	_, _ = api.store.CreateTenant("beta", state.TenantSpec{KubernetesVersion: "1.36.0"}, nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tenants", nil)
+	w := httptest.NewRecorder()
+
+	api.List(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var resp TenantListResponse
+	_ = json.NewDecoder(w.Body).Decode(&resp)
+	if resp.Total != 2 {
+		t.Errorf("total = %d, want 2", resp.Total)
+	}
+	if len(resp.Items) != 2 {
+		t.Errorf("items = %d, want 2", len(resp.Items))
+	}
+}
+
+func TestTenantAPI_Delete(t *testing.T) {
+	api, _ := setupTestAPI(t)
+
+	_, _ = api.store.CreateTenant("test", state.TenantSpec{KubernetesVersion: "1.35.0"}, nil, nil)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/tenants/test", nil)
+	req.SetPathValue("name", "test")
+	w := httptest.NewRecorder()
+
+	api.Delete(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var resp TenantResponse
+	_ = json.NewDecoder(w.Body).Decode(&resp)
+	if resp.Metadata.DeletionTimestamp == nil {
+		t.Error("deletionTimestamp should be set")
+	}
+	if len(resp.Metadata.Finalizers) != 3 {
+		t.Errorf("finalizers = %d, want 3", len(resp.Metadata.Finalizers))
+	}
+}
+
+func TestTenantAPI_UpdateStatus(t *testing.T) {
+	api, _ := setupTestAPI(t)
+
+	_, _ = api.store.CreateTenant("test", state.TenantSpec{KubernetesVersion: "1.35.0"}, nil, nil)
+
+	body, _ := json.Marshal(map[string]any{
+		"status": state.TenantStatus{
+			Phase:     state.TenantActive,
+			Available: true,
+			Ready:     true,
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/tenants/test/status", bytes.NewReader(body))
+	req.SetPathValue("name", "test")
+	w := httptest.NewRecorder()
+
+	api.UpdateStatus(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)
+	}
+
+	var resp TenantResponse
+	_ = json.NewDecoder(w.Body).Decode(&resp)
+	if resp.Status.Phase != state.TenantActive {
+		t.Errorf("phase = %q, want %q", resp.Status.Phase, state.TenantActive)
+	}
+}

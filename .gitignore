@@ -1,0 +1,18 @@
+# Binaries
+rezuscloud
+
+# Data
+/data/
+*.db
+*.db-wal
+
+# Go
+*.test
+*.out
+vendor/
+/rezusctl
+
+# Helm
+chart/charts/
+chart/Chart.lock
+*.tgz

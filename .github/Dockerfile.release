@@ -1,0 +1,17 @@
+FROM gcr.io/distroless/static-debian12:nonroot
+
+ARG TARGETPLATFORM
+
+WORKDIR /
+
+COPY ${TARGETPLATFORM}/rezuscloud /rezuscloud
+
+# rezuscloud listens on three TCP ports:
+#   8080  — HTTP (WebUI + REST API + healthz/readyz/version)
+#   50180 — MachineLink (machines phone home over WireGuard-over-gRPC)
+#   50190 — Provider gRPC (outbound-only providers connect here)
+EXPOSE 8080 50180 50190
+
+USER nonroot:nonroot
+
+ENTRYPOINT ["/rezuscloud"]

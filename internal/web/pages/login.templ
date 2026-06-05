@@ -1,0 +1,29 @@
+package pages
+
+type LoginData struct {
+	Error string
+}
+
+templ Login(data LoginData) {
+	<div class="ds-login-container">
+		<div class="ds-login-card">
+			<h1 class="ds-login-title">
+				Rezus<span class="ds-login-title-cloud">Cloud</span>
+			</h1>
+			if data.Error != "" {
+				<div class="ds-alert">{ data.Error }</div>
+			}
+			<form method="POST" action="/login">
+				<div class="ds-input-group">
+					<label class="ds-label" for="username">Username</label>
+					<input class="ds-input" type="text" id="username" name="username" required autocomplete="username"/>
+				</div>
+				<div class="ds-input-group">
+					<label class="ds-label" for="password">Password</label>
+					<input class="ds-input" type="password" id="password" name="password" required autocomplete="current-password"/>
+				</div>
+				<button type="submit" class="ds-btn" style="width: 100%; margin-top: 0.5rem;">Sign In</button>
+			</form>
+		</div>
+	</div>
+}

@@ -1,0 +1,52 @@
+// Package middleware provides HTTP middleware for the REST API.
+package middleware
+
+import (
+	"log"
+	"net/http"
+	"time"
+)
+
+// ResponseWriter wraps http.ResponseWriter to capture status code.
+type responseWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.status = code
+	rw.ResponseWriter.WriteHeader(code)
+}
+
+// Logging logs each request with method, path, status, and duration.
+func Logging(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		rw := &responseWriter{ResponseWriter: w, status: http.StatusOK}
+
+		next.ServeHTTP(rw, r)
+
+		log.Printf("%s %s %d %s", r.Method, r.URL.Path, rw.status, time.Since(start).Round(time.Millisecond))
+	})
+}
+
+// Recovery catches panics and returns 500.
+func Recovery(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				log.Printf("panic: %v", err)
+				http.Error(w, `{"status":"failure","message":"internal server error","reason":"InternalError","code":500}`, http.StatusInternalServerError)
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
+// Chain applies multiple middleware in order.
+func Chain(handler http.Handler, middlewares ...func(http.Handler) http.Handler) http.Handler {
+	for i := len(middlewares) - 1; i >= 0; i-- {
+		handler = middlewares[i](handler)
+	}
+	return handler
+}

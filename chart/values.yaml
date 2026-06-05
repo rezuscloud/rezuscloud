@@ -1,0 +1,210 @@
+# Default values for rezuscloud.
+# This file is intentionally documented to be self-explanatory.
+# See ./README.md for production deployment guide.
+
+# -- Number of pod replicas.
+# Hard-coded to 1 because rezuscloud uses SQLite (single-writer).
+# Will become configurable when Issue #22 (PostgreSQL backend) ships.
+replicaCount: 1
+
+image:
+  # -- Image repository. GHCR container registry.
+  repository: ghcr.io/rezuscloud/rezuscloud
+  # -- Image pull policy.
+  pullPolicy: IfNotPresent
+  # -- Image tag. Overrides chart appVersion when set.
+  tag: ""
+  # -- Optional image pull secrets (list of names).
+  pullSecrets: []
+
+# -- Deployment mode label passed as REZUSCLOUD_MODE env var.
+# In single-replica chart, this is always "standalone".
+# Reserved for future cluster mode when Issue #22 (PostgreSQL) ships.
+mode: standalone
+
+# -- Override the chart name.
+nameOverride: ""
+# -- Override the full resource name.
+fullnameOverride: ""
+
+serviceAccount:
+  # -- Create a ServiceAccount for the pod.
+  create: true
+  # -- ServiceAccount name. When empty, defaults to fullname.
+  name: ""
+  # -- Annotations added to the ServiceAccount.
+  annotations: {}
+  # -- Automount API token into pod. Off by default — rezuscloud does not talk to K8s API.
+  automountServiceAccountToken: false
+
+# -- Pod-level annotations.
+podAnnotations: {}
+# -- Pod-level labels (additional to standard chart labels).
+podLabels: {}
+
+# -- Pod security context. Matches Dockerfile USER nonroot:nonroot (UID/GID 65532).
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+# -- Container security context.
+securityContext:
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: [ALL]
+
+# rezuscloud runtime configuration. Maps 1:1 to env vars (see values audit in issue #59).
+rezuscloud:
+  # -- HTTP listen address. Format ":PORT" or "HOST:PORT".
+  addr: ":8080"
+  # -- Data directory inside container. Must match persistence.mountPath.
+  dataDir: /data
+  # -- MachineLink listen address. Machines phone home here over WireGuard-over-gRPC.
+  machineLinkAddr: ":50180"
+  # -- Provider gRPC listen address. Outbound-only providers connect here.
+  providerAddr: ":50190"
+  # -- Optional global join token (escape hatch — normally use per-tenant tokens via API).
+  joinToken: ""
+  # -- Initial admin password. Only used on first start when database is empty.
+  # After first boot, ignored — manage users via API.
+  adminPassword: ""
+
+# -- JWT signing secret. REQUIRED for auth to work.
+# Generate with: openssl rand -hex 32
+# If empty AND existingSecret is empty, chart fails with a clear error.
+jwtSecret: ""
+
+# -- Existing secret name. When set, takes precedence over plaintext values above.
+# Expected keys: jwt-secret, admin-password, join-token (all optional).
+existingSecret: ""
+
+service:
+  # -- Service type for HTTP/WebUI/API.
+  type: ClusterIP
+  # -- HTTP port (WebUI + REST API + healthz/readyz/version).
+  port: 8080
+  # -- Annotations for the HTTP Service.
+  annotations: {}
+
+# MachineLink Service — exposed so machines outside the cluster can phone home.
+machineLinkService:
+  # -- Create a separate Service for MachineLink.
+  # Recommended so it can be LoadBalancer/NodePort while HTTP stays ClusterIP+Ingress.
+  enabled: true
+  # -- Service type. LoadBalancer recommended for machines phoning home from outside the cluster.
+  type: LoadBalancer
+  # -- MachineLink port.
+  port: 50180
+  # -- Annotations (e.g., for MetalLB, AWS NLB, etc.).
+  annotations: {}
+
+# Provider gRPC Service — exposed so external provider binaries can connect.
+providerService:
+  # -- Create a separate Service for Provider gRPC.
+  enabled: true
+  # -- Service type. LoadBalancer or ClusterIP (if providers run in-cluster).
+  type: LoadBalancer
+  # -- Provider gRPC port.
+  port: 50190
+  annotations: {}
+
+ingress:
+  # -- Enable Ingress for the HTTP service.
+  enabled: false
+  # -- Ingress class name.
+  className: ""
+  # -- Ingress annotations.
+  annotations: {}
+  # -- Hosts and path configuration.
+  hosts:
+    - host: rezuscloud.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  # -- TLS configuration.
+  tls: []
+  #  - secretName: rezuscloud-tls
+  #    hosts:
+  #      - rezuscloud.example.com
+
+# Persistence for SQLite database.
+persistence:
+  # -- Enable PVC for data directory. Strongly recommended.
+  enabled: true
+  # -- Storage class. Empty = cluster default.
+  storageClass: ""
+  # -- Access mode. SQLite single-writer → RWO only.
+  accessMode: ReadWriteOnce
+  # -- Volume size. SQLite is tiny; 1Gi is plenty for personal cloud scale.
+  size: 1Gi
+  # -- Mount path inside container. Must match rezuscloud.dataDir.
+  mountPath: /data
+  # -- Existing PVC name (optional). When set, no PVC is created.
+  existingClaim: ""
+
+# -- Resource requests and limits.
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+# Probes. rezuscloud exposes /healthz (liveness) and /readyz (readiness).
+probes:
+  liveness:
+    # -- Enable liveness probe.
+    enabled: true
+    # -- HTTP path.
+    path: /healthz
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 2
+    failureThreshold: 3
+  readiness:
+    # -- Enable readiness probe.
+    enabled: true
+    # -- HTTP path.
+    path: /readyz
+    initialDelaySeconds: 3
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 3
+
+# -- Optional NetworkPolicy.
+networkPolicy:
+  # -- Enable NetworkPolicy.
+  enabled: false
+  # -- Ingress rules. By default, allow all (chart does not know which namespaces need access).
+  ingress: []
+  # -- Egress rules. By default, allow all (providers/machines can be anywhere).
+  egress: []
+
+# -- Node selector.
+nodeSelector: {}
+# -- Tolerations.
+tolerations: []
+# -- Affinity.
+affinity: {}
+# -- Priority class name.
+priorityClassName: ""
+# -- Termination grace period (seconds). rezuscloud has 5s graceful shutdown; pad for K8s overhead.
+terminationGracePeriodSeconds: 15
+
+# -- Extra env vars (raw list, for anything not covered above).
+# Example:
+#   extraEnv:
+#     - name: REZUSCLOUD_DEBUG
+#       value: "true"
+extraEnv: []
+
+# -- Extra volumes.
+extraVolumes: []
+# -- Extra volume mounts.
+extraVolumeMounts: []

@@ -1,0 +1,93 @@
+version: 2
+
+project_name: rezuscloud
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  # Management plane binary — server, WebUI, MachineLink.
+  - id: rezuscloud
+    main: .
+    env: [CGO_ENABLED=0]
+    flags: [-trimpath]
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+      - -X github.com/rezuscloud/rezuscloud/version.Version={{.Version}}
+      - -X github.com/rezuscloud/rezuscloud/version.GitCommit={{.ShortCommit}}
+      - -X github.com/rezuscloud/rezuscloud/version.BuildTime={{.CommitDate}}
+
+  # CLI tool — boot, tenant, join. Like kubectl: multiarch binary, no Docker image.
+  - id: rezusctl
+    main: ./cmd/rezusctl
+    env: [CGO_ENABLED=0]
+    flags: [-trimpath]
+    goos: [linux, darwin]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+      - -X github.com/rezuscloud/rezuscloud/internal/cli/version.Version={{.Version}}
+      - -X github.com/rezuscloud/rezuscloud/internal/cli/version.GitCommit={{.ShortCommit}}
+      - -X github.com/rezuscloud/rezuscloud/internal/cli/version.BuildTime={{.CommitDate}}
+
+archives:
+  - id: rezuscloud
+    builds: [rezuscloud]
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+  - id: rezusctl
+    builds: [rezusctl]
+    formats: [tar.gz]
+    name_template: "rezusctl_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+sboms:
+  - artifacts: archive
+
+# Only the management plane gets a Docker image (like kube-apiserver).
+# rezusctl is a static binary archive only (like kubectl).
+dockers_v2:
+  - id: rezuscloud
+    ids: [rezuscloud]
+    dockerfile: .github/Dockerfile.release
+    images:
+      - ghcr.io/rezuscloud/rezuscloud
+    tags:
+      - v{{ .Version }}
+      - v{{ .Major }}
+      - v{{ .Major }}.{{ .Minor }}
+      - latest
+    labels:
+      org.opencontainers.image.title: RezusCloud Management Plane
+      org.opencontainers.image.description: Management plane for RezusCloud Personal Cloud
+      org.opencontainers.image.created: "{{ .Date }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.source: "{{ .GitURL }}"
+      org.opencontainers.image.url: https://rezus.cloud
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    sbom: true
+    flags:
+      - --provenance=false
+
+docker_digest:
+  name_template: digests.txt
+
+signs:
+  - cmd: cosign
+    args: ["sign-blob", "--yes", "--bundle", "${signature}", "${artifact}"]
+    artifacts: checksum
+
+changelog:
+  sort: asc
+  filters:
+    exclude: ["^docs:", "^test:", "^ci:"]
+
+release:
+  github:
+    owner: rezuscloud
+    name: rezuscloud

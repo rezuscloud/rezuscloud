@@ -1,0 +1,145 @@
+package pages
+
+import "fmt"
+
+type TenantDetailData struct {
+	Name         string
+	Phase        string
+	K8sVersion   string
+	TalosVersion string
+	NodeGroups   []NodeGroupRow
+	Machines     []MachineRow
+	Patches      []PatchRow
+}
+
+type NodeGroupRow struct {
+	Name  string
+	Role  string
+	Count int
+	Ready int
+}
+
+type MachineRow struct {
+	ID        string
+	Stage     string
+	Connected bool
+	Role      string
+	NodeGroup string
+}
+
+type PatchRow struct {
+	Name       string
+	Format     string
+	TargetRole string
+	Enabled    bool
+}
+
+templ TenantDetail(data TenantDetailData) {
+	<div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1.5rem;">
+		<h1 class="ds-page-title" style="margin-bottom: 0;">{ data.Name }</h1>
+		<span class={ "ds-status-badge ds-status-badge--" + phaseBadgeClass(data.Phase) }>{ data.Phase }</span>
+	</div>
+	<div class="ds-grid ds-grid-3" style="margin-bottom: 1.5rem;">
+		<div class="ds-stat-block">
+			<div class="ds-stat-label">Kubernetes</div>
+			<div class="ds-stat-value" style="font-size: 1.125rem;">{ data.K8sVersion }</div>
+		</div>
+		<div class="ds-stat-block">
+			<div class="ds-stat-label">Talos</div>
+			<div class="ds-stat-value" style="font-size: 1.125rem;">{ data.TalosVersion }</div>
+		</div>
+		<div class="ds-stat-block">
+			<div class="ds-stat-label">Machines</div>
+			<div class="ds-stat-value" style="font-size: 1.125rem;">{ fmt.Sprintf("%d", len(data.Machines)) }</div>
+		</div>
+	</div>
+	if len(data.NodeGroups) > 0 {
+		<div class="ds-section-header">Node Groups</div>
+		<div class="ds-table-wrapper">
+			<table class="ds-table">
+				<thead>
+					<tr>
+						<th class="ds-table-th">Name</th>
+						<th class="ds-table-th">Role</th>
+						<th class="ds-table-th">Count</th>
+						<th class="ds-table-th">Ready</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, ng := range data.NodeGroups {
+						<tr class="ds-table-row">
+							<td class="ds-table-td">{ ng.Name }</td>
+							<td class="ds-table-td"><span class="ds-status-badge ds-status-badge--neutral">{ ng.Role }</span></td>
+							<td class="ds-table-td">{ fmt.Sprintf("%d", ng.Count) }</td>
+							<td class="ds-table-td">{ fmt.Sprintf("%d", ng.Ready) }</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	}
+	if len(data.Machines) > 0 {
+		<div class="ds-section-header">Machines</div>
+		<div class="ds-table-wrapper">
+			<table class="ds-table">
+				<thead>
+					<tr>
+						<th class="ds-table-th">ID</th>
+						<th class="ds-table-th">Stage</th>
+						<th class="ds-table-th">Connected</th>
+						<th class="ds-table-th">Role</th>
+						<th class="ds-table-th">Node Group</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, m := range data.Machines {
+						<tr class="ds-table-row">
+							<td class="ds-table-td"><span class="ds-table-mono">{ m.ID }</span></td>
+							<td class="ds-table-td"><span class={ "ds-status-badge ds-status-badge--" + stageBadgeClass(m.Stage) }>{ m.Stage }</span></td>
+							<td class="ds-table-td">
+								if m.Connected {
+									<span class="ds-status-dot ds-status-dot--positive"></span>
+								} else {
+									<span class="ds-status-dot ds-status-dot--neutral"></span>
+								}
+							</td>
+							<td class="ds-table-td">{ m.Role }</td>
+							<td class="ds-table-td">{ m.NodeGroup }</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	}
+	if len(data.Patches) > 0 {
+		<div class="ds-section-header">Config Patches</div>
+		<div class="ds-table-wrapper">
+			<table class="ds-table">
+				<thead>
+					<tr>
+						<th class="ds-table-th">Name</th>
+						<th class="ds-table-th">Format</th>
+						<th class="ds-table-th">Target</th>
+						<th class="ds-table-th">Enabled</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, p := range data.Patches {
+						<tr class="ds-table-row">
+							<td class="ds-table-td">{ p.Name }</td>
+							<td class="ds-table-td"><span class="ds-table-mono">{ p.Format }</span></td>
+							<td class="ds-table-td">{ p.TargetRole }</td>
+							<td class="ds-table-td">
+								if p.Enabled {
+									<span class="ds-status-dot ds-status-dot--positive"></span>
+								} else {
+									<span class="ds-status-dot ds-status-dot--neutral"></span>
+								}
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	}
+}
