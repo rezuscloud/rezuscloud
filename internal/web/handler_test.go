@@ -515,3 +515,218 @@ func TestAuthRequired_ValidCookie_CallsHandler(t *testing.T) {
 		t.Errorf("username = %q, want admin", username)
 	}
 }
+
+// --- W2: Navigation shell tests ---
+
+func TestDashboard_NoBreadcrumbByDefault(t *testing.T) {
+	// Dashboard is the root page — no breadcrumb.
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+
+	req := authedRequest(http.MethodGet, "/", nil, "")
+	ctx := auth.WithClaims(req.Context(), "admin", auth.RoleAdmin)
+	req = req.WithContext(ctx)
+	w := httptest.NewRecorder()
+	h.Dashboard(w, req)
+
+	// Extract body after </style> so we don't match CSS definitions.
+	body := w.Body.String()
+	idx := strings.Index(body, "</style>")
+	if idx >= 0 {
+		body = body[idx+len("</style>"):]
+	}
+	if strings.Contains(body, "ds-breadcrumb") {
+		t.Errorf("dashboard should not have breadcrumb; got: %s", body)
+	}
+}
+
+func TestTenantsList_HasBreadcrumb(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+
+	req := authedRequest(http.MethodGet, "/clusters", nil, "")
+	ctx := auth.WithClaims(req.Context(), "admin", auth.RoleAdmin)
+	req = req.WithContext(ctx)
+	w := httptest.NewRecorder()
+	h.TenantsList(w, req)
+
+	body := w.Body.String()
+	if !strings.Contains(body, "ds-breadcrumb") {
+		t.Errorf("clusters list should have breadcrumb; got: %s", body)
+	}
+	// Breadcrumb should have Home + "Clusters".
+	if !strings.Contains(body, `href="/"`) {
+		t.Error("breadcrumb should link to Home")
+	}
+	if !strings.Contains(body, "Clusters") {
+		t.Error("breadcrumb should contain 'Clusters'")
+	}
+}
+
+func TestTenantDetail_HasBreadcrumbWithClusterName(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	setupTenant(t, store, "prod")
+
+	req := authedRequest(http.MethodGet, "/clusters/prod", nil, "")
+	req.SetPathValue("name", "prod")
+	ctx := auth.WithClaims(req.Context(), "admin", auth.RoleAdmin)
+	req = req.WithContext(ctx)
+	w := httptest.NewRecorder()
+	h.TenantDetail(w, req)
+
+	body := w.Body.String()
+	// Should have breadcrumb with: Home / Clusters / prod
+	if !strings.Contains(body, "ds-breadcrumb") {
+		t.Errorf("tenant detail should have breadcrumb")
+	}
+	if !strings.Contains(body, `href="/clusters"`) {
+		t.Error("breadcrumb should link to /clusters")
+	}
+	if !strings.Contains(body, ">prod<") && !strings.Contains(body, ">prod <") {
+		t.Error("breadcrumb should contain cluster name 'prod'")
+	}
+}
+
+func TestClustersAlias_RendersTenantsList(t *testing.T) {
+	// /clusters and /tenants should render the same handler.
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	setupTenant(t, store, "alpha")
+
+	req := authedRequest(http.MethodGet, "/clusters", nil, "")
+	ctx := auth.WithClaims(req.Context(), "admin", auth.RoleAdmin)
+	req = req.WithContext(ctx)
+	w := httptest.NewRecorder()
+	h.TenantsList(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "alpha") {
+		t.Errorf("body should list tenant alpha; got: %s", body)
+	}
+}
+
+func TestClustersNameAlias_RendersTenantDetail(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	setupTenant(t, store, "alpha")
+
+	req := authedRequest(http.MethodGet, "/clusters/alpha", nil, "")
+	req.SetPathValue("name", "alpha")
+	ctx := auth.WithClaims(req.Context(), "admin", auth.RoleAdmin)
+	req = req.WithContext(ctx)
+	w := httptest.NewRecorder()
+	h.TenantDetail(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "alpha") {
+		t.Error("body should show cluster alpha")
+	}
+}
+
+func TestSidebar_HasAllNavEntries(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+
+	req := authedRequest(http.MethodGet, "/", nil, "")
+	ctx := auth.WithClaims(req.Context(), "admin", auth.RoleAdmin)
+	req = req.WithContext(ctx)
+	w := httptest.NewRecorder()
+	h.Dashboard(w, req)
+
+	body := w.Body.String()
+	expectedNav := []string{
+		`href="/"`,
+		`href="/clusters"`,
+		`href="/machines"`,
+		`href="/machines/jointokens"`,
+		`href="/providers"`,
+		`href="/settings/users"`,
+		`href="/settings/api-tokens"`,
+		`href="/settings/audit"`,
+		`href="/settings/backups"`,
+		"Overview",
+		"Clusters",
+		"Machines",
+		"Join Tokens",
+		"Providers",
+		"Users",
+		"API Tokens",
+		"Audit Log",
+		"Backups",
+	}
+	for _, expected := range expectedNav {
+		if !strings.Contains(body, expected) {
+			t.Errorf("sidebar should contain %q; body excerpt: %s", expected, body[min(2000, len(body)):])
+		}
+	}
+}
+
+func TestToastRenderedWhenQueryParam(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+
+	req := authedRequest(http.MethodGet, "/?toast=Created+cluster&toast-type=success", nil, "")
+	ctx := auth.WithClaims(req.Context(), "admin", auth.RoleAdmin)
+	req = req.WithContext(ctx)
+	w := httptest.NewRecorder()
+	h.Dashboard(w, req)
+
+	body := w.Body.String()
+	if !strings.Contains(body, "ds-toast") {
+		t.Errorf("should contain toast element")
+	}
+	if !strings.Contains(body, "Created cluster") {
+		t.Errorf("should contain toast message; got: %s", body)
+	}
+	if !strings.Contains(body, "ds-toast--success") {
+		t.Error("should have ds-toast--success class")
+	}
+}
+
+func TestToastNotRenderedWhenMissingQueryParam(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+
+	req := authedRequest(http.MethodGet, "/", nil, "")
+	ctx := auth.WithClaims(req.Context(), "admin", auth.RoleAdmin)
+	req = req.WithContext(ctx)
+	w := httptest.NewRecorder()
+	h.Dashboard(w, req)
+
+	// Extract body after </style> so we don't match CSS definitions.
+	body := w.Body.String()
+	idx := strings.Index(body, "</style>")
+	if idx >= 0 {
+		body = body[idx+len("</style>"):]
+	}
+	if strings.Contains(body, "ds-toast-container") || strings.Contains(body, "role=\"status\"") {
+		t.Errorf("should not render toast container when no flash message; got: %s", body)
+	}
+}
+
+func TestSidebar_HasActiveHighlight(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+
+	// Dashboard page should highlight the "Overview" link.
+	req := authedRequest(http.MethodGet, "/", nil, "")
+	ctx := auth.WithClaims(req.Context(), "admin", auth.RoleAdmin)
+	req = req.WithContext(ctx)
+	w := httptest.NewRecorder()
+	h.Dashboard(w, req)
+
+	body := w.Body.String()
+	if !strings.Contains(body, "ds-sidebar-link--active") {
+		t.Error("dashboard should mark a sidebar link as active")
+	}
+}
