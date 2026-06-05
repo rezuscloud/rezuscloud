@@ -187,8 +187,8 @@ func TestConfirmModal_RendersConfirmAndCancelButtons(t *testing.T) {
 
 func TestConfirmModal_DefaultLabels(t *testing.T) {
 	html := renderComponent(t, ConfirmModal(ConfirmModalProps{
-		ID:     "c",
-		Title:  "T",
+		ID:      "c",
+		Title:   "T",
 		Message: "M",
 		// ConfirmLabel and CancelLabel empty
 	}))
@@ -202,8 +202,8 @@ func TestConfirmModal_DefaultLabels(t *testing.T) {
 
 func TestConfirmModal_CancelButtonHasDataModalClose(t *testing.T) {
 	html := renderComponent(t, ConfirmModal(ConfirmModalProps{
-		ID:     "c",
-		Title:  "T",
+		ID:      "c",
+		Title:   "T",
 		Message: "M",
 	}))
 	// Find the Cancel button block and check it has data-modal-close
