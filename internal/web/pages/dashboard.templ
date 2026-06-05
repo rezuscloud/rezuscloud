@@ -81,7 +81,7 @@ templ clustersTable(data DashboardData) {
 				<tbody>
 					for _, t := range data.Tenants {
 						<tr class="ds-table-row">
-							<td class="ds-table-td"><a href={ templ.URL("/tenants/" + t.Name) }>{ t.Name }</a></td>
+							<td class="ds-table-td"><a href={ templ.URL("/clusters/" + t.Name) }>{ t.Name }</a></td>
 							<td class="ds-table-td"><span class={ "ds-status-badge ds-status-badge--" + phaseBadgeClass(t.Phase) }>{ t.Phase }</span></td>
 							<td class="ds-table-td">{ fmt.Sprintf("%d / %d", t.Ready, t.Total) }</td>
 						</tr>
