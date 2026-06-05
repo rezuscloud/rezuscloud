@@ -43,13 +43,13 @@ Within the in-scope features, the following sub-features are dropped:
 | 1 | Machine registration & join | Full |
 | 2 | Cluster lifecycle | Full |
 | 3 | Cluster upgrades | Full |
-| 4 | Configuration management | Full (patches, kernel args; no schematics wizard) |
+| 4 | Configuration management | Tenant-wide scope only, see [ADR 19](0019-configpatch-single-scope.md); no schematics wizard |
 | 5 | Installation media | Link only (Image Factory URL per cluster) |
 | 6 | Backups & restore | Full |
 | 7 | Authentication | JWT + API tokens only (ADR 16) |
 | 8 | Authorization | admin/edit/view roles only |
 | 9 | Users & service accounts | Local users + API tokens (no PGP) |
-| 10 | Audit log | Full — middleware pattern, see K8s audit standard |
+| 10 | Audit log | Full — HTTP middleware pattern, see [ADR 18](0018-audit-log-middleware.md) |
 | 11 | Infra providers | List + status only (providers self-register; no UI config) |
 | 16 | Live logs & events | Full (SSE) |
 | 19 | Settings & flags | Minimal — JWT secret rotation, backup config |
