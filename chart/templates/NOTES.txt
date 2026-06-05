@@ -1,0 +1,52 @@
+rezuscloud has been deployed.
+
+1. Wait for the pod to become ready:
+
+   kubectl --namespace {{ .Release.Namespace }} wait --for=condition=ready pod \
+     -l app.kubernetes.io/name={{ include "rezuscloud.name" . }},app.kubernetes.io/instance={{ .Release.Name }} \
+     --timeout=120s
+
+2. Get the WebUI/API URL:
+
+{{- if eq .Values.service.type "LoadBalancer" }}
+   export REZUSCLOUD_URL="http://$(kubectl --namespace {{ .Release.Namespace }} get svc {{ include "rezuscloud.fullname" . }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}'):{{ .Values.service.port }}"
+{{- else if eq .Values.service.type "NodePort" }}
+   export NODE_IP=$(kubectl get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}')
+   export NODE_PORT=$(kubectl --namespace {{ .Release.Namespace }} get svc {{ include "rezuscloud.fullname" . }} -o jsonpath='{.spec.ports[0].nodePort}')
+   export REZUSCLOUD_URL="http://${NODE_IP}:${NODE_PORT}"
+{{- else }}
+   kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "rezuscloud.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
+   export REZUSCLOUD_URL="http://127.0.0.1:{{ .Values.service.port }}"
+{{- end }}
+
+   echo "WebUI: ${REZUSCLOUD_URL}/"
+   echo "API:   ${REZUSCLOUD_URL}/api/v1/"
+
+3. MachineLink and Provider gRPC endpoints (for machines/providers phoning home):
+
+{{- if .Values.machineLinkService.enabled }}
+   MachineLink : {{ .Values.machineLinkService.type }} on port {{ .Values.machineLinkService.port }}
+   {{- if eq .Values.machineLinkService.type "LoadBalancer" }}
+   kubectl --namespace {{ .Release.Namespace }} get svc {{ include "rezuscloud.fullname" . }}-machinelink -o jsonpath='{.status.loadBalancer.ingress}'
+   {{- end }}
+{{- end }}
+{{- if .Values.providerService.enabled }}
+   Provider    : {{ .Values.providerService.type }} on port {{ .Values.providerService.port }}
+   {{- if eq .Values.providerService.type "LoadBalancer" }}
+   kubectl --namespace {{ .Release.Namespace }} get svc {{ include "rezuscloud.fullname" . }}-provider -o jsonpath='{.status.loadBalancer.ingress}'
+   {{- end }}
+{{- end }}
+
+4. Initial admin login (if adminPassword was set):
+
+   curl -X POST ${REZUSCLOUD_URL}/api/v1/auth/login \
+     -H 'Content-Type: application/json' \
+     -d '{"username":"admin","password":"YOUR_PASSWORD"}'
+
+   Then use the returned accessToken in subsequent API calls:
+
+   curl -H "Authorization: Bearer ${TOKEN}" ${REZUSCLOUD_URL}/api/v1/tenants
+
+5. Run the chart tests:
+
+   helm test {{ .Release.Name }} --namespace {{ .Release.Namespace }}

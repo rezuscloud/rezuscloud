@@ -1,0 +1,23 @@
+{{- if .Values.machineLinkService.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "rezuscloud.fullname" . }}-machinelink
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "rezuscloud.labels" . | nindent 4 }}
+    app.kubernetes.io/port: machinelink
+  {{- with .Values.machineLinkService.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.machineLinkService.type }}
+  ports:
+    - port: {{ .Values.machineLinkService.port }}
+      targetPort: machinelink
+      protocol: TCP
+      name: machinelink
+  selector:
+    {{- include "rezuscloud.selectorLabels" . | nindent 4 }}
+{{- end }}

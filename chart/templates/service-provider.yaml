@@ -1,0 +1,23 @@
+{{- if .Values.providerService.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "rezuscloud.fullname" . }}-provider
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "rezuscloud.labels" . | nindent 4 }}
+    app.kubernetes.io/port: provider
+  {{- with .Values.providerService.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.providerService.type }}
+  ports:
+    - port: {{ .Values.providerService.port }}
+      targetPort: provider
+      protocol: TCP
+      name: provider
+  selector:
+    {{- include "rezuscloud.selectorLabels" . | nindent 4 }}
+{{- end }}

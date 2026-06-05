@@ -1,0 +1,17 @@
+apiVersion: v2
+name: rezuscloud
+description: Management plane for RezusCloud Personal Cloud — REST API, WebUI, MachineLink, Provider gRPC.
+type: application
+version: 0.1.0
+appVersion: "0.0.2-1"
+home: https://rezus.cloud
+sources:
+  - https://github.com/rezuscloud/rezuscloud
+maintainers:
+  - name: RezusCloud
+keywords:
+  - kubernetes
+  - talos
+  - personal-cloud
+  - management-plane
+icon: https://rezus.cloud/icon.png
