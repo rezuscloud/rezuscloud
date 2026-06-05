@@ -1,0 +1,66 @@
+package layout
+
+// TabItem describes one tab in a Tabs component.
+type TabItem struct {
+	ID     string // unique id within this tab set, e.g. "overview"
+	Label  string // visible label
+	URL    string // href when clicked (server-rendered tabs strategy A)
+	Active bool   // is this the currently-selected tab?
+}
+
+// TabsProps configures a Tabs component.
+//
+// Tabs uses Strategy A (server-rendered tabs). Each tab is a link to a
+// separate URL. The server re-renders the page with the new active tab.
+// This works without JavaScript, supports deep linking, and is the default
+// for v1.
+type TabsProps struct {
+	ID    string    // base id for the tab set; defaults to "tabs" if empty
+	Items []TabItem // ordered list of tabs to render
+}
+
+// tabsID returns the tab set's id with a sane default.
+func tabsID(id string) string {
+	if id == "" {
+		return "tabs"
+	}
+	return id
+}
+
+// Tabs renders a horizontal tablist of links. The active tab is highlighted
+// via the ds-tabs-link--active class and aria-selected="true". Clicking a
+// tab navigates to its URL (full-page swap, server re-renders the page).
+//
+// For HTMX partial swaps, wrap the tab content in a container with id and
+// add hx-target="#<id>" to each tab link via the URL field. Or, simpler,
+// use hx-boost on a parent element.
+//
+// Empty Items renders an empty tablist (no panic). This keeps callers
+// simple: they can pass a nil/empty slice without conditional rendering.
+templ Tabs(props TabsProps) {
+	<nav class="ds-tabs" role="tablist" id={ tabsID(props.ID) }>
+		for _, item := range props.Items {
+			if item.Active {
+				<a
+					class="ds-tabs-link ds-tabs-link--active"
+					role="tab"
+					aria-selected="true"
+					href={ templ.URL(item.URL) }
+					id={ tabsID(props.ID) + "-tab-" + item.ID }
+				>
+					{ item.Label }
+				</a>
+			} else {
+				<a
+					class="ds-tabs-link"
+					role="tab"
+					aria-selected="false"
+					href={ templ.URL(item.URL) }
+					id={ tabsID(props.ID) + "-tab-" + item.ID }
+				>
+					{ item.Label }
+				</a>
+			}
+		}
+	</nav>
+}
