@@ -9,6 +9,7 @@ templ Base(props BaseProps) {
 		<title>{ props.Title } — RezusCloud</title>
 		@templ.Raw("<style>" + CSS() + "</style>")
 		<script src="https://unpkg.com/htmx.org@2.0.4"></script>
+		<script src="https://unpkg.com/htmx-ext-sse@2.3.1/sse.js"></script>
 		<script defer src="https://unpkg.com/alpinejs@3.14.8/dist/cdn.min.js"></script>
 	</head>
 	<body>

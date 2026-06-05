@@ -579,3 +579,83 @@ func TestFinalizer_Idempotent(t *testing.T) {
 		t.Errorf("duplicate finalizer count = %d, want 1", count)
 	}
 }
+
+// recordingBus is a state.EventBus that records every event for assertions.
+type recordingBus struct {
+	events []ResourceEvent
+}
+
+func (r *recordingBus) Publish(resourceType string, event ResourceEvent) {
+	r.events = append(r.events, event)
+}
+
+func TestStore_PublishesBusEvents(t *testing.T) {
+	s := openTestStore(t)
+	bus := &recordingBus{}
+	s.SetBus(bus)
+
+	t.Run("create publishes ADDED", func(t *testing.T) {
+		bus.events = nil
+		_, err := s.CreateTenant("alpha", TenantSpec{KubernetesVersion: "1.35.0"}, nil, nil)
+		if err != nil {
+			t.Fatalf("create: %v", err)
+		}
+		if len(bus.events) != 1 {
+			t.Fatalf("events = %d, want 1", len(bus.events))
+		}
+		if bus.events[0].Type != "ADDED" {
+			t.Errorf("type = %q, want ADDED", bus.events[0].Type)
+		}
+		if bus.events[0].ResourceType != "tenant" {
+			t.Errorf("resource type = %q, want tenant", bus.events[0].ResourceType)
+		}
+		if bus.events[0].Metadata.Name != "alpha" {
+			t.Errorf("name = %q, want alpha", bus.events[0].Metadata.Name)
+		}
+	})
+
+	t.Run("update status publishes MODIFIED", func(t *testing.T) {
+		bus.events = nil
+		_, err := s.UpdateTenantStatus("alpha", TenantStatus{Phase: TenantActive})
+		if err != nil {
+			t.Fatalf("update status: %v", err)
+		}
+		if len(bus.events) != 1 {
+			t.Fatalf("events = %d, want 1", len(bus.events))
+		}
+		if bus.events[0].Type != "MODIFIED" {
+			t.Errorf("type = %q, want MODIFIED", bus.events[0].Type)
+		}
+	})
+
+	t.Run("delete publishes DELETED", func(t *testing.T) {
+		bus.events = nil
+		err := s.DeleteTenant("alpha")
+		if err != nil {
+			t.Fatalf("delete: %v", err)
+		}
+		if len(bus.events) != 1 {
+			t.Fatalf("events = %d, want 1", len(bus.events))
+		}
+		if bus.events[0].Type != "DELETED" {
+			t.Errorf("type = %q, want DELETED", bus.events[0].Type)
+		}
+	})
+}
+
+func TestStore_NoBusIsSafe(t *testing.T) {
+	// No SetBus call — store must still work without panicking.
+	s := openTestStore(t)
+
+	_, err := s.CreateTenant("beta", TenantSpec{KubernetesVersion: "1.35.0"}, nil, nil)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	_, err = s.UpdateTenantStatus("beta", TenantStatus{Phase: TenantActive})
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if err := s.DeleteTenant("beta"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+}
