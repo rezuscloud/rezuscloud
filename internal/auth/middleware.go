@@ -16,6 +16,13 @@ const (
 	roleKey contextKey = "role"
 )
 
+// WithClaims injects the username and role into the request context.
+// Used by WebUI cookie auth (vs Bearer token auth which goes through Authenticate).
+func WithClaims(ctx context.Context, username, role string) context.Context {
+	ctx = context.WithValue(ctx, userKey, username)
+	return context.WithValue(ctx, roleKey, role)
+}
+
 // UserFromContext returns the authenticated username from the request context.
 func UserFromContext(ctx context.Context) string {
 	v, _ := ctx.Value(userKey).(string)

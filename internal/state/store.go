@@ -270,9 +270,46 @@ type UserStatus struct {
 
 // --- Store ---
 
+// ResourceEvent is reported by the store to an external observer (e.g. watch bus).
+// This decouples the store from the watch package (no import cycle) and lets the
+// store run without a bus in tests.
+type ResourceEvent struct {
+	Type         string // "ADDED", "MODIFIED", "DELETED"
+	ResourceType string // "tenant", "machine", ...
+	Metadata     Metadata
+	Spec         json.RawMessage
+	Status       json.RawMessage
+}
+
+// EventBus is the observer interface the store notifies on mutations.
+// Implementations must be safe for concurrent use.
+type EventBus interface {
+	Publish(resourceType string, event ResourceEvent)
+}
+
 // Store is the persistent state store for the management plane.
 type Store struct {
-	db *sql.DB
+	db  *sql.DB
+	bus EventBus // optional — set via SetBus
+}
+
+// SetBus attaches an event bus. Safe to call once at startup before any mutation.
+func (s *Store) SetBus(bus EventBus) {
+	s.bus = bus
+}
+
+// publish notifies the bus if attached. Best-effort — errors are swallowed.
+func (s *Store) publish(eventType, resourceType string, md Metadata, spec, status json.RawMessage) {
+	if s.bus == nil {
+		return
+	}
+	s.bus.Publish(resourceType, ResourceEvent{
+		Type:         eventType,
+		ResourceType: resourceType,
+		Metadata:     md,
+		Spec:         spec,
+		Status:       status,
+	})
 }
 
 // Open creates or opens a SQLite database at the given path.
@@ -380,11 +417,12 @@ func (s *Store) CreateResource(resourceType, name string, spec, status any, labe
 	}
 
 	now := time.Now().UTC()
+	uid := newUID()
 
 	result, err := s.db.Exec(
 		`INSERT INTO resources (type, name, uid, spec, status, finalizers, labels, annotations, created_at, updated_at, version)
 		 VALUES (?, ?, ?, ?, ?, '[]', ?, ?, ?, ?, 1)`,
-		resourceType, name, newUID(), string(specJSON), string(statusJSON), string(labelsJSON), string(annotationsJSON), now, now,
+		resourceType, name, uid, string(specJSON), string(statusJSON), string(labelsJSON), string(annotationsJSON), now, now,
 	)
 	if err != nil {
 		return Metadata{}, fmt.Errorf("insert resource: %w", err)
@@ -392,15 +430,19 @@ func (s *Store) CreateResource(resourceType, name string, spec, status any, labe
 
 	version, _ := result.LastInsertId()
 
-	return Metadata{
+	md := Metadata{
 		Name:            name,
-		UID:             newUID(),
+		UID:             uid,
 		ResourceVersion: version,
 		CreatedAt:       now,
 		UpdatedAt:       now,
 		Labels:          labels,
 		Annotations:     annotations,
-	}, nil
+	}
+
+	s.publish("ADDED", resourceType, md, specJSON, statusJSON)
+
+	return md, nil
 }
 
 // GetResource reads a single resource.
@@ -540,6 +582,40 @@ func (s *Store) ListResources(resourceType string, opts ListOptions) ([]Metadata
 	return metadata, specs, statuses, total, rows.Err()
 }
 
+// updateResourceMetadataAndPublish reloads a row after a mutation and publishes a bus event.
+// Centralizes the reload+publish pattern used by UpdateResource/UpdateStatus/DeleteResource.
+func (s *Store) updateResourceMetadataAndPublish(eventType, resourceType, name string) (Metadata, error) {
+	var (
+		md                                          Metadata
+		finalizersJSON, labelsJSON, annotationsJSON string
+		specJSON, statusJSON                        string
+		deletionTimestamp                           sql.NullTime
+	)
+	err := s.db.QueryRow(
+		`SELECT name, uid, version, finalizers, labels, annotations, created_at, updated_at, deletion_timestamp, spec, status
+		 FROM resources WHERE type = ? AND name = ?`,
+		resourceType, name,
+	).Scan(
+		&md.Name, &md.UID, &md.ResourceVersion, &finalizersJSON, &labelsJSON, &annotationsJSON,
+		&md.CreatedAt, &md.UpdatedAt, &deletionTimestamp, &specJSON, &statusJSON,
+	)
+	if err != nil {
+		return Metadata{}, fmt.Errorf("reload resource: %w", err)
+	}
+
+	_ = json.Unmarshal([]byte(finalizersJSON), &md.Finalizers)
+	_ = json.Unmarshal([]byte(labelsJSON), &md.Labels)
+	_ = json.Unmarshal([]byte(annotationsJSON), &md.Annotations)
+	if deletionTimestamp.Valid {
+		t := deletionTimestamp.Time
+		md.DeletionTimestamp = &t
+	}
+
+	s.publish(eventType, resourceType, md, json.RawMessage(specJSON), json.RawMessage(statusJSON))
+
+	return md, nil
+}
+
 // UpdateResource updates spec of an existing resource. Checks resourceVersion for optimistic concurrency.
 func (s *Store) UpdateResource(resourceType, name string, currentVersion int64, spec any, labels, annotations map[string]string) (Metadata, error) {
 	specJSON, err := json.Marshal(spec)
@@ -574,7 +650,7 @@ func (s *Store) UpdateResource(resourceType, name string, currentVersion int64, 
 		return Metadata{}, ErrConflict
 	}
 
-	return s.GetResource(resourceType, name, nil, nil)
+	return s.updateResourceMetadataAndPublish("MODIFIED", resourceType, name)
 }
 
 // UpdateStatus updates only the status section of a resource.
@@ -600,7 +676,7 @@ func (s *Store) UpdateStatus(resourceType, name string, status any) (Metadata, e
 		return Metadata{}, ErrNotFound
 	}
 
-	return s.GetResource(resourceType, name, nil, nil)
+	return s.updateResourceMetadataAndPublish("MODIFIED", resourceType, name)
 }
 
 // DeleteResource sets deletionTimestamp on a resource (finalizer-controlled deletion).
@@ -621,18 +697,25 @@ func (s *Store) DeleteResource(resourceType, name string) (Metadata, error) {
 		return Metadata{}, ErrNotFound
 	}
 
-	return s.GetResource(resourceType, name, nil, nil)
+	return s.updateResourceMetadataAndPublish("DELETED", resourceType, name)
 }
 
 // RemoveResource permanently deletes a resource from the database.
 // Called after all finalizers are cleared.
 func (s *Store) RemoveResource(resourceType, name string) error {
+	// Snapshot before delete so we can publish the final removal event.
+	md, _ := s.GetResource(resourceType, name, nil, nil)
+
 	_, err := s.db.Exec(
 		`DELETE FROM resources WHERE type = ? AND name = ?`,
 		resourceType, name,
 	)
 	if err != nil {
 		return fmt.Errorf("remove resource: %w", err)
+	}
+
+	if md.Name != "" {
+		s.publish("DELETED", resourceType, md, nil, nil)
 	}
 	return nil
 }
