@@ -463,31 +463,37 @@ a:hover { color: var(--accent); }
 }
 .ds-sidebar-section-label:first-child { margin-top: 0; }
 
-/* ===== Modal overlay (W2) ===== */
-.ds-modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: oklch(0% 0 0 / 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 500;
-}
-.ds-modal {
+/* ===== Modal (native <dialog>) ===== */
+dialog.ds-modal {
   background: var(--paper);
-  border: 1px solid var(--rule);
-  padding: 1.5rem;
+  border: 1px solid var(--ink);
+  padding: 0;
+  margin: auto;
   min-width: 20rem;
   max-width: 32rem;
   max-height: 80vh;
-  overflow-y: auto;
+  width: fit-content;
+  color: var(--ink);
 }
+dialog.ds-modal::backdrop {
+  background: oklch(0% 0 0 / 0.5);
+}
+dialog.ds-modal[open] {
+  display: block;
+  animation: ds-modal-fadein 0.12s ease-out;
+}
+@keyframes ds-modal-fadein {
+  from { opacity: 0; transform: translateY(-0.25rem); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.ds-modal--sm { min-width: 16rem; max-width: 22rem; }
+.ds-modal--lg { min-width: 28rem; max-width: 48rem; }
 .ds-modal-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 1rem;
-  padding-bottom: 0.75rem;
+  margin: 0;
+  padding: 0.875rem 1.25rem;
   border-bottom: 1px solid var(--rule);
 }
 .ds-modal-title {
@@ -495,17 +501,60 @@ a:hover { color: var(--accent); }
   font-size: 0.875rem;
   font-weight: 700;
   color: var(--ink);
+  margin: 0;
 }
 .ds-modal-close {
   background: none;
   border: none;
   cursor: pointer;
   font-family: var(--font-display);
-  font-size: 0.875rem;
+  font-size: 1rem;
   color: var(--ink-muted);
   padding: 0;
+  line-height: 1;
 }
 .ds-modal-close:hover { color: var(--negative); }
+.ds-modal-body {
+  padding: 1.25rem;
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  color: var(--ink);
+}
+.ds-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--rule);
+}
+.ds-confirm-message {
+  margin: 0;
+  font-family: var(--body-font, var(--font-body));
+  font-size: 0.875rem;
+  color: var(--ink);
+  line-height: 1.5;
+}
+
+/* Button variants for confirm dialogs (extend ds-btn). */
+.ds-btn--secondary {
+  background: var(--paper);
+  color: var(--ink);
+  border-color: var(--ink);
+}
+.ds-btn--secondary:hover {
+  background: var(--surface);
+  border-color: var(--ink);
+}
+.ds-btn--danger {
+  background: var(--negative);
+  color: var(--paper);
+  border-color: var(--negative);
+}
+.ds-btn--danger:hover {
+  background: oklch(45% 0.14 25);
+  border-color: oklch(45% 0.14 25);
+}
 
 /* ===== Card (for detail pages) ===== */
 .ds-card {
