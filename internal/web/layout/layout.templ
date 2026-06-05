@@ -62,6 +62,37 @@ templ Base(props BaseProps) {
 		<script src="https://unpkg.com/htmx.org@2.0.4"></script>
 		<script src="https://unpkg.com/htmx-ext-sse@2.3.1/sse.js"></script>
 		<script defer src="https://unpkg.com/alpinejs@3.14.8/dist/cdn.min.js"></script>
+		<script>
+			document.addEventListener('click', function(ev) {
+				var t = ev.target;
+				if (!(t instanceof Element)) return;
+				// Open: any element with data-modal-open="<id>"
+				var opener = t.closest('[data-modal-open]');
+				if (opener) {
+					var id = opener.getAttribute('data-modal-open');
+					var d = document.getElementById(id);
+					if (d && d.tagName === 'DIALOG') { d.showModal(); }
+				}
+				// Close: any element with data-modal-close, or backdrop click on dialog
+				var closer = t.closest('[data-modal-close]');
+				if (closer) {
+					var d = closer.closest('dialog');
+					if (d) { d.close(); }
+				}
+			});
+			// Backdrop click → close. Native dialog forwards the click to the backdrop
+				// when the dialog itself is clicked (not its contents) because dialog has padding:0
+				// and contents are wrapped in a full-size box. We rely on the rect check.
+			document.addEventListener('click', function(ev) {
+				var t = ev.target;
+				if (t && t.tagName === 'DIALOG' && t.classList.contains('ds-modal')) {
+					var r = t.getBoundingClientRect();
+					var inside = ev.clientX >= r.left && ev.clientX <= r.right &&
+					            ev.clientY >= r.top  && ev.clientY <= r.bottom;
+					if (!inside) { t.close(); }
+				}
+			});
+		</script>
 	</head>
 	<body>
 		if props.Page != "login" {
