@@ -8,6 +8,7 @@ type DashboardData struct {
 	ProviderCount  int
 	NodeGroupCount int
 	Tenants        []TenantSummary
+	LiveStream     bool // true when /events/stream is available
 }
 
 type TenantSummary struct {
@@ -18,25 +19,54 @@ type TenantSummary struct {
 }
 
 templ Dashboard(data DashboardData) {
-	<h1 class="ds-page-title">Overview</h1>
-	<div class="ds-grid ds-grid-4 ds-stats-row">
-		<div class="ds-stat-block">
-			<div class="ds-stat-label">Clusters</div>
-			<div class="ds-stat-value">{ fmt.Sprintf("%d", data.TenantCount) }</div>
+	if data.LiveStream {
+		<div hx-ext="sse" sse-connect="/events/stream" sse-close="navigate">
+			<h1 class="ds-page-title">Overview</h1>
+			<div class="ds-grid ds-grid-4 ds-stats-row" id="stat-grid" sse-swap="message" hx-swap="innerHTML">
+				<div class="ds-stat-block">
+					<div class="ds-stat-label">Clusters</div>
+					<div class="ds-stat-value">{ fmt.Sprintf("%d", data.TenantCount) }</div>
+				</div>
+				<div class="ds-stat-block">
+					<div class="ds-stat-label">Machines</div>
+					<div class="ds-stat-value">{ fmt.Sprintf("%d", data.MachineCount) }</div>
+				</div>
+				<div class="ds-stat-block">
+					<div class="ds-stat-label">Providers</div>
+					<div class="ds-stat-value">{ fmt.Sprintf("%d", data.ProviderCount) }</div>
+				</div>
+				<div class="ds-stat-block">
+					<div class="ds-stat-label">Node Groups</div>
+					<div class="ds-stat-value">{ fmt.Sprintf("%d", data.NodeGroupCount) }</div>
+				</div>
+			</div>
+			@clustersTable(data)
 		</div>
-		<div class="ds-stat-block">
-			<div class="ds-stat-label">Machines</div>
-			<div class="ds-stat-value">{ fmt.Sprintf("%d", data.MachineCount) }</div>
+	} else {
+		<h1 class="ds-page-title">Overview</h1>
+		<div class="ds-grid ds-grid-4 ds-stats-row">
+			<div class="ds-stat-block" id="stat-tenants">
+				<div class="ds-stat-label">Clusters</div>
+				<div class="ds-stat-value">{ fmt.Sprintf("%d", data.TenantCount) }</div>
+			</div>
+			<div class="ds-stat-block" id="stat-machines">
+				<div class="ds-stat-label">Machines</div>
+				<div class="ds-stat-value">{ fmt.Sprintf("%d", data.MachineCount) }</div>
+			</div>
+			<div class="ds-stat-block" id="stat-providers">
+				<div class="ds-stat-label">Providers</div>
+				<div class="ds-stat-value">{ fmt.Sprintf("%d", data.ProviderCount) }</div>
+			</div>
+			<div class="ds-stat-block" id="stat-nodegroups">
+				<div class="ds-stat-label">Node Groups</div>
+				<div class="ds-stat-value">{ fmt.Sprintf("%d", data.NodeGroupCount) }</div>
+			</div>
 		</div>
-		<div class="ds-stat-block">
-			<div class="ds-stat-label">Providers</div>
-			<div class="ds-stat-value">{ fmt.Sprintf("%d", data.ProviderCount) }</div>
-		</div>
-		<div class="ds-stat-block">
-			<div class="ds-stat-label">Node Groups</div>
-			<div class="ds-stat-value">{ fmt.Sprintf("%d", data.NodeGroupCount) }</div>
-		</div>
-	</div>
+		@clustersTable(data)
+	}
+}
+
+templ clustersTable(data DashboardData) {
 	if len(data.Tenants) > 0 {
 		<div class="ds-section-header">Clusters</div>
 		<div class="ds-table-wrapper">

@@ -17,6 +17,8 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/auth"
 	"github.com/rezuscloud/rezuscloud/internal/ingress"
 	"github.com/rezuscloud/rezuscloud/internal/state"
+	"github.com/rezuscloud/rezuscloud/internal/watch"
+	"github.com/rezuscloud/rezuscloud/internal/watchbus"
 	"github.com/rezuscloud/rezuscloud/internal/web"
 	"github.com/rezuscloud/rezuscloud/version"
 )
@@ -40,6 +42,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("state init: %v", err)
 	}
+
+	// Initialize watch bus + wire into store mutations.
+	bus := watch.NewBus()
+	store.SetBus(watchbus.New(bus))
 
 	// Initialize auth.
 	jwtManager := auth.NewJWTManager(cfg.JWTSecret)
@@ -78,7 +84,7 @@ func main() {
 	}
 
 	// WebUI.
-	webHandler := web.NewHandler(store)
+	webHandler := web.NewHandler(store, jwtManager, bus)
 	webHandler.RegisterRoutes(mux)
 
 	srv := &http.Server{
