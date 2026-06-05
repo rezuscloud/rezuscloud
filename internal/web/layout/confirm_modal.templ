@@ -1,0 +1,135 @@
+package layout
+
+// ConfirmModalProps configures a ConfirmModal — a higher-level wrapper around
+// Modal for "are you sure?" dialogs.
+//
+// The confirm button carries HTMX attributes (hx-post/hx-delete/...) so the
+// server-side handler is invoked when the user confirms. The cancel button
+// closes the modal natively.
+type ConfirmModalProps struct {
+	ID           string // unique DOM id, e.g. "delete-cluster-confirm"
+	Title        string // e.g. "Delete cluster?"
+	Message      string // body text shown in .ds-modal-body
+	ConfirmLabel string // visible label on the confirm button; defaults to "Confirm"
+	ConfirmClass string // CSS class appended to the confirm button: "ds-btn--danger", "ds-btn--primary", etc.
+	CancelLabel  string // visible label on the cancel button; defaults to "Cancel"
+	HTMXVerb     string // "post", "put", "delete", "patch" — used to pick the hx-* attribute
+	HTMXAction   string // URL for hx-post / hx-delete / etc.
+	HTMXTarget   string // hx-target selector, e.g. "#cluster-detail" — empty means default
+	HTMXSwap     string // hx-swap strategy, defaults to "outerHTML"
+}
+
+// confirmLabelOrDefault returns the confirm label with a sane default.
+func confirmLabelOrDefault(label string) string {
+	if label == "" {
+		return "Confirm"
+	}
+	return label
+}
+
+// cancelLabelOrDefault returns the cancel label with a sane default.
+func cancelLabelOrDefault(label string) string {
+	if label == "" {
+		return "Cancel"
+	}
+	return label
+}
+
+// htmxSwapOrDefault returns the swap strategy with a sane default.
+func htmxSwapOrDefault(swap string) string {
+	if swap == "" {
+		return "outerHTML"
+	}
+	return swap
+}
+
+// ConfirmModal renders a Modal with a fixed title + message + two-button
+// footer. The confirm button carries the HTMX attributes supplied in props.
+//
+// The four HTMX verbs are rendered as four separate <button> branches rather
+// than one button with conditional attributes. This avoids templ's restriction
+// on if-statements inside attribute lists while keeping the rendered HTML
+// clean (only the matching branch appears in the DOM).
+//
+// Example:
+//
+//	@ConfirmModal(ConfirmModalProps{
+//	    ID: "delete-cluster",
+//	    Title: "Delete cluster?",
+//	    Message: "This will permanently remove cluster 'prod'.",
+//	    ConfirmLabel: "Delete",
+//	    ConfirmClass: "ds-btn--danger",
+//	    HTMXVerb: "delete",
+//	    HTMXAction: "/api/v1/tenants/prod",
+//	    HTMXTarget: "#main",
+//	})
+templ ConfirmModal(props ConfirmModalProps) {
+	@Modal(ModalProps{
+		ID:    props.ID,
+		Title: props.Title,
+	}) {
+		<p class="ds-confirm-message">{ props.Message }</p>
+		<div class="ds-modal-footer">
+			<button type="button" class="ds-btn ds-btn--secondary" data-modal-close>
+				{ cancelLabelOrDefault(props.CancelLabel) }
+			</button>
+			if props.HTMXVerb == "post" {
+				<button
+					type="button"
+					class={ templ.Classes("ds-btn", templ.KV(props.ConfirmClass, props.ConfirmClass != "")) }
+					hx-post={ props.HTMXAction }
+					if props.HTMXTarget != "" {
+						hx-target={ props.HTMXTarget }
+					}
+					hx-swap={ htmxSwapOrDefault(props.HTMXSwap) }
+				>
+					{ confirmLabelOrDefault(props.ConfirmLabel) }
+				</button>
+			} else if props.HTMXVerb == "put" {
+				<button
+					type="button"
+					class={ templ.Classes("ds-btn", templ.KV(props.ConfirmClass, props.ConfirmClass != "")) }
+					hx-put={ props.HTMXAction }
+					if props.HTMXTarget != "" {
+						hx-target={ props.HTMXTarget }
+					}
+					hx-swap={ htmxSwapOrDefault(props.HTMXSwap) }
+				>
+					{ confirmLabelOrDefault(props.ConfirmLabel) }
+				</button>
+			} else if props.HTMXVerb == "delete" {
+				<button
+					type="button"
+					class={ templ.Classes("ds-btn", templ.KV(props.ConfirmClass, props.ConfirmClass != "")) }
+					hx-delete={ props.HTMXAction }
+					if props.HTMXTarget != "" {
+						hx-target={ props.HTMXTarget }
+					}
+					hx-swap={ htmxSwapOrDefault(props.HTMXSwap) }
+				>
+					{ confirmLabelOrDefault(props.ConfirmLabel) }
+				</button>
+			} else if props.HTMXVerb == "patch" {
+				<button
+					type="button"
+					class={ templ.Classes("ds-btn", templ.KV(props.ConfirmClass, props.ConfirmClass != "")) }
+					hx-patch={ props.HTMXAction }
+					if props.HTMXTarget != "" {
+						hx-target={ props.HTMXTarget }
+					}
+					hx-swap={ htmxSwapOrDefault(props.HTMXSwap) }
+				>
+					{ confirmLabelOrDefault(props.ConfirmLabel) }
+				</button>
+			} else {
+				<button
+					type="button"
+					class={ templ.Classes("ds-btn", templ.KV(props.ConfirmClass, props.ConfirmClass != "")) }
+					hx-swap={ htmxSwapOrDefault(props.HTMXSwap) }
+				>
+					{ confirmLabelOrDefault(props.ConfirmLabel) }
+				</button>
+			}
+		</div>
+	}
+}

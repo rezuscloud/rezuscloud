@@ -1,0 +1,70 @@
+package layout
+
+// ModalProps configures a Modal component.
+//
+// The modal uses the native HTML <dialog> element. The trigger button
+// (ModalTrigger) sets data-modal-open="<ID>"; a small inline script wires
+// those triggers to dialog.showModal(). ESC and backdrop click close natively.
+type ModalProps struct {
+	ID         string // unique DOM id, e.g. "delete-cluster-modal"
+	Title      string
+	CloseLabel string // visible label on the close button; defaults to "Close" if empty
+	Size       string // "", "sm", "lg" — default medium. Adds ds-modal--sm / ds-modal--lg.
+}
+
+// modalSizeClass normalises the size to a CSS modifier.
+func modalSizeClass(size string) string {
+	switch size {
+	case "sm", "lg":
+		return "ds-modal--" + size
+	default:
+		return ""
+	}
+}
+
+// modalCloseLabel returns the close button label with a sane default.
+func modalCloseLabel(label string) string {
+	if label == "" {
+		return "Close"
+	}
+	return label
+}
+
+// Modal renders a native <dialog> with the given ID. The first call to
+// dialog.showModal() opens it (from ModalTrigger or any element with
+// data-modal-open="<ID>"). ESC and backdrop click close natively.
+//
+// The caller wraps content via templ's children pattern:
+//
+//	@Modal(ModalProps{ID: "x", Title: "T"}) {
+//	    <p>body</p>
+//	    ...
+//	}
+//
+// Children render inside .ds-modal-body.
+templ Modal(props ModalProps) {
+	<dialog id={ props.ID } class={ templ.Classes("ds-modal", templ.KV(modalSizeClass(props.Size), modalSizeClass(props.Size) != "")) } aria-modal="true" aria-labelledby={ props.ID + "-title" }>
+		<div class="ds-modal-header">
+			<h2 id={ props.ID + "-title" } class="ds-modal-title">{ props.Title }</h2>
+			<button type="button" class="ds-modal-close" data-modal-close aria-label="Close">×</button>
+		</div>
+		<div class="ds-modal-body">
+			{ children... }
+		</div>
+	</dialog>
+}
+
+// ModalTrigger renders a <button> that opens the modal with the given ID
+// when clicked. Class is appended to the default ds-btn class.
+//
+// Use ModalTrigger for the typical "open modal" affordance. For programmatic
+// opening from JS or HTMX, render any element with data-modal-open="<id>".
+templ ModalTrigger(targetID, class, label string) {
+	<button
+		type="button"
+		class={ templ.Classes("ds-btn", templ.KV(class, class != "")) }
+		data-modal-open={ targetID }
+	>
+		{ label }
+	</button>
+}
