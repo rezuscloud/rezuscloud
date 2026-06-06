@@ -1,0 +1,146 @@
+package pages
+
+import "fmt"
+
+// ProvidersPageData drives /providers.
+type ProvidersPageData struct {
+	Providers []ProviderRow
+	Total     int
+	CanMutate bool
+}
+
+// ProviderRow is one rendered provider row.
+type ProviderRow struct {
+	Type          string
+	Endpoint      string
+	Connected     bool
+	LastHeartbeat string
+	MachineTypes  []string
+	Regions       []string
+	Error         string
+}
+
+// ProvidersPage renders /providers.
+templ ProvidersPage(data ProvidersPageData) {
+	<h1 class="ds-page-title">Providers</h1>
+	if len(data.Providers) == 0 {
+		<div class="ds-empty">
+			<p>No provider adapters are registered.</p>
+			<p class="ds-text-muted ds-text-small">
+				Providers connect outbound via gRPC and register themselves with
+				the management plane. See <code>rezusctl provider serve</code> for
+				adapting a cloud or hypervisor.
+			</p>
+		</div>
+	} else {
+		<div class="ds-grid ds-grid-4" style="margin-bottom: 1rem;">
+			<div class="ds-stat-block">
+				<div class="ds-stat-label">Total</div>
+				<div class="ds-stat-value">{ fmt.Sprintf("%d", data.Total) }</div>
+			</div>
+			<div class="ds-stat-block">
+				<div class="ds-stat-label">Connected</div>
+				<div class="ds-stat-value">{ fmt.Sprintf("%d", countConnected(data.Providers)) }</div>
+			</div>
+			<div class="ds-stat-block">
+				<div class="ds-stat-label">Errors</div>
+				<div class="ds-stat-value">{ fmt.Sprintf("%d", countErrors(data.Providers)) }</div>
+			</div>
+			<div class="ds-stat-block">
+				<div class="ds-stat-label">Machine Types</div>
+				<div class="ds-stat-value">{ fmt.Sprintf("%d", countMachineTypes(data.Providers)) }</div>
+			</div>
+		</div>
+		<div class="ds-table-wrapper">
+			<table class="ds-table">
+				<thead>
+					<tr>
+						<th class="ds-table-th">Type</th>
+						<th class="ds-table-th">Endpoint</th>
+						<th class="ds-table-th">Status</th>
+						<th class="ds-table-th">Last Heartbeat</th>
+						<th class="ds-table-th">Machine Types</th>
+						<th class="ds-table-th">Regions</th>
+						<th class="ds-table-th">Error</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, p := range data.Providers {
+						<tr class="ds-table-row">
+							<td class="ds-table-td"><strong>{ p.Type }</strong></td>
+							<td class="ds-table-td ds-table-mono">{ p.Endpoint }</td>
+							<td class="ds-table-td">
+								if p.Connected {
+									<span class="ds-status-badge ds-status-badge--positive">connected</span>
+								} else {
+									<span class="ds-status-badge ds-status-badge--negative">disconnected</span>
+								}
+							</td>
+							<td class="ds-table-td ds-text-muted">{ p.LastHeartbeat }</td>
+							<td class="ds-table-td">
+								if len(p.MachineTypes) == 0 {
+									<span class="ds-text-muted">—</span>
+								} else {
+									<span class="ds-text-mono">{ joinStrings(p.MachineTypes, ", ") }</span>
+								}
+							</td>
+							<td class="ds-table-td">
+								if len(p.Regions) == 0 {
+									<span class="ds-text-muted">—</span>
+								} else {
+									<span class="ds-text-mono">{ joinStrings(p.Regions, ", ") }</span>
+								}
+							</td>
+							<td class="ds-table-td">
+								if p.Error != "" {
+									<span class="ds-text-danger">{ p.Error }</span>
+								} else {
+									<span class="ds-text-muted">—</span>
+								}
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	}
+}
+
+func countConnected(rows []ProviderRow) int {
+	n := 0
+	for _, p := range rows {
+		if p.Connected {
+			n++
+		}
+	}
+	return n
+}
+
+func countErrors(rows []ProviderRow) int {
+	n := 0
+	for _, p := range rows {
+		if p.Error != "" || !p.Connected {
+			n++
+		}
+	}
+	return n
+}
+
+func countMachineTypes(rows []ProviderRow) int {
+	n := 0
+	for _, p := range rows {
+		n += len(p.MachineTypes)
+	}
+	return n
+}
+
+func joinStrings(items []string, sep string) string {
+	if len(items) == 0 {
+		return ""
+	}
+	out := items[0]
+	for _, s := range items[1:] {
+		out += sep + s
+	}
+	return out
+}

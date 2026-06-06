@@ -2746,3 +2746,129 @@ func TestAuditPage_NoStoreReturnsUnavailable(t *testing.T) {
 		t.Errorf("status = %d, want 503", w.Code)
 	}
 }
+
+// --- W11: Providers + manual join ---
+
+func TestProvidersPage_Empty(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	req := authedRequestAs(http.MethodGet, "/providers", cookie, "", "admin", auth.RoleAdmin)
+	w := httptest.NewRecorder()
+	h.ProvidersPage(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "No provider adapters") {
+		t.Errorf("empty page should render empty-state, got tail: %s", body[len(body)-min(len(body), 200):])
+	}
+}
+
+func TestProvidersPage_WithProviders(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	// Seed providers.
+	_, _ = store.UpsertProvider("hetzner",
+		state.ProviderSpec{Endpoint: "grpc://provider-hetzner:50190"},
+		state.ProviderStatus{
+			Connected:     true,
+			LastHeartbeat: time.Now(),
+			Schema: &state.ProviderSchema{
+				MachineTypes: []string{"cx21", "cx31"},
+				Regions:      []string{"fsn1", "nbg1"},
+			},
+		}, nil)
+	_, _ = store.UpsertProvider("broken",
+		state.ProviderSpec{Endpoint: "grpc://provider-broken:50190"},
+		state.ProviderStatus{
+			Connected: false,
+			Error:     "connection refused",
+		}, nil)
+
+	req := authedRequestAs(http.MethodGet, "/providers", cookie, "", "admin", auth.RoleAdmin)
+	w := httptest.NewRecorder()
+	h.ProvidersPage(w, req)
+
+	body := w.Body.String()
+	if !strings.Contains(body, "hetzner") {
+		t.Errorf("expected hetzner in body")
+	}
+	if !strings.Contains(body, "cx21") {
+		t.Errorf("expected machine type cx21 in body")
+	}
+	if !strings.Contains(body, "connection refused") {
+		t.Errorf("expected error message in body")
+	}
+	if !strings.Contains(body, "disconnected") {
+		t.Errorf("expected disconnected badge")
+	}
+}
+
+func TestManualJoinPage_WithTokens(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	// Create tenant + active join token.
+	_, _ = store.CreateTenant("prod", state.TenantSpec{KubernetesVersion: "1.30.0"}, nil, nil)
+	_, _ = store.CreateJoinToken("abcdef0123456789abcd", state.JoinTokenSpec{
+		NodeGroup: "workers",
+	}, "prod", "workers")
+
+	req := authedRequestAs(http.MethodGet, "/machines/join-manual", cookie, "", "admin", auth.RoleAdmin)
+	w := httptest.NewRecorder()
+	h.ManualJoinPage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "siderolink.api=https://") {
+		t.Errorf("expected kernel args with siderolink.api in body")
+	}
+	if !strings.Contains(body, "jointoken=abcdef0123456789abcd") {
+		t.Errorf("expected full token in kernel args preview")
+	}
+}
+
+func TestManualJoinPage_NoTokens(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	req := authedRequestAs(http.MethodGet, "/machines/join-manual", cookie, "", "admin", auth.RoleAdmin)
+	w := httptest.NewRecorder()
+	h.ManualJoinPage(w, req)
+
+	body := w.Body.String()
+	if !strings.Contains(body, "No active join tokens") {
+		t.Errorf("empty page should show empty-state")
+	}
+}
+
+func TestManualJoinPage_ImageFactoryLink(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	// Set custom Image Factory URL via env var.
+	t.Setenv("REZUSCLOUD_IMAGE_FACTORY_URL", "https://custom-factory.example.com")
+
+	req := authedRequestAs(http.MethodGet, "/machines/join-manual", cookie, "", "admin", auth.RoleAdmin)
+	w := httptest.NewRecorder()
+	h.ManualJoinPage(w, req)
+
+	body := w.Body.String()
+	if !strings.Contains(body, "https://custom-factory.example.com") {
+		t.Errorf("expected custom factory URL in body")
+	}
+}

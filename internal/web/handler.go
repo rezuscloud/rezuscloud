@@ -85,6 +85,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /machines", h.AuthRequired(h.MachinesList))
 	mux.HandleFunc("GET /machines/jointokens", h.AuthRequired(h.JoinTokensList))
 	mux.HandleFunc("POST /machines/jointokens", h.AuthRequired(h.JoinTokenCreate))
+	mux.HandleFunc("GET /machines/join-manual", h.AuthRequired(h.ManualJoinPage))
 	mux.HandleFunc("GET /machines/pending", h.AuthRequired(h.MachinesPending))
 	mux.HandleFunc("GET /machines/{id}", h.AuthRequired(h.MachineDetail))
 	mux.HandleFunc("GET /machines/{id}/logs", h.AuthRequired(h.MachineLogs))
@@ -115,6 +116,9 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 
 	// Settings (W10 audit).
 	mux.HandleFunc("GET /settings/audit", h.AuthRequired(h.AuditPage))
+
+	// Providers + manual join (W11).
+	mux.HandleFunc("GET /providers", h.AuthRequired(h.ProvidersPage))
 
 	// Legacy /tenants aliases (kept for backward compatibility; /clusters is the
 	// user-facing name per W2). New code should use /clusters/*.
@@ -2496,4 +2500,125 @@ func (h *Handler) AuditPage(w http.ResponseWriter, r *http.Request) {
 		},
 		Toast: toast,
 	})
+}
+
+// --- Providers + manual join (W11) ---
+
+// ProvidersPage renders /providers with the live provider adapter table.
+func (h *Handler) ProvidersPage(w http.ResponseWriter, r *http.Request) {
+	providers, err := h.store.ListProviders()
+	if err != nil {
+		http.Error(w, "list providers failed", http.StatusInternalServerError)
+		return
+	}
+
+	rows := make([]pages.ProviderRow, 0, len(providers))
+	for _, p := range providers {
+		row := pages.ProviderRow{
+			Type:      p.Metadata.Name,
+			Endpoint:  p.Spec.Endpoint,
+			Connected: p.Status.Connected,
+		}
+		if !p.Status.LastHeartbeat.IsZero() {
+			row.LastHeartbeat = p.Status.LastHeartbeat.Format(time.RFC3339)
+		} else {
+			row.LastHeartbeat = "—"
+		}
+		if p.Status.Schema != nil {
+			row.MachineTypes = p.Status.Schema.MachineTypes
+			row.Regions = p.Status.Schema.Regions
+		}
+		row.Error = p.Status.Error
+		rows = append(rows, row)
+	}
+
+	toast := h.popToast(r)
+	h.render(w, r, layout.BaseProps{
+		Title:   "Providers",
+		Page:    "providers",
+		Content: pages.ProvidersPage(pages.ProvidersPageData{Providers: rows, Total: len(rows), CanMutate: h.canMutate(r)}),
+		Breadcrumb: []layout.BreadcrumbItem{
+			{Name: "Providers", Current: true},
+		},
+		Toast: toast,
+	})
+}
+
+// ManualJoinPage renders /machines/join-manual with active join tokens and
+// kernel args previews. Per ADR 17, installation media stays link-based.
+func (h *Handler) ManualJoinPage(w http.ResponseWriter, r *http.Request) {
+	endpoint := os.Getenv("REZUSCLOUD_MACHINELINK_PUBLIC_ENDPOINT")
+	if endpoint == "" {
+		endpoint = h.machineLinkEndpoint()
+	}
+
+	jtRecords, _, err := h.store.ListJoinTokens()
+	if err != nil {
+		http.Error(w, "list join tokens failed", http.StatusInternalServerError)
+		return
+	}
+
+	rows := make([]pages.ManualJoinToken, 0, len(jtRecords))
+	for _, jt := range jtRecords {
+		if jt.Status.Used {
+			continue
+		}
+		// Skip expired.
+		if !jt.Spec.ExpiresAt.IsZero() && time.Now().UTC().After(jt.Spec.ExpiresAt) {
+			continue
+		}
+		tokenPreview := jt.Metadata.Name
+		if len(tokenPreview) > 8 {
+			tokenPreview = tokenPreview[:8] + "…"
+		}
+		cluster := jt.Metadata.Labels["rezuscloud.io/tenant"]
+		expires := ""
+		if !jt.Spec.ExpiresAt.IsZero() {
+			expires = jt.Spec.ExpiresAt.Format(time.RFC3339)
+		}
+		rows = append(rows, pages.ManualJoinToken{
+			Token:      tokenPreview,
+			Cluster:    cluster,
+			NodeGroup:  jt.Spec.NodeGroup,
+			KernelArgs: kernelArgsPreview(jt.Metadata.Name, endpoint),
+			ExpiresAt:  expires,
+		})
+	}
+
+	data := pages.ManualJoinPageData{
+		ClusterNames: h.tenantNames(),
+		JoinTokens:   rows,
+		CanMutate:    h.canMutate(r),
+	}
+
+	// Image Factory link (ADR 17: link-only, no embedded wizard).
+	if url := os.Getenv("REZUSCLOUD_IMAGE_FACTORY_URL"); url != "" {
+		data.HelperURL = url
+		data.HelperText = "Generate a Talos installation image that boots with your kernel args."
+	} else {
+		data.HelperURL = "https://factory.talos.dev/"
+		data.HelperText = "Use Image Factory to generate a Talos ISO or raw image; boot it with the kernel args below."
+	}
+
+	toast := h.popToast(r)
+	h.render(w, r, layout.BaseProps{
+		Title:   "Manual Join",
+		Page:    "machines",
+		Content: pages.ManualJoinPage(data),
+		Breadcrumb: []layout.BreadcrumbItem{
+			{Name: "Machines", URL: "/machines"},
+			{Name: "Manual Join", Current: true},
+		},
+		Toast: toast,
+	})
+}
+
+// tenantNames returns the list of existing tenant names.
+func (h *Handler) tenantNames() []string {
+	tenants, _, _ := h.store.ListTenants()
+	out := make([]string, 0, len(tenants))
+	for _, t := range tenants {
+		out = append(out, t.Metadata.Name)
+	}
+	return out
 }
