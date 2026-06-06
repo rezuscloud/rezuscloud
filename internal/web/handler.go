@@ -35,6 +35,7 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/upgrade"
 	"github.com/rezuscloud/rezuscloud/internal/watch"
 	"github.com/rezuscloud/rezuscloud/internal/web/handlers/authn"
+	dashhandler "github.com/rezuscloud/rezuscloud/internal/web/handlers/dashboard"
 	"github.com/rezuscloud/rezuscloud/internal/web/layout"
 	"github.com/rezuscloud/rezuscloud/internal/web/pages"
 	staticFiles "github.com/rezuscloud/rezuscloud/internal/web/static"
@@ -112,8 +113,11 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	authnHandler := authn.New(h.store, h.jwtManager, h)
 	authnHandler.RegisterRoutes(mux)
 
+	// Dashboard + SSE event stream, served by the dashboard sub-package.
+	dashboardHandler := dashhandler.New(h.store, h.bus, h.auditStore, h.backupAdapter(), h.upgradeAdapter(), h)
+	dashboardHandler.RegisterRoutes(mux)
+
 	// Authenticated pages.
-	mux.HandleFunc("GET /", h.AuthRequired(h.Dashboard))
 	mux.HandleFunc("GET /clusters", h.AuthRequired(h.TenantsList))
 	mux.HandleFunc("GET /clusters/create", h.AuthRequired(h.ClusterCreatePage))
 	mux.HandleFunc("POST /clusters/create", h.AuthRequired(h.ClusterCreateSubmit))
@@ -181,10 +185,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /tenants", h.AuthRequired(h.TenantsList))
 	mux.HandleFunc("GET /tenants/{name}", h.AuthRequired(h.TenantDetail))
 
-	// SSE stream — optional, only when bus is configured.
-	if h.bus != nil {
-		mux.HandleFunc("GET /events/stream", h.AuthRequired(h.EventsStream))
-	}
+	// SSE stream — registered by the dashboard sub-package; this block is
+	// now empty. Kept as a marker for the reader who traces route ownership.
 
 	// Static assets (W12 logs/monitor SSE consumers).
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFiles.Files))))
@@ -241,6 +243,7 @@ func (h *Handler) Render(w http.ResponseWriter, r *http.Request, props layout.Ba
 // popToast reads + clears a flash toast from a query-string param.
 // Supports ?toast=... (plain message) and optionally ?toast-type=success|error.
 // Returns zero-value ToastData if no message is present.
+// Exported as PopToast so sub-packages (web/handlers/*) can reuse it.
 func (h *Handler) popToast(r *http.Request) layout.ToastData {
 	msg := r.URL.Query().Get("toast")
 	if msg == "" {
@@ -250,6 +253,11 @@ func (h *Handler) popToast(r *http.Request) layout.ToastData {
 		Type:    r.URL.Query().Get("toast-type"),
 		Message: msg,
 	}
+}
+
+// PopToast satisfies the web/handlers/* Host interface (popToast alias).
+func (h *Handler) PopToast(r *http.Request) layout.ToastData {
+	return h.popToast(r)
 }
 
 // currentTab extracts the tab segment from the URL path. Returns "overview"
@@ -275,6 +283,10 @@ func (h *Handler) canMutate(r *http.Request) bool {
 }
 
 // tenantSummaries loads tenants with computed phase and machine counts.
+// Exported as TenantSummaries so sub-packages can call back into the
+// canonical loader (the loader needs cross-section data — tenants, machines,
+// node groups — and lives behind one seam to ensure consistent phase
+// classification across pages).
 func (h *Handler) tenantSummaries() []pages.TenantSummary {
 	tenants, _, _ := h.store.ListTenants()
 	out := make([]pages.TenantSummary, 0, len(tenants))
@@ -296,6 +308,11 @@ func (h *Handler) tenantSummaries() []pages.TenantSummary {
 		out = append(out, summary)
 	}
 	return out
+}
+
+// TenantSummaries satisfies the web/handlers/* Host interface (tenantSummaries alias).
+func (h *Handler) TenantSummaries() []pages.TenantSummary {
+	return h.tenantSummaries()
 }
 
 // nodeGroupSummaries loads node groups for a tenant and returns the statemachine summary view.
