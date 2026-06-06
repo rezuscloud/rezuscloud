@@ -1,0 +1,59 @@
+package pages
+
+type PatchEditData struct {
+	Cluster    string
+	Name       string
+	Format     string
+	TargetRole string
+	Enabled    bool
+	Patch      string
+	CanMutate  bool
+	FormError  string
+}
+
+templ PatchEdit(data PatchEditData) {
+	<div class="ds-page-header-row">
+		<h1 class="ds-page-title">Edit Patch — { data.Name }</h1>
+		<div class="ds-header-actions">
+			<a href={ templ.URL("/clusters/" + data.Cluster + "/patches") } class="ds-btn ds-btn--secondary">Back</a>
+		</div>
+	</div>
+
+	if data.FormError != "" {
+		<div class="ds-alert" role="alert">{ data.FormError }</div>
+	}
+
+	<form method="post" action={ templ.URL("/clusters/" + data.Cluster + "/patches/" + data.Name + "/save") } class="ds-card">
+		<div class="ds-input-group">
+			<label class="ds-label" for="patch-format">Format</label>
+			<select id="patch-format" name="format" class="ds-input" if !data.CanMutate { disabled }>
+				<option value="strategic" if data.Format == "strategic" { selected }>strategic</option>
+				<option value="json6902" if data.Format == "json6902" { selected }>json6902</option>
+				<option value="text" if data.Format == "text" { selected }>text</option>
+			</select>
+		</div>
+		<div class="ds-input-group">
+			<label class="ds-label" for="patch-target">Target role</label>
+			<select id="patch-target" name="targetRole" class="ds-input" if !data.CanMutate { disabled }>
+				<option value="all" if data.TargetRole == "all" || data.TargetRole == "" { selected }>all</option>
+				<option value="controlplane" if data.TargetRole == "controlplane" { selected }>controlplane</option>
+				<option value="worker" if data.TargetRole == "worker" { selected }>worker</option>
+				<option value="kernel" if data.TargetRole == "kernel" { selected }>kernel</option>
+			</select>
+		</div>
+		<div class="ds-input-group">
+			<label class="ds-label"><input type="checkbox" name="enabled" value="true" if data.Enabled { checked } if !data.CanMutate { disabled }/> Enabled</label>
+		</div>
+		<div class="ds-input-group">
+			<label class="ds-label" for="patch-body">Patch body</label>
+			<textarea id="patch-body" name="patch" class="ds-input ds-input--textarea" rows="18" if !data.CanMutate { disabled }>{ data.Patch }</textarea>
+		</div>
+		if data.CanMutate {
+			<div class="ds-form-actions">
+				<button type="submit" class="ds-btn">Save</button>
+				<button type="submit" formaction={ templ.URL("/clusters/" + data.Cluster + "/patches/" + data.Name + "/toggle") } class="ds-btn ds-btn--secondary">Toggle Enabled</button>
+				<button type="submit" formaction={ templ.URL("/clusters/" + data.Cluster + "/patches/" + data.Name + "/delete") } class="ds-btn ds-btn--danger">Delete</button>
+			</div>
+		}
+	</form>
+}

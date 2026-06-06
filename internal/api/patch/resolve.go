@@ -32,7 +32,8 @@ func ResolvePatches(store *state.Store, tenant, role string) ([]string, error) {
 		}
 
 		// Filter by role if specified.
-		if ps.TargetRole != "" && role != "" && ps.TargetRole != role {
+		// "all" applies to all roles.
+		if ps.TargetRole != "" && ps.TargetRole != "all" && role != "" && ps.TargetRole != role {
 			continue
 		}
 
