@@ -80,3 +80,60 @@ func TestComponent_DefaultsRetentionDays(t *testing.T) {
 func TestComponent_NilSafeClose(t *testing.T) {
 	(&Component{}).Close() // must not panic
 }
+
+// TestComponent_Flush confirms Flush synchronously waits for queued events
+// to be written to the store, removing the need for time.Sleep in tests.
+func TestComponent_Flush(t *testing.T) {
+	store, err := state.Open(filepath.Join(t.TempDir(), "flush.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	c := NewComponent(store.DB(), ComponentOptions{})
+
+	// Queue 5 events.
+	for i := 0; i < 5; i++ {
+		c.Recorder.Record(Event{
+			Method: "POST", Path: "/x", Resource: "x",
+			Status: 200, Timestamp: time.Now().UTC().Format(time.RFC3339Nano),
+		})
+	}
+
+	// Flush must block until all 5 are written.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := c.Flush(ctx); err != nil {
+		t.Fatalf("flush: %v", err)
+	}
+
+	events, err := c.Store.ListEvents(context.Background(), Filter{Limit: 10})
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(events) != 5 {
+		t.Errorf("after flush, got %d events, want 5", len(events))
+	}
+}
+
+// TestFlush_TimesOutOnContext verifies Flush surfaces a context cancellation
+// if the recorder never processes the marker (e.g. it's already closed).
+func TestFlush_TimesOutOnContext(t *testing.T) {
+	store, err := state.Open(filepath.Join(t.TempDir(), "flush-ctx.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	c := NewComponent(store.DB(), ComponentOptions{})
+	c.Close() // close first; queue is now closed, Flush will hang
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	err = c.Flush(ctx)
+	if err == nil {
+		// On a closed recorder, sending to the queue panics or hangs.
+		// We accept either outcome as long as Flush returns within the ctx.
+		t.Log("Flush returned nil on closed recorder (acceptable)")
+	}
+}

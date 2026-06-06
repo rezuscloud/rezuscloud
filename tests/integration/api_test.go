@@ -6,6 +6,7 @@ package integration
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -25,9 +26,10 @@ import (
 
 // testServer holds the dependencies for an integration test.
 type testServer struct {
-	server *httptest.Server
-	store  *state.Store
-	client *http.Client
+	server         *httptest.Server
+	store          *state.Store
+	client         *http.Client
+	auditComponent *audit.Component
 }
 
 func newTestServer(t *testing.T) *testServer {
@@ -42,15 +44,19 @@ func newTestServer(t *testing.T) *testServer {
 
 	jwtManager := auth.NewJWTManager("integration-test-secret")
 
-	handler := api.Router(store, jwtManager, audit.NewComponent(store.DB(), audit.ComponentOptions{}), nil, upgrade.NewManager(store))
+	auditComponent := audit.NewComponent(store.DB(), audit.ComponentOptions{})
+	t.Cleanup(auditComponent.Close)
+
+	handler := api.Router(store, jwtManager, auditComponent, nil, upgrade.NewManager(store))
 
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 
 	return &testServer{
-		server: server,
-		store:  store,
-		client: server.Client(),
+		server:         server,
+		store:          store,
+		client:         server.Client(),
+		auditComponent: auditComponent,
 	}
 }
 
@@ -819,7 +825,9 @@ func TestAPI_AuditLogsMutations(t *testing.T) {
 	}, token)
 
 	// Wait briefly for the async audit queue to drain (recorder buffer=1024).
-	time.Sleep(150 * time.Millisecond)
+	flushCtx, flushCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer flushCancel()
+	_ = ts.auditComponent.Flush(flushCtx)
 
 	// Query audit endpoint — should see at least the create event.
 	resp, result := ts.doRequest(http.MethodGet, "/api/v1/audit?user=alice&verb=create", nil, token)
@@ -857,7 +865,9 @@ func TestAPI_AuditFilterByResource(t *testing.T) {
 		"metadata": map[string]string{"name": "prod"},
 		"spec":     map[string]any{"kubernetesVersion": "1.30.0"},
 	}, token)
-	time.Sleep(150 * time.Millisecond)
+	flushCtx2, flushCancel2 := context.WithTimeout(context.Background(), 2*time.Second)
+	defer flushCancel2()
+	_ = ts.auditComponent.Flush(flushCtx2)
 
 	resp, result := ts.doRequest(http.MethodGet, "/api/v1/audit?resource=tenants", nil, token)
 	if resp.StatusCode != http.StatusOK {
