@@ -2988,3 +2988,77 @@ func TestStaticAssets_ServesLogsJS(t *testing.T) {
 		t.Error("expected EventSource in logs-stream.js")
 	}
 }
+
+// --- W13: Settings index page ---
+
+func TestSettingsIndex_Renders(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	req := authedRequestAs(http.MethodGet, "/settings", cookie, "", "admin", auth.RoleAdmin)
+	w := httptest.NewRecorder()
+	h.SettingsIndexPage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "Settings") {
+		t.Error("missing Settings title")
+	}
+	if !strings.Contains(body, "/settings/users") {
+		t.Error("expected link to users")
+	}
+	if !strings.Contains(body, "/settings/api-tokens") {
+		t.Error("expected link to api-tokens")
+	}
+	if !strings.Contains(body, "/settings/audit") {
+		t.Error("expected link to audit")
+	}
+	if !strings.Contains(body, "/settings/backups") {
+		t.Error("expected link to backups")
+	}
+	if !strings.Contains(body, "Runtime configuration") {
+		t.Error("expected runtime config section")
+	}
+}
+
+func TestSettingsIndex_ShowsEnvOverrides(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	t.Setenv("REZUSCLOUD_AUDIT_RETENTION_DAYS", "365")
+	t.Setenv("REZUSCLOUD_BACKUP_DIR", "/var/backups")
+
+	req := authedRequestAs(http.MethodGet, "/settings", cookie, "", "admin", auth.RoleAdmin)
+	w := httptest.NewRecorder()
+	h.SettingsIndexPage(w, req)
+
+	body := w.Body.String()
+	if !strings.Contains(body, "365") {
+		t.Errorf("expected audit retention override '365' in body")
+	}
+	if !strings.Contains(body, "/var/backups") {
+		t.Errorf("expected backup directory override in body")
+	}
+}
+
+func TestSidebarHasSettingsOverview(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	req := authedRequestAs(http.MethodGet, "/", cookie, "", "admin", auth.RoleAdmin)
+	w := httptest.NewRecorder()
+	h.Dashboard(w, req)
+
+	body := w.Body.String()
+	if !strings.Contains(body, `href="/settings"`) {
+		t.Error("sidebar should link to /settings (overview)")
+	}
+}

@@ -54,115 +54,129 @@ templ toast(data ToastData) {
 templ Base(props BaseProps) {
 	<!DOCTYPE html>
 	<html lang="en">
-	<head>
-		<meta charset="UTF-8"/>
-		<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-		<title>{ props.Title } — RezusCloud</title>
-		@templ.Raw("<style>" + CSS() + "</style>")
-		<script src="https://unpkg.com/htmx.org@2.0.4"></script>
-		<script src="https://unpkg.com/htmx-ext-sse@2.3.1/sse.js"></script>
-		<script defer src="https://unpkg.com/alpinejs@3.14.8/dist/cdn.min.js"></script>
-		<script>
-			document.addEventListener('click', function(ev) {
-				var t = ev.target;
-				if (!(t instanceof Element)) return;
-				// Open: any element with data-modal-open="<id>"
-				var opener = t.closest('[data-modal-open]');
-				if (opener) {
-					var id = opener.getAttribute('data-modal-open');
-					var d = document.getElementById(id);
-					if (d && d.tagName === 'DIALOG') { d.showModal(); }
-				}
-				// Close: any element with data-modal-close, or backdrop click on dialog
-				var closer = t.closest('[data-modal-close]');
-				if (closer) {
-					var d = closer.closest('dialog');
-					if (d) { d.close(); }
-				}
-			});
-			// Backdrop click → close. Native dialog forwards the click to the backdrop
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<title>{ props.Title } — RezusCloud</title>
+			@templ.Raw("<style>" + CSS() + "</style>")
+			<script src="https://unpkg.com/htmx.org@2.0.4"></script>
+			<script src="https://unpkg.com/htmx-ext-sse@2.3.1/sse.js"></script>
+			<script defer src="https://unpkg.com/alpinejs@3.14.8/dist/cdn.min.js"></script>
+			<script>
+				document.addEventListener("click", function (ev) {
+					var t = ev.target;
+					if (!(t instanceof Element)) return;
+					// Open: any element with data-modal-open="<id>"
+					var opener = t.closest("[data-modal-open]");
+					if (opener) {
+						var id = opener.getAttribute("data-modal-open");
+						var d = document.getElementById(id);
+						if (d && d.tagName === "DIALOG") {
+							d.showModal();
+						}
+					}
+					// Close: any element with data-modal-close, or backdrop click on dialog
+					var closer = t.closest("[data-modal-close]");
+					if (closer) {
+						var d = closer.closest("dialog");
+						if (d) {
+							d.close();
+						}
+					}
+				});
+				// Backdrop click → close. Native dialog forwards the click to the backdrop
 				// when the dialog itself is clicked (not its contents) because dialog has padding:0
 				// and contents are wrapped in a full-size box. We rely on the rect check.
-			document.addEventListener('click', function(ev) {
-				var t = ev.target;
-				if (t && t.tagName === 'DIALOG' && t.classList.contains('ds-modal')) {
-					var r = t.getBoundingClientRect();
-					var inside = ev.clientX >= r.left && ev.clientX <= r.right &&
-					            ev.clientY >= r.top  && ev.clientY <= r.bottom;
-					if (!inside) { t.close(); }
-				}
-			});
-		</script>
-	</head>
-	<body>
-		if props.Page != "login" {
-			<button class="ds-mobile-toggle" x-on:click="document.querySelector('.ds-sidebar').classList.toggle('ds-sidebar--open')">☰</button>
-			<aside class="ds-sidebar">
-				<div class="ds-sidebar-header">
-					<div class="ds-sidebar-logo">
-						<span class="ds-sidebar-logo-rezus">Rezus</span>
-						<span class="ds-sidebar-logo-cloud">Cloud</span>
-					</div>
-				</div>
-				<nav class="ds-sidebar-nav" aria-label="Main navigation">
-					<div class="ds-sidebar-section-label">Operate</div>
-					<a href="/" class={ templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "dashboard")) }>
-						<svg class="ds-sidebar-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5l6.5 5v8h-4v-4h-5v4h-4v-8L8 1.5z"></path></svg>
-						Overview
-					</a>
-					<a href="/clusters" class={ templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "clusters" || props.Page == "cluster")) }>
-						<svg class="ds-sidebar-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M2 2h5v5H2V2zm7 0h5v5H9V2zM2 9h5v5H2V9zm7 0h5v5H9V9z"></path></svg>
-						Clusters
-					</a>
-					<a href="/machines" class={ templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "machines" || props.Page == "machine")) }>
-						<svg class="ds-sidebar-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M3 3h10v2H3V3zm0 4h10v2H3V7zm0 4h10v2H3v-2z"></path></svg>
-						Machines
-					</a>
-					<a href="/machines/jointokens" class={ templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "jointokens")) }>
-						<svg class="ds-sidebar-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1l2 4 4 .5-3 3 .5 4-3.5-2-3.5 2 .5-4-3-3 4-.5z"></path></svg>
-						Join Tokens
-					</a>
-					<a href="/providers" class={ templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "providers")) }>
-						<svg class="ds-sidebar-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M2 4h12v8H2V4zm0-2h12v1H2V2zm0 11h12v1H2v-1z"></path></svg>
-						Providers
-					</a>
-					<div class="ds-sidebar-section-label">Settings</div>
-					<a href="/settings/users" class={ templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "users")) }>
-						<svg class="ds-sidebar-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M8 8a3 3 0 100-6 3 3 0 000 6zm-5 7c0-2.8 2.2-5 5-5s5 2.2 5 5H3z"></path></svg>
-						Users
-					</a>
-					<a href="/settings/api-tokens" class={ templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "api-tokens")) }>
-						<svg class="ds-sidebar-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M11 2l3 3-8 8H3v-3l8-8z"></path></svg>
-						API Tokens
-					</a>
-					<a href="/settings/audit" class={ templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "audit")) }>
-						<svg class="ds-sidebar-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M2 2h12v12H2V2zm2 2v8h8V4H4zm1 1h6v1H5V5zm0 2h6v1H5V7zm0 2h4v1H5V9z"></path></svg>
-						Audit Log
-					</a>
-					<a href="/settings/backups" class={ templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "backups")) }>
-						<svg class="ds-sidebar-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M2 3h12v10H2V3zm6 2v6h4V5H8z"></path></svg>
-						Backups
-					</a>
-				</nav>
-				<div class="ds-sidebar-footer">
-					if props.User != "" {
-						<div class="ds-sidebar-user">{ props.User }</div>
-						<a href="/logout" class="ds-sidebar-logout">Sign Out</a>
+				document.addEventListener("click", function (ev) {
+					var t = ev.target;
+					if (t && t.tagName === "DIALOG" && t.classList.contains("ds-modal")) {
+						var r = t.getBoundingClientRect();
+						var inside =
+							ev.clientX >= r.left &&
+							ev.clientX <= r.right &&
+							ev.clientY >= r.top &&
+							ev.clientY <= r.bottom;
+						if (!inside) {
+							t.close();
+						}
 					}
-				</div>
-			</aside>
-			<main class="ds-main">
-				@breadcrumb(props.Breadcrumb)
-				if props.Toast.Message != "" {
-					<div class="ds-toast-container" x-data="{ show: true }" x-init="setTimeout(() => show = false, 5000)" x-show="show">
-						@toast(props.Toast)
+				});
+			</script>
+		</head>
+		<body>
+			if props.Page != "login" {
+				<button class="ds-mobile-toggle" x-on:click="document.querySelector('.ds-sidebar').classList.toggle('ds-sidebar--open')">☰</button>
+				<aside class="ds-sidebar">
+					<div class="ds-sidebar-header">
+						<div class="ds-sidebar-logo">
+							<span class="ds-sidebar-logo-rezus">Rezus</span>
+							<span class="ds-sidebar-logo-cloud">Cloud</span>
+						</div>
 					</div>
-				}
+					<nav class="ds-sidebar-nav" aria-label="Main navigation">
+						<div class="ds-sidebar-section-label">Operate</div>
+						<a href="/" class={ templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "dashboard")) }>
+							<svg class="ds-sidebar-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5l6.5 5v8h-4v-4h-5v4h-4v-8L8 1.5z"></path></svg>
+							Overview
+						</a>
+						<a href="/clusters" class={ templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "clusters" || props.Page == "cluster")) }>
+							<svg class="ds-sidebar-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M2 2h5v5H2V2zm7 0h5v5H9V2zM2 9h5v5H2V9zm7 0h5v5H9V9z"></path></svg>
+							Clusters
+						</a>
+						<a href="/machines" class={ templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "machines" || props.Page == "machine")) }>
+							<svg class="ds-sidebar-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M3 3h10v2H3V3zm0 4h10v2H3V7zm0 4h10v2H3v-2z"></path></svg>
+							Machines
+						</a>
+						<a href="/machines/jointokens" class={ templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "jointokens")) }>
+							<svg class="ds-sidebar-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1l2 4 4 .5-3 3 .5 4-3.5-2-3.5 2 .5-4-3-3 4-.5z"></path></svg>
+							Join Tokens
+						</a>
+						<a href="/providers" class={ templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "providers")) }>
+							<svg class="ds-sidebar-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M2 4h12v8H2V4zm0-2h12v1H2V2zm0 11h12v1H2v-1z"></path></svg>
+							Providers
+						</a>
+						<div class="ds-sidebar-section-label">Settings</div>
+						<a href="/settings" class={ templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "settings")) }>
+							<svg class="ds-sidebar-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M8 4.5a2 2 0 100 4 2 2 0 000-4zm0 6a4 4 0 110-8 4 4 0 010 8zM1 8a7 7 0 1014 0A7 7 0 001 8z"></path></svg>
+							Overview
+						</a>
+						<a href="/settings/users" class={ templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "users")) }>
+							>
+							<svg class="ds-sidebar-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M8 8a3 3 0 100-6 3 3 0 000 6zm-5 7c0-2.8 2.2-5 5-5s5 2.2 5 5H3z"></path></svg>
+							Users
+						</a>
+						<a href="/settings/api-tokens" class={ templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "api-tokens")) }>
+							<svg class="ds-sidebar-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M11 2l3 3-8 8H3v-3l8-8z"></path></svg>
+							API Tokens
+						</a>
+						<a href="/settings/audit" class={ templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "audit")) }>
+							<svg class="ds-sidebar-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M2 2h12v12H2V2zm2 2v8h8V4H4zm1 1h6v1H5V5zm0 2h6v1H5V7zm0 2h4v1H5V9z"></path></svg>
+							Audit Log
+						</a>
+						<a href="/settings/backups" class={ templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "backups")) }>
+							<svg class="ds-sidebar-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M2 3h12v10H2V3zm6 2v6h4V5H8z"></path></svg>
+							Backups
+						</a>
+					</nav>
+					<div class="ds-sidebar-footer">
+						if props.User != "" {
+							<div class="ds-sidebar-user">{ props.User }</div>
+							<a href="/logout" class="ds-sidebar-logout">Sign Out</a>
+						}
+					</div>
+				</aside>
+				<main class="ds-main">
+					@breadcrumb(props.Breadcrumb)
+					if props.Toast.Message != "" {
+						<div class="ds-toast-container" x-data="{ show: true }" x-init="setTimeout(() => show = false, 5000)" x-show="show">
+							@toast(props.Toast)
+						</div>
+					}
+					@props.Content
+				</main>
+			} else {
 				@props.Content
-			</main>
-		} else {
-			@props.Content
-		}
-	</body>
+			}
+		</body>
 	</html>
 }

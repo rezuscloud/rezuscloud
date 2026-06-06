@@ -1,0 +1,83 @@
+package pages
+
+// SettingsIndexPageData drives /settings (landing page).
+type SettingsIndexPageData struct {
+	// OperationalConfig exposes a read-only summary of env-derived settings.
+	OperationalConfig OperationalConfig
+	// ClusterSummary shows configured listeners / endpoints for visibility.
+	ClusterSummary ClusterSummary
+	CanMutate      bool
+}
+
+// OperationalConfig is the read-only env+helm summary.
+type OperationalConfig struct {
+	JWTSessions          string
+	BcryptCost           string
+	AuditRetentionDays   string
+	BackupDirectory      string
+	MachineLinkEndpoint  string
+	ProviderGRPCEndpoint string
+}
+
+// ClusterSummary lists listener endpoints observed from configuration.
+type ClusterSummary struct {
+	HTTPAddr        string
+	MachineLinkAddr string
+	ProviderAddr    string
+}
+
+// SettingsIndex renders the settings landing page (minimal, per ADR 17).
+templ SettingsIndex(data SettingsIndexPageData) {
+	<h1 class="ds-page-title">Settings</h1>
+	<p class="ds-text-muted">Operational configuration and quick links to settings sections.</p>
+	<div class="ds-grid ds-grid-2" style="margin-bottom: 1rem;">
+		<div class="ds-section-card">
+			<div class="ds-section-title">Identity & access</div>
+			<ul class="ds-link-list">
+				<li><a href="/settings/users">Users</a> — admin can create / edit / delete users and change roles</li>
+				<li><a href="/settings/api-tokens">API tokens</a> — issue long-lived Bearer tokens for automation</li>
+				<li><a href="/settings/audit">Audit log</a> — filter and inspect HTTP mutations</li>
+			</ul>
+		</div>
+		<div class="ds-section-card">
+			<div class="ds-section-title">Operations</div>
+			<ul class="ds-link-list">
+				<li><a href="/settings/backups">Backups</a> — snapshots, retention, restore</li>
+				<li><a href="/providers">Providers</a> — registered provider adapters</li>
+				<li><a href="/machines/join-manual">Manual join</a> — boot-from-media kernel args helper</li>
+			</ul>
+		</div>
+	</div>
+	<div class="ds-section-header">Runtime configuration</div>
+	<div class="ds-grid ds-grid-2">
+		<div class="ds-section-card">
+			<div class="ds-section-title">Listeners</div>
+			<dl class="ds-kv-list">
+				<dt>HTTP</dt>
+				<dd class="ds-table-mono">{ data.ClusterSummary.HTTPAddr }</dd>
+				<dt>MachineLink</dt>
+				<dd class="ds-table-mono">{ data.ClusterSummary.MachineLinkAddr }</dd>
+				<dt>Provider gRPC</dt>
+				<dd class="ds-table-mono">{ data.ClusterSummary.ProviderAddr }</dd>
+			</dl>
+		</div>
+		<div class="ds-section-card">
+			<div class="ds-section-title">Operational params (read-only)</div>
+			<dl class="ds-kv-list">
+				<dt>JWT sessions</dt>
+				<dd class="ds-table-mono">{ data.OperationalConfig.JWTSessions }</dd>
+				<dt>Bcrypt cost</dt>
+				<dd class="ds-table-mono">{ data.OperationalConfig.BcryptCost }</dd>
+				<dt>Audit retention</dt>
+				<dd class="ds-table-mono">{ data.OperationalConfig.AuditRetentionDays }</dd>
+				<dt>Backup directory</dt>
+				<dd class="ds-table-mono">{ data.OperationalConfig.BackupDirectory }</dd>
+				<dt>MachineLink public</dt>
+				<dd class="ds-table-mono">{ data.OperationalConfig.MachineLinkEndpoint }</dd>
+				<dt>Provider gRPC public</dt>
+				<dd class="ds-table-mono">{ data.OperationalConfig.ProviderGRPCEndpoint }</dd>
+			</dl>
+			<p class="ds-text-muted ds-text-small">Configuration is read from environment variables at startup. To change a value, update the deployment (Helm values or env var) and restart.</p>
+		</div>
+	</div>
+}
