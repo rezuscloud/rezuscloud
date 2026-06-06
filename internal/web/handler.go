@@ -292,6 +292,21 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	// SSE hint: signal to the template that live updates are available.
 	data.LiveStream = h.bus != nil
 
+	// W14 posture cards.
+	data.Posture = h.dashboardPosture(tenants, machines, providers)
+	if h.auditStore != nil {
+		events, _ := h.auditStore.ListEvents(r.Context(), audit.Filter{Limit: 8})
+		data.RecentAudit = make([]pages.AuditRow, 0, len(events))
+		for _, ev := range events {
+			data.RecentAudit = append(data.RecentAudit, pages.AuditRow{
+				ID: ev.ID, Timestamp: ev.Timestamp, UserName: ev.UserName, Role: ev.Role,
+				Method: ev.Method, Path: ev.Path, Resource: ev.Resource, ResourceID: ev.ResourceID,
+				Verb: ev.Verb, Status: ev.Status, RequestID: ev.RequestID, SourceIP: ev.SourceIP,
+				Error: ev.Error,
+			})
+		}
+	}
+
 	toast := h.popToast(r)
 	h.render(w, r, layout.BaseProps{
 		Title:   "Dashboard",
@@ -2782,4 +2797,148 @@ func envDefault(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// dashboardPosture aggregates day-2 operational health across resources.
+func (h *Handler) dashboardPosture(tenants []*state.Tenant, machines []*state.Machine, providers []*state.Provider) pages.DashboardPosture {
+	var posture pages.DashboardPosture
+
+	// --- Clusters ---
+	for _, t := range tenants {
+		phase := "active"
+		status := statemachine.ComputeTenantStatus(t, nil, nil)
+		if status.Phase != "" {
+			phase = string(status.Phase)
+		}
+		switch phase {
+		case "active", "ready", "Healthy":
+			posture.Clusters.Active++
+		case "forming", "Forming", "pending", "Pending", "Progressing":
+			posture.Clusters.Forming++
+		case "removing", "Removing", "Deleting":
+			posture.Clusters.Removing++
+		case "failed", "Failed", "Error", "Degraded":
+			posture.Clusters.Erroring = append(posture.Clusters.Erroring, t.Metadata.Name)
+		}
+	}
+
+	// Build expected/ready machine counts across clusters.
+	for _, t := range tenants {
+		ngSums := h.nodeGroupSummaries(t.Metadata.Name)
+		posture.Clusters.Expected += expectedMachineCount(ngSums)
+		machinesFor, _, _ := h.store.ListMachinesByTenant(t.Metadata.Name)
+		for _, m := range machinesFor {
+			if machineIsReady(m) {
+				posture.Clusters.Ready++
+			}
+		}
+	}
+
+	// --- Machines ---
+	posture.Machines.Total = len(machines)
+	for _, m := range machines {
+		if m.Spec.Connected {
+			posture.Machines.Connected++
+		}
+		if isPendingStage(m.Status.Stage) {
+			posture.Machines.Pending++
+		}
+		if isFailedStage(m.Status.Stage) {
+			posture.Machines.Failed++
+		}
+	}
+
+	// --- Providers ---
+	posture.Providers.Total = len(providers)
+	for _, p := range providers {
+		if p.Status.Connected {
+			posture.Providers.Connected++
+		} else {
+			posture.Providers.Disconnected++
+		}
+		if p.Status.Error != "" {
+			posture.Providers.Errors++
+		}
+	}
+
+	// --- Backups ---
+	posture.Backups = h.backupPostureSnapshot()
+
+	// --- Upgrades ---
+	posture.Upgrades = h.upgradePostureSnapshot()
+
+	return posture
+}
+
+func machineIsReady(m *state.Machine) bool {
+	return m.Status.Stage == state.StageReady
+}
+
+func isPendingStage(s state.MachineStage) bool {
+	switch s {
+	case state.StageInitializing, state.StageInstalling, state.StageConfiguring, state.StageUpdating:
+		return true
+	}
+	return false
+}
+
+func isFailedStage(s state.MachineStage) bool {
+	switch s {
+	case state.StageOff, state.StageRemoving:
+		return true
+	}
+	return false
+}
+
+// backupPostureSnapshot reads the latest backup metadata.
+func (h *Handler) backupPostureSnapshot() pages.BackupPosture {
+	svc, err := h.backupService()
+	if err != nil {
+		return pages.BackupPosture{LastSuccess: "unavailable"}
+	}
+	snapshots, _ := svc.ListSnapshots()
+	last := "never"
+	failed := 0
+	for _, s := range snapshots {
+		if s.Status.Status == "success" && last == "never" {
+			last = s.CreatedAt
+		}
+		if s.Status.Status == "failed" {
+			failed++
+		}
+	}
+	return pages.BackupPosture{LastSuccess: last, Failures: failed, RPOLabel: rpoEstimate(last)}
+}
+
+// upgradePostureSnapshot reads the latest upgrade runs across all tenants.
+func (h *Handler) upgradePostureSnapshot() pages.UpgradePosture {
+	tenants, _, _ := h.store.ListTenants()
+	active := 0
+	blocked := false
+	latestTarget := ""
+	latestPhase := ""
+	var latestTS time.Time
+	for _, t := range tenants {
+		mgr := upgrade.GetManager(h.store)
+		runs, err := mgr.ListRuns(t.Metadata.Name)
+		if err != nil || len(runs) == 0 {
+			continue
+		}
+		run := runs[0]
+		if run.Status.Phase == "running" || run.Status.Phase == "precheck" {
+			active++
+		}
+		if run.Status.Phase == "precheck" {
+			// Precheck runs that have been stuck for a while are likely blocked.
+			if run.Status.Error != "" {
+				blocked = true
+			}
+		}
+		if run.Status.StartedAt.After(latestTS) {
+			latestTS = run.Status.StartedAt
+			latestTarget = run.Spec.Target
+			latestPhase = string(run.Status.Phase)
+		}
+	}
+	return pages.UpgradePosture{ActiveRuns: active, BlockedPrecheck: blocked, LatestTarget: latestTarget, LatestPhase: latestPhase}
 }

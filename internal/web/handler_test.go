@@ -321,8 +321,13 @@ func TestDashboard_Counts(t *testing.T) {
 	h.Dashboard(w, req)
 
 	body := w.Body.String()
-	if !strings.Contains(body, ">1<") {
-		t.Error("should show count of 1 for tenants and providers")
+	// The dashboard posture card shows the cluster count. Forming/Active/etc. — just check that we see a non-zero posture value.
+	if !strings.Contains(body, "1 forming") && !strings.Contains(body, "1 active") {
+		t.Errorf("expected cluster posture with count 1; got body tail: %s", body[len(body)-min(len(body), 300):])
+	}
+	// Provider count in posture card should reflect 1 registered provider.
+	if !strings.Contains(body, "0 / 1") && !strings.Contains(body, "1 / 1") {
+		t.Errorf("expected provider posture with 1 total; got body tail: %s", body[len(body)-min(len(body), 300):])
 	}
 }
 
@@ -3060,5 +3065,72 @@ func TestSidebarHasSettingsOverview(t *testing.T) {
 	body := w.Body.String()
 	if !strings.Contains(body, `href="/settings"`) {
 		t.Error("sidebar should link to /settings (overview)")
+	}
+}
+
+// --- W14: enhanced dashboard posture ---
+
+func TestDashboard_PostureCards_Render(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	setupTenant(t, store, "prod")
+	setupMachine(t, store, "m1", "prod", "worker", state.StageReady, true)
+	_, _ = store.CreateResource("provider", "hetzner",
+		state.ProviderSpec{Endpoint: "grpc://x"},
+		state.ProviderStatus{Connected: true},
+		nil, nil)
+
+	req := authedRequest(http.MethodGet, "/", nil, "")
+	req = req.WithContext(auth.WithClaims(req.Context(), "admin", auth.RoleAdmin))
+	w := httptest.NewRecorder()
+	h.Dashboard(w, req)
+
+	body := w.Body.String()
+	for _, want := range []string{"/clusters\">", "/machines\">", "/providers\">", "/settings/backups\">", "Recent activity"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("expected %q in dashboard body", want)
+		}
+	}
+}
+
+func TestDashboard_UpgradeBanner_HiddenWhenIdle(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	setupTenant(t, store, "prod")
+
+	req := authedRequest(http.MethodGet, "/", nil, "")
+	req = req.WithContext(auth.WithClaims(req.Context(), "admin", auth.RoleAdmin))
+	w := httptest.NewRecorder()
+	h.Dashboard(w, req)
+	body := w.Body.String()
+
+	if strings.Contains(body, "Upgrade in progress") {
+		t.Errorf("upgrade banner should be hidden when no active runs")
+	}
+}
+
+func TestDashboard_RecentAudit_WhenStorePresent(t *testing.T) {
+	store := newTestStore(t)
+	auditStore := audit.NewSQLStore(store.DB())
+	h := newTestHandler(t, store, withAuditStore(auditStore))
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+
+	_ = auditStore.InsertEvent(context.Background(), audit.Event{
+		UserName: "admin", Method: "POST", Path: "/api/v1/tenants",
+		Resource: "tenants", Verb: "create", Status: 201,
+		Timestamp: "2026-06-06T12:00:00Z",
+	})
+
+	req := authedRequest(http.MethodGet, "/", nil, "")
+	req = req.WithContext(auth.WithClaims(req.Context(), "admin", auth.RoleAdmin))
+	w := httptest.NewRecorder()
+	h.Dashboard(w, req)
+	body := w.Body.String()
+
+	if !strings.Contains(body, "Recent activity") {
+		t.Error("expected Recent activity section")
+	}
+	if !strings.Contains(body, "/settings/audit") {
+		t.Error("expected drill-down link to audit page")
 	}
 }

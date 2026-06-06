@@ -9,7 +9,6 @@ import "github.com/a-h/templ"
 import templruntime "github.com/a-h/templ/runtime"
 
 // ModalProps configures a Modal component.
-//
 // The modal uses the native HTML <dialog> element. The trigger button
 // (ModalTrigger) sets data-modal-open="<ID>"; a small inline script wires
 // those triggers to dialog.showModal(). ESC and backdrop click close natively.
@@ -83,7 +82,7 @@ func Modal(props ModalProps) templ.Component {
 		var templ_7745c5c3_Var3 string
 		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.ResolveAttributeValue(props.ID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/modal.templ`, Line: 46, Col: 22}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/modal.templ`, Line: 45, Col: 22}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var3)
 		if templ_7745c5c3_Err != nil {
@@ -109,7 +108,7 @@ func Modal(props ModalProps) templ.Component {
 		var templ_7745c5c3_Var5 string
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.ResolveAttributeValue(props.ID + "-title")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/modal.templ`, Line: 46, Col: 188}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/modal.templ`, Line: 45, Col: 188}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var5)
 		if templ_7745c5c3_Err != nil {
@@ -122,7 +121,7 @@ func Modal(props ModalProps) templ.Component {
 		var templ_7745c5c3_Var6 string
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.ResolveAttributeValue(props.ID + "-title")
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/modal.templ`, Line: 48, Col: 31}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/modal.templ`, Line: 47, Col: 31}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var6)
 		if templ_7745c5c3_Err != nil {
@@ -135,7 +134,7 @@ func Modal(props ModalProps) templ.Component {
 		var templ_7745c5c3_Var7 string
 		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(props.Title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/modal.templ`, Line: 48, Col: 70}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/modal.templ`, Line: 47, Col: 70}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 		if templ_7745c5c3_Err != nil {
@@ -208,7 +207,7 @@ func ModalTrigger(targetID, class, label string) templ.Component {
 		var templ_7745c5c3_Var11 string
 		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.ResolveAttributeValue(targetID)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/modal.templ`, Line: 66, Col: 28}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/modal.templ`, Line: 65, Col: 28}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var11)
 		if templ_7745c5c3_Err != nil {
@@ -221,7 +220,7 @@ func ModalTrigger(targetID, class, label string) templ.Component {
 		var templ_7745c5c3_Var12 string
 		templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.JoinStringErrs(label)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/modal.templ`, Line: 68, Col: 9}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/modal.templ`, Line: 67, Col: 9}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var12))
 		if templ_7745c5c3_Err != nil {
