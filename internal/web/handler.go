@@ -590,7 +590,7 @@ func validClusterName(name string) bool {
 		isLetter := c >= 'a' && c <= 'z'
 		isDigit := c >= '0' && c <= '9'
 		isHyphen := c == '-'
-		if !(isLetter || isDigit || isHyphen) {
+		if !isLetter && !isDigit && !isHyphen {
 			return false
 		}
 	}
