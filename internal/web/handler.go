@@ -587,7 +587,10 @@ func validClusterName(name string) bool {
 	}
 	for i := 0; i < len(name); i++ {
 		c := name[i]
-		if !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-') {
+		isLetter := c >= 'a' && c <= 'z'
+		isDigit := c >= '0' && c <= '9'
+		isHyphen := c == '-'
+		if !(isLetter || isDigit || isHyphen) {
 			return false
 		}
 	}
@@ -739,5 +742,5 @@ func (h *Handler) credentialDownload(w http.ResponseWriter, r *http.Request, kin
 
 	w.Header().Set("Content-Type", "application/yaml")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", name+"-"+kind+".yaml"))
-	w.Write(data)
+	_, _ = w.Write(data)
 }

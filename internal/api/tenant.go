@@ -303,7 +303,7 @@ func (a *TenantAPI) Kubeconfig(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/yaml")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", name+"-kubeconfig.yaml"))
-	w.Write(kc)
+	_, _ = w.Write(kc)
 }
 
 // Talosconfig handles GET /api/v1/tenants/{name}/talosconfig.
@@ -349,5 +349,5 @@ func (a *TenantAPI) Talosconfig(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/yaml")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", name+"-talosconfig.yaml"))
-	w.Write(tc)
+	_, _ = w.Write(tc)
 }

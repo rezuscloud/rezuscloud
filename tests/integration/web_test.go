@@ -582,6 +582,9 @@ func TestW3_ClusterCRUD_FullLifecycle(t *testing.T) {
 	if !strings.Contains(body, "context:") {
 		t.Errorf("talosconfig body missing 'context:'; got:\n%s", body[:min(len(body), 200)])
 	}
+	if !strings.Contains(hdr.Get("Content-Disposition"), "lifecycle-cluster-talosconfig.yaml") {
+		t.Errorf("talosconfig Content-Disposition = %q", hdr.Get("Content-Disposition"))
+	}
 
 	// Step 7: Settings tab shows delete button for admin.
 	status, body, _ = s.getWithCookieHeaders(t, "/clusters/lifecycle-cluster/settings", cookie)
