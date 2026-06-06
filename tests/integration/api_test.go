@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/rezuscloud/rezuscloud/internal/api"
 	"github.com/rezuscloud/rezuscloud/internal/auth"
@@ -800,5 +801,80 @@ func TestAPI_APITokenCrossUserCreateForbidden(t *testing.T) {
 	resp, _ := ts.doRequest(http.MethodPost, "/api/v1/users/bob/api-tokens", map[string]any{}, aliceToken)
 	if resp.StatusCode != http.StatusForbidden {
 		t.Errorf("cross-user create: status=%d, want 403", resp.StatusCode)
+	}
+}
+
+// --- W10: Audit log ---
+
+func TestAPI_AuditLogsMutations(t *testing.T) {
+	ts := newTestServer(t)
+	token := ts.createUser(t, "alice", "admin", "pw123456")
+
+	// Issue a mutation that should be audited.
+	_, _ = ts.doRequest(http.MethodPost, "/api/v1/tenants", map[string]any{
+		"metadata": map[string]string{"name": "prod"},
+		"spec":     map[string]any{"kubernetesVersion": "1.30.0"},
+	}, token)
+
+	// Wait briefly for the async audit queue to drain (recorder buffer=1024).
+	time.Sleep(150 * time.Millisecond)
+
+	// Query audit endpoint — should see at least the create event.
+	resp, result := ts.doRequest(http.MethodGet, "/api/v1/audit?user=alice&verb=create", nil, token)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("audit list: %d", resp.StatusCode)
+	}
+	items, _ := result["items"].([]any)
+	if len(items) == 0 {
+		t.Fatalf("expected at least one audit entry for alice/create, got %v", result)
+	}
+
+	// Each item should record alice + create + POST.
+	first, _ := items[0].(map[string]any)
+	if first["userName"] != "alice" {
+		t.Errorf("userName = %v, want alice", first["userName"])
+	}
+	if first["verb"] != "create" {
+		t.Errorf("verb = %v, want create", first["verb"])
+	}
+	if first["method"] != "POST" {
+		t.Errorf("method = %v, want POST", first["method"])
+	}
+}
+
+func TestAPI_AuditFilterByResource(t *testing.T) {
+	ts := newTestServer(t)
+	token := ts.createUser(t, "alice", "admin", "pw123456")
+
+	// Create a user (creates 'users' audit row) + a tenant (creates 'tenants' row).
+	_, _ = ts.doRequest(http.MethodPost, "/api/v1/users", map[string]any{
+		"metadata": map[string]string{"name": "bob"},
+		"spec":     map[string]string{"role": "view", "password": "pw123456"},
+	}, token)
+	_, _ = ts.doRequest(http.MethodPost, "/api/v1/tenants", map[string]any{
+		"metadata": map[string]string{"name": "prod"},
+		"spec":     map[string]any{"kubernetesVersion": "1.30.0"},
+	}, token)
+	time.Sleep(150 * time.Millisecond)
+
+	resp, result := ts.doRequest(http.MethodGet, "/api/v1/audit?resource=tenants", nil, token)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("audit filter: %d", resp.StatusCode)
+	}
+	items, _ := result["items"].([]any)
+	for _, it := range items {
+		m, _ := it.(map[string]any)
+		if m["resource"] != "tenants" {
+			t.Errorf("filter leak: resource = %v", m["resource"])
+		}
+	}
+}
+
+func TestAPI_AuditRejectsBadSince(t *testing.T) {
+	ts := newTestServer(t)
+	token := ts.createUser(t, "alice", "admin", "pw123456")
+	resp, _ := ts.doRequest(http.MethodGet, "/api/v1/audit?since=garbage", nil, token)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Errorf("bad since: %d, want 400", resp.StatusCode)
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/api/nodegroup"
 	"github.com/rezuscloud/rezuscloud/internal/api/patch"
 	"github.com/rezuscloud/rezuscloud/internal/api/provider"
+	"github.com/rezuscloud/rezuscloud/internal/audit"
 	"github.com/rezuscloud/rezuscloud/internal/auth"
 	"github.com/rezuscloud/rezuscloud/internal/backup"
 	"github.com/rezuscloud/rezuscloud/internal/state"
@@ -93,7 +94,14 @@ func Router(store *state.Store, jwtManager *auth.JWTManager) http.Handler {
 	RegisterSystemRoutes(protected, store)
 
 	// Apply auth middleware to protected routes (JWT + API tokens).
-	mux.Handle("/api/v1/", auth.AuthenticateWithTokens(jwtManager, auth.StoreTokenVerifier{Store: store}, protected))
+	// Audit middleware sits after auth so it can resolve user/role from context.
+	auditStore := audit.NewSQLStore(store.DB())
+	auditRecorder := audit.NewRecorder(auditStore)
+	auditHandlers := audit.NewHandlers(auditStore)
+	auditHandlers.RegisterRoutes(protected)
+
+	protectedWithAudit := audit.Middleware(auditRecorder)(protected)
+	mux.Handle("/api/v1/", auth.AuthenticateWithTokens(jwtManager, auth.StoreTokenVerifier{Store: store}, protectedWithAudit))
 
 	return middleware.Chain(mux,
 		middleware.Recovery,

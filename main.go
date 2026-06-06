@@ -10,10 +10,12 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 
 	"github.com/rezuscloud/rezuscloud/internal/api"
+	"github.com/rezuscloud/rezuscloud/internal/audit"
 	"github.com/rezuscloud/rezuscloud/internal/auth"
 	"github.com/rezuscloud/rezuscloud/internal/ingress"
 	"github.com/rezuscloud/rezuscloud/internal/state"
@@ -83,8 +85,13 @@ func main() {
 		mux.Handle(method+" /api/", apiRouter)
 	}
 
+	// Audit log: store backed by the same SQLite DB; retention sweeps hourly.
+	auditStore := audit.NewSQLStore(store.DB())
+	retentionDays := atoiDefault(os.Getenv("REZUSCLOUD_AUDIT_RETENTION_DAYS"), 90)
+	go audit.NewRetentionPolicy(auditStore, retentionDays).Run(ctx)
+
 	// WebUI.
-	webHandler := web.NewHandler(store, jwtManager, bus)
+	webHandler := web.NewHandler(store, jwtManager, bus).WithAuditStore(auditStore)
 	webHandler.RegisterRoutes(mux)
 
 	srv := &http.Server{
@@ -256,4 +263,17 @@ func ensureAdminUser(store *state.Store, cfg config) {
 	}
 
 	log.Println("created initial admin user (username: admin)")
+}
+
+// atoiDefault parses s as an integer; returns fallback on parse error or when
+// s is empty.
+func atoiDefault(s string, fallback int) int {
+	if s == "" {
+		return fallback
+	}
+	v, err := strconv.Atoi(s)
+	if err != nil {
+		return fallback
+	}
+	return v
 }

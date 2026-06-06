@@ -89,17 +89,19 @@ templ PatchEdit(data PatchEditData) {
 			</select>
 		</div>
 		<div class="ds-input-group">
-			<label class="ds-label"><input
-	type="checkbox"
-	name="enabled"
-	value="true"
-	if data.Enabled {
-		checked
-	}
-	if !data.CanMutate {
-		disabled
-	}
-/> Enabled</label>
+			<label class="ds-label">
+				<input
+					type="checkbox"
+					name="enabled"
+					value="true"
+					if data.Enabled {
+						checked
+					}
+					if !data.CanMutate {
+						disabled
+					}
+				/> Enabled
+			</label>
 		</div>
 		<div class="ds-input-group">
 			<label class="ds-label" for="patch-body">Patch body</label>
