@@ -4,6 +4,7 @@
 package web
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -19,11 +20,11 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/audit"
 	"github.com/rezuscloud/rezuscloud/internal/auth"
 	"github.com/rezuscloud/rezuscloud/internal/backup"
+	"github.com/rezuscloud/rezuscloud/internal/configrender"
 	"github.com/rezuscloud/rezuscloud/internal/credentials"
 	"github.com/rezuscloud/rezuscloud/internal/dashboard"
 	"github.com/rezuscloud/rezuscloud/internal/state"
 	"github.com/rezuscloud/rezuscloud/internal/statemachine"
-	"github.com/rezuscloud/rezuscloud/internal/talosconfig"
 	"github.com/rezuscloud/rezuscloud/internal/upgrade"
 	"github.com/rezuscloud/rezuscloud/internal/watch"
 	"github.com/rezuscloud/rezuscloud/internal/web/layout"
@@ -1760,42 +1761,12 @@ func (h *Handler) MachineKernelArgsSave(w http.ResponseWriter, r *http.Request) 
 
 // generateMachineConfig produces the Talos machine config YAML for display.
 func (h *Handler) generateMachineConfig(tenantName, machineID string, m *state.Machine) (string, error) {
-	tenant, err := h.store.GetTenant(tenantName)
+	result, err := configrender.GenerateMachineConfig(context.Background(), h.store, h.store, patch.ResolvePatches,
+		configrender.MachineConfigRequest{TenantName: tenantName, MachineID: machineID})
 	if err != nil {
 		return "", err
 	}
-	if tenant == nil {
-		return "", fmt.Errorf("tenant %q not found", tenantName)
-	}
-
-	bundleJSON, err := h.store.LoadTenantSecrets(tenantName)
-	if err != nil {
-		return "", err
-	}
-	if bundleJSON == nil {
-		return "", fmt.Errorf("no secrets bundle for tenant")
-	}
-
-	machineType := talosconfig.DetermineMachineType(m.Status.Role, false)
-	patches, err := patch.ResolvePatches(h.store, tenantName, m.Status.Role)
-	if err != nil {
-		return "", err
-	}
-
-	result, err := talosconfig.GenerateConfig(talosconfig.ConfigRequest{
-		ClusterName:       tenantName,
-		ClusterEndpoint:   tenant.Spec.ControlPlaneEndpoint,
-		KubernetesVersion: tenant.Spec.KubernetesVersion,
-		TalosVersion:      tenant.Spec.TalosVersion,
-		MachineType:       machineType,
-		SecretsBundle:     bundleJSON,
-		ConfigPatches:     patches,
-		MachineID:         machineID,
-	})
-	if err != nil {
-		return "", err
-	}
-	return result.MachineConfig, nil
+	return result.YAML, nil
 }
 
 // findKernelArgsPatch returns the existing kernel-args patch for the cluster,
