@@ -18,6 +18,20 @@ type TenantDetailData struct {
 	CurrentTab string
 	// CanMutate is true when the viewer's role is admin or edit (shows delete/scale buttons).
 	CanMutate bool
+	UpgradeComponent string
+	UpgradeTarget    string
+	UpgradeRuns      []UpgradeRunRow
+}
+
+type UpgradeRunRow struct {
+	ID            string
+	Component     string
+	Target        string
+	Phase         string
+	Completed     int
+	TotalMachines int
+	StartedAt     string
+	Error         string
 }
 
 type NodeGroupRow struct {
@@ -144,7 +158,7 @@ templ clusterTabs(data TenantDetailData) {
 	} else if data.CurrentTab == "backups" {
 		@stubTab("Backups", "etcd snapshots and S3-style restores will land here in a future release.")
 	} else if data.CurrentTab == "upgrade" {
-		@stubTab("Upgrade", "rolling upgrade workflow will land here in a future release.")
+		@clusterUpgradeTab(data)
 	} else {
 		@clusterOverview(data)
 	}
@@ -250,6 +264,80 @@ templ clusterOverview(data TenantDetailData) {
 								}
 							</td>
 						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	}
+}
+
+templ clusterUpgradeTab(data TenantDetailData) {
+	<div class="ds-section-card" style="margin-bottom: 1rem;" id="upgrade-run-panel">
+		<div class="ds-section-title">Start Upgrade</div>
+		<form
+			hx-post={ "/clusters/" + data.Name + "/upgrade/start" }
+			hx-target="body"
+			hx-swap="none"
+			class="ds-form-grid ds-grid-3"
+		>
+			<label class="ds-form-field">
+				<span class="ds-label">Component</span>
+				<select name="component" class="ds-input">
+					<option value="talos" selected?={ data.UpgradeComponent != "kubernetes" }>Talos</option>
+					<option value="kubernetes" selected?={ data.UpgradeComponent == "kubernetes" }>Kubernetes</option>
+				</select>
+			</label>
+			<label class="ds-form-field">
+				<span class="ds-label">Target Version</span>
+				<input class="ds-input ds-table-mono" name="version" value={ data.UpgradeTarget } placeholder="v1.13.0" required/>
+			</label>
+			<div class="ds-form-actions" style="align-self: end;">
+				<button type="submit" class="ds-btn ds-btn--primary" disabled?={ !data.CanMutate }>Start Upgrade</button>
+			</div>
+		</form>
+	</div>
+
+	<div class="ds-section-header">Upgrade Runs</div>
+	if len(data.UpgradeRuns) == 0 {
+		<div class="ds-muted">No upgrade runs yet.</div>
+	} else {
+		<div class="ds-table-wrapper">
+			<table class="ds-table">
+				<thead>
+					<tr>
+						<th class="ds-table-th">Run</th>
+						<th class="ds-table-th">Component</th>
+						<th class="ds-table-th">Target</th>
+						<th class="ds-table-th">Phase</th>
+						<th class="ds-table-th">Progress</th>
+						<th class="ds-table-th">Started</th>
+						<th class="ds-table-th"></th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, run := range data.UpgradeRuns {
+						<tr class="ds-table-row">
+							<td class="ds-table-td ds-table-mono">{ run.ID }</td>
+							<td class="ds-table-td">{ run.Component }</td>
+							<td class="ds-table-td ds-table-mono">{ run.Target }</td>
+							<td class="ds-table-td"><span class={ "ds-status-badge ds-status-badge--" + phaseBadgeClass(run.Phase) }>{ run.Phase }</span></td>
+							<td class="ds-table-td">{ fmt.Sprintf("%d/%d", run.Completed, run.TotalMachines) }</td>
+							<td class="ds-table-td">{ run.StartedAt }</td>
+							<td class="ds-table-td">
+								if run.Phase == "upgrading" && data.CanMutate {
+									<form hx-post={ "/clusters/" + data.Name + "/upgrade/" + run.ID + "/cancel" } hx-target="body" hx-swap="none">
+										<button type="submit" class="ds-btn ds-btn--secondary ds-btn--sm">Cancel</button>
+									</form>
+								} else {
+									<span class="ds-muted">—</span>
+								}
+							</td>
+						</tr>
+						if run.Error != "" {
+							<tr class="ds-table-row">
+								<td class="ds-table-td" colspan="7"><span class="ds-text-danger">{ run.Error }</span></td>
+							</tr>
+						}
 					}
 				</tbody>
 			</table>
