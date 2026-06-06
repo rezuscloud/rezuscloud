@@ -35,6 +35,7 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/upgrade"
 	"github.com/rezuscloud/rezuscloud/internal/watch"
 	"github.com/rezuscloud/rezuscloud/internal/web/handlers/authn"
+	"github.com/rezuscloud/rezuscloud/internal/web/handlers/clusters"
 	dashhandler "github.com/rezuscloud/rezuscloud/internal/web/handlers/dashboard"
 	"github.com/rezuscloud/rezuscloud/internal/web/handlers/settings"
 	"github.com/rezuscloud/rezuscloud/internal/web/layout"
@@ -118,24 +119,9 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	dashboardHandler := dashhandler.New(h.store, h.bus, h.auditStore, h.backupAdapter(), h.upgradeAdapter(), h)
 	dashboardHandler.RegisterRoutes(mux)
 
-	// Authenticated pages.
-	mux.HandleFunc("GET /clusters", h.AuthRequired(h.TenantsList))
-	mux.HandleFunc("GET /clusters/create", h.AuthRequired(h.ClusterCreatePage))
-	mux.HandleFunc("POST /clusters/create", h.AuthRequired(h.ClusterCreateSubmit))
-	mux.HandleFunc("GET /clusters/{name}", h.AuthRequired(h.TenantDetail))
-	mux.HandleFunc("GET /clusters/{name}/{tab}", h.AuthRequired(h.TenantDetail))
-	mux.HandleFunc("POST /clusters/{name}/patches/create", h.AuthRequired(h.ClusterPatchCreate))
-	mux.HandleFunc("GET /clusters/{name}/patches/{patch}", h.AuthRequired(h.ClusterPatchEditPage))
-	mux.HandleFunc("POST /clusters/{name}/patches/{patch}/save", h.AuthRequired(h.ClusterPatchSave))
-	mux.HandleFunc("POST /clusters/{name}/patches/{patch}/delete", h.AuthRequired(h.ClusterPatchDelete))
-	mux.HandleFunc("POST /clusters/{name}/patches/{patch}/toggle", h.AuthRequired(h.ClusterPatchToggle))
-	mux.HandleFunc("GET /clusters/{name}/patches/preview", h.AuthRequired(h.ClusterPatchesPreview))
-	mux.HandleFunc("DELETE /clusters/{name}", h.AuthRequired(h.ClusterDelete))
-	mux.HandleFunc("POST /clusters/{name}/nodegroups/{ng}/scale", h.AuthRequired(h.NodeGroupScale))
-	mux.HandleFunc("GET /clusters/{name}/kubeconfig", h.AuthRequired(h.ClusterKubeconfig))
-	mux.HandleFunc("GET /clusters/{name}/talosconfig", h.AuthRequired(h.ClusterTalosconfig))
-	mux.HandleFunc("POST /clusters/{name}/upgrade/start", h.AuthRequired(h.ClusterUpgradeStart))
-	mux.HandleFunc("POST /clusters/{name}/upgrade/{id}/cancel", h.AuthRequired(h.ClusterUpgradeCancel))
+	// Clusters (W3, W6, W8) — served by the clusters sub-package.
+	clustersHandler := clusters.New(h.store, h.upgradeMgr, h)
+	clustersHandler.RegisterRoutes(mux)
 
 	// Machines (W4).
 	mux.HandleFunc("GET /machines", h.AuthRequired(h.MachinesList))
@@ -159,11 +145,6 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	// join — served by the settings sub-package.
 	settingsHandler := settings.New(h.store, h.backupSvc, h.auditStore, h)
 	settingsHandler.RegisterRoutes(mux)
-
-	// Legacy /tenants aliases (kept for backward compatibility; /clusters is the
-	// user-facing name per W2). New code should use /clusters/*.
-	mux.HandleFunc("GET /tenants", h.AuthRequired(h.TenantsList))
-	mux.HandleFunc("GET /tenants/{name}", h.AuthRequired(h.TenantDetail))
 
 	// SSE stream — registered by the dashboard sub-package; this block is
 	// now empty. Kept as a marker for the reader who traces route ownership.
@@ -313,6 +294,11 @@ func (h *Handler) nodeGroupSummaries(tenantName string) []statemachine.NodeGroup
 			return statemachine.NodeGroupSummary{Name: ng.Name, Count: ng.Count}, err
 		})
 	return items
+}
+
+// NodeGroupSummaries satisfies the web/handlers/* Host interface (nodeGroupSummaries alias).
+func (h *Handler) NodeGroupSummaries(tenantName string) []statemachine.NodeGroupSummary {
+	return h.nodeGroupSummaries(tenantName)
 }
 
 // expectedMachineCount sums node group counts (for forming tenants with no machines yet).
@@ -2045,6 +2031,12 @@ func (h *Handler) machineLinkEndpoint() string {
 // MachineLinkEndpoint satisfies the web/handlers/* Host interface (machineLinkEndpoint alias).
 func (h *Handler) MachineLinkEndpoint() string {
 	return h.machineLinkEndpoint()
+}
+
+// BusPresent reports whether the watch bus is configured. Used by the
+// clusters list to toggle the "live updates" SSE hint.
+func (h *Handler) BusPresent() bool {
+	return h.bus != nil
 }
 
 // machineFleetRow converts a Machine to a fleet-table row.
