@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -36,8 +35,9 @@ import (
 type Handler struct {
 	store      *state.Store
 	jwtManager *auth.JWTManager
-	bus        *watch.Bus  // optional — enables /events/stream
-	auditStore audit.Store // optional — enables /settings/audit page
+	bus        *watch.Bus      // optional — enables /events/stream
+	auditStore audit.Store     // optional — enables /settings/audit page
+	backupSvc  *backup.Service // optional — enables /settings/backups page
 }
 
 // NewHandler creates a WebUI handler.
@@ -45,6 +45,23 @@ type Handler struct {
 // bus is optional — pass nil to disable the /events/stream endpoint.
 func NewHandler(store *state.Store, jwtManager *auth.JWTManager, bus *watch.Bus) *Handler {
 	return &Handler{store: store, jwtManager: jwtManager, bus: bus}
+}
+
+// WithBackupService injects a backup service so the WebUI can render
+// /settings/backups and trigger backups without going through the REST API.
+func (h *Handler) WithBackupService(svc *backup.Service) *Handler {
+	h.backupSvc = svc
+	return h
+}
+
+// WithBackupComponent injects the backup subsystem component. The WebUI uses
+// only the Service from it.
+func (h *Handler) WithBackupComponent(c *backup.Component) *Handler {
+	if c == nil {
+		return h
+	}
+	h.backupSvc = c.Service
+	return h
 }
 
 // WithAuditStore injects an audit store so the WebUI can render
@@ -880,16 +897,10 @@ func (h *Handler) redirectAction(w http.ResponseWriter, r *http.Request, target 
 }
 
 func (h *Handler) backupService() (*backup.Service, error) {
-	root := os.Getenv("REZUSCLOUD_BACKUP_DIR")
-	if root == "" {
-		root = filepath.Join(os.TempDir(), "rezuscloud-backups")
+	if h.backupSvc == nil {
+		return nil, fmt.Errorf("backup service unavailable")
 	}
-	fs, err := backup.NewFileStore(root)
-	if err != nil {
-		return nil, err
-	}
-	mgr := backup.NewManager(fs, backup.Config{Prefix: "backups"})
-	return backup.NewService(mgr, h.store), nil
+	return h.backupSvc, nil
 }
 
 func (h *Handler) BackupsPage(w http.ResponseWriter, r *http.Request) {
