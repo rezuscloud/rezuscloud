@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -15,6 +16,13 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/state"
 	"github.com/rezuscloud/rezuscloud/internal/watch"
 )
+
+// TestMain lowers the bcrypt cost for the test suite so user creation/login
+// don't dominate the runtime on slow CI runners (ARM64).
+func TestMain(m *testing.M) {
+	_ = os.Setenv("REZUSCLOUD_BCRYPT_COST", "6")
+	os.Exit(m.Run())
+}
 
 func newTestStore(t *testing.T) *state.Store {
 	t.Helper()
