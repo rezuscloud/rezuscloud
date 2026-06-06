@@ -1,6 +1,9 @@
 package pages
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 type DashboardData struct {
 	TenantCount    int
@@ -9,6 +12,55 @@ type DashboardData struct {
 	NodeGroupCount int
 	Tenants        []TenantSummary
 	LiveStream     bool // true when /events/stream is available
+
+	// Posture cards (W14).
+	Posture DashboardPosture
+	// RecentAudit lists the most recent audit events (mutation activity).
+	RecentAudit []AuditRow
+}
+
+type DashboardPosture struct {
+	Clusters  ClusterPosture
+	Machines  MachinePosture
+	Providers ProviderPosture
+	Backups   BackupPosture
+	Upgrades  UpgradePosture
+}
+
+type ClusterPosture struct {
+	Active   int
+	Forming  int
+	Removing int
+	Ready    int      // total machines healthy across all clusters
+	Expected int      // total machines expected across all clusters
+	Erroring []string // cluster names with degraded phase
+}
+
+type MachinePosture struct {
+	Connected int
+	Pending   int
+	Failed    int // machines in stage_failed / stage_error
+	Total     int
+}
+
+type ProviderPosture struct {
+	Connected    int
+	Disconnected int
+	Errors       int
+	Total        int
+}
+
+type BackupPosture struct {
+	LastSuccess string // "never" or RFC3339
+	Failures    int
+	RPOLabel    string
+}
+
+type UpgradePosture struct {
+	ActiveRuns      int
+	BlockedPrecheck bool
+	LatestTarget    string
+	LatestPhase     string
 }
 
 type TenantSummary struct {
@@ -19,50 +71,154 @@ type TenantSummary struct {
 }
 
 templ Dashboard(data DashboardData) {
-	if data.LiveStream {
-		<div hx-ext="sse" sse-connect="/events/stream" sse-close="navigate">
-			<h1 class="ds-page-title">Overview</h1>
-			<div class="ds-grid ds-grid-4 ds-stats-row" id="stat-grid" sse-swap="message" hx-swap="innerHTML">
-				<div class="ds-stat-block">
-					<div class="ds-stat-label">Clusters</div>
-					<div class="ds-stat-value">{ fmt.Sprintf("%d", data.TenantCount) }</div>
-				</div>
-				<div class="ds-stat-block">
-					<div class="ds-stat-label">Machines</div>
-					<div class="ds-stat-value">{ fmt.Sprintf("%d", data.MachineCount) }</div>
-				</div>
-				<div class="ds-stat-block">
-					<div class="ds-stat-label">Providers</div>
-					<div class="ds-stat-value">{ fmt.Sprintf("%d", data.ProviderCount) }</div>
-				</div>
-				<div class="ds-stat-block">
-					<div class="ds-stat-label">Node Groups</div>
-					<div class="ds-stat-value">{ fmt.Sprintf("%d", data.NodeGroupCount) }</div>
-				</div>
-			</div>
-			@clustersTable(data)
+	<h1 class="ds-page-title">Overview</h1>
+	<p class="ds-text-muted">Operational posture across the personal cloud.</p>
+	@postureGrid(data)
+	@clustersTable(data)
+	@recentActivity(data)
+}
+
+// postureGrid renders five posture cards with drill-down links.
+templ postureGrid(data DashboardData) {
+	<div class="ds-grid ds-grid-4 ds-stats-row">
+		@clusterPostureCard(data.Posture.Clusters)
+		@machinePostureCard(data.Posture.Machines)
+		@providerPostureCard(data.Posture.Providers)
+		@backupPostureCard(data.Posture.Backups)
+	</div>
+	@upgradePostureBanner(data.Posture.Upgrades)
+}
+
+// clusterPostureCard shows the cluster lifecycle posture.
+templ clusterPostureCard(p ClusterPosture) {
+	<a class="ds-stat-block ds-stat-block--link" href="/clusters">
+		<div class="ds-stat-label">Clusters</div>
+		<div class="ds-stat-value">{ fmt.Sprintf("%d active", p.Active) }</div>
+		<div class="ds-stat-sub">
+			if p.Forming > 0 {
+				<span class="ds-status-badge ds-status-badge--neutral">{ fmt.Sprintf("%d forming", p.Forming) }</span>
+			}
+			if p.Removing > 0 {
+				<span class="ds-status-badge ds-status-badge--negative">{ fmt.Sprintf("%d removing", p.Removing) }</span>
+			}
+			if len(p.Erroring) > 0 {
+				<span class="ds-status-badge ds-status-badge--negative" title={ strings.Join(p.Erroring, ", ") }>{ fmt.Sprintf("%d degraded", len(p.Erroring)) }</span>
+			}
 		</div>
+		<div class="ds-stat-sub ds-text-muted">{ fmt.Sprintf("machines %d / %d", p.Ready, p.Expected) }</div>
+	</a>
+}
+
+// machinePostureCard shows machine fleet posture.
+templ machinePostureCard(p MachinePosture) {
+	<a class="ds-stat-block ds-stat-block--link" href="/machines">
+		<div class="ds-stat-label">Machines</div>
+		<div class="ds-stat-value">{ fmt.Sprintf("%d / %d", p.Connected, p.Total) }</div>
+		<div class="ds-stat-sub">
+			if p.Pending > 0 {
+				<span class="ds-status-badge ds-status-badge--neutral">{ fmt.Sprintf("%d pending", p.Pending) }</span>
+			}
+			if p.Failed > 0 {
+				<span class="ds-status-badge ds-status-badge--negative">{ fmt.Sprintf("%d failed", p.Failed) }</span>
+			}
+		</div>
+	</a>
+}
+
+// providerPostureCard shows provider adapter posture.
+templ providerPostureCard(p ProviderPosture) {
+	<a class="ds-stat-block ds-stat-block--link" href="/providers">
+		<div class="ds-stat-label">Providers</div>
+		<div class="ds-stat-value">{ fmt.Sprintf("%d / %d", p.Connected, p.Total) }</div>
+		<div class="ds-stat-sub">
+			if p.Errors > 0 {
+				<span class="ds-status-badge ds-status-badge--negative">{ fmt.Sprintf("%d erroring", p.Errors) }</span>
+			}
+			if p.Disconnected > 0 {
+				<span class="ds-status-badge ds-status-badge--neutral">{ fmt.Sprintf("%d disconnected", p.Disconnected) }</span>
+			}
+		</div>
+	</a>
+}
+
+// backupPostureCard shows backup posture (RPO / failures).
+templ backupPostureCard(p BackupPosture) {
+	<a class="ds-stat-block ds-stat-block--link" href="/settings/backups">
+		<div class="ds-stat-label">Backups</div>
+		<div class="ds-stat-value" style="font-size:0.875rem;">{ p.LastSuccess }</div>
+		<div class="ds-stat-sub">
+			<span class="ds-status-badge ds-status-badge--neutral">{ "RPO " + p.RPOLabel }</span>
+			if p.Failures > 0 {
+				<span class="ds-status-badge ds-status-badge--negative">{ fmt.Sprintf("%d failures", p.Failures) }</span>
+			}
+		</div>
+	</a>
+}
+
+// upgradePostureBanner shows a banner if an upgrade is running or blocked.
+templ upgradePostureBanner(p UpgradePosture) {
+	if p.ActiveRuns > 0 || p.BlockedPrecheck {
+		<div class="ds-card" style="margin-top: 1rem;">
+			<div class="ds-card-title-row">
+				<h2 class="ds-card-title">Upgrade in progress</h2>
+				<a class="ds-btn ds-btn--sm ds-btn--secondary" href="/clusters">View clusters →</a>
+			</div>
+			if p.ActiveRuns > 0 {
+				<p>
+					{ fmt.Sprintf("%d active upgrade run(s)", p.ActiveRuns) }
+					if p.LatestTarget != "" {
+						<span class="ds-text-muted">· target { p.LatestTarget } · phase { p.LatestPhase }</span>
+					}
+				</p>
+			}
+			if p.BlockedPrecheck {
+				<p class="ds-text-danger">A precheck is blocked — see cluster upgrade tab for details.</p>
+			}
+		</div>
+	}
+}
+
+// recentActivity shows the latest audit events (drill-down to /settings/audit).
+templ recentActivity(data DashboardData) {
+	<div class="ds-section-header" style="margin-top: 1rem;">Recent activity</div>
+	if len(data.RecentAudit) == 0 {
+		<div class="ds-empty"><p>No recent activity.</p></div>
 	} else {
-		<h1 class="ds-page-title">Overview</h1>
-		<div class="ds-grid ds-grid-4 ds-stats-row">
-			<div class="ds-stat-block" id="stat-tenants">
-				<div class="ds-stat-label">Clusters</div>
-				<div class="ds-stat-value">{ fmt.Sprintf("%d", data.TenantCount) }</div>
-			</div>
-			<div class="ds-stat-block" id="stat-machines">
-				<div class="ds-stat-label">Machines</div>
-				<div class="ds-stat-value">{ fmt.Sprintf("%d", data.MachineCount) }</div>
-			</div>
-			<div class="ds-stat-block" id="stat-providers">
-				<div class="ds-stat-label">Providers</div>
-				<div class="ds-stat-value">{ fmt.Sprintf("%d", data.ProviderCount) }</div>
-			</div>
-			<div class="ds-stat-block" id="stat-nodegroups">
-				<div class="ds-stat-label">Node Groups</div>
-				<div class="ds-stat-value">{ fmt.Sprintf("%d", data.NodeGroupCount) }</div>
-			</div>
+		<div class="ds-table-wrapper">
+			<table class="ds-table">
+				<thead>
+					<tr>
+						<th class="ds-table-th">Time</th>
+						<th class="ds-table-th">User</th>
+						<th class="ds-table-th">Verb</th>
+						<th class="ds-table-th">Resource</th>
+						<th class="ds-table-th">Status</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, ev := range data.RecentAudit {
+						<tr class="ds-table-row">
+							<td class="ds-table-td ds-text-muted">{ ev.Timestamp }</td>
+							<td class="ds-table-td">{ ev.UserName }</td>
+							<td class="ds-table-td">{ ev.Verb }</td>
+							<td class="ds-table-td">
+								if ev.ResourceID != "" {
+									{ ev.Resource + "/" + ev.ResourceID }
+								} else {
+									{ ev.Resource }
+								}
+							</td>
+							<td class="ds-table-td">
+								<span class={ "ds-status-badge ds-status-badge--" + auditStatusBadgeClass(ev.Status) }>{ fmt.Sprintf("%d", ev.Status) }</span>
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
 		</div>
-		@clustersTable(data)
+		<p class="ds-text-muted ds-text-small" style="margin-top: 0.5rem;">
+			<a href="/settings/audit">Full audit log →</a>
+		</p>
 	}
 }
 

@@ -216,7 +216,7 @@ func Base(props BaseProps) templ.Component {
 		var templ_7745c5c3_Var10 string
 		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(props.Title)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/layout.templ`, Line: 60, Col: 22}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/layout.templ`, Line: 60, Col: 23}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
 		if templ_7745c5c3_Err != nil {
@@ -230,7 +230,7 @@ func Base(props BaseProps) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<script src=\"https://unpkg.com/htmx.org@2.0.4\"></script><script src=\"https://unpkg.com/htmx-ext-sse@2.3.1/sse.js\"></script><script defer src=\"https://unpkg.com/alpinejs@3.14.8/dist/cdn.min.js\"></script><script>\n\t\t\tdocument.addEventListener('click', function(ev) {\n\t\t\t\tvar t = ev.target;\n\t\t\t\tif (!(t instanceof Element)) return;\n\t\t\t\t// Open: any element with data-modal-open=\"<id>\"\n\t\t\t\tvar opener = t.closest('[data-modal-open]');\n\t\t\t\tif (opener) {\n\t\t\t\t\tvar id = opener.getAttribute('data-modal-open');\n\t\t\t\t\tvar d = document.getElementById(id);\n\t\t\t\t\tif (d && d.tagName === 'DIALOG') { d.showModal(); }\n\t\t\t\t}\n\t\t\t\t// Close: any element with data-modal-close, or backdrop click on dialog\n\t\t\t\tvar closer = t.closest('[data-modal-close]');\n\t\t\t\tif (closer) {\n\t\t\t\t\tvar d = closer.closest('dialog');\n\t\t\t\t\tif (d) { d.close(); }\n\t\t\t\t}\n\t\t\t});\n\t\t\t// Backdrop click → close. Native dialog forwards the click to the backdrop\n\t\t\t\t// when the dialog itself is clicked (not its contents) because dialog has padding:0\n\t\t\t\t// and contents are wrapped in a full-size box. We rely on the rect check.\n\t\t\tdocument.addEventListener('click', function(ev) {\n\t\t\t\tvar t = ev.target;\n\t\t\t\tif (t && t.tagName === 'DIALOG' && t.classList.contains('ds-modal')) {\n\t\t\t\t\tvar r = t.getBoundingClientRect();\n\t\t\t\t\tvar inside = ev.clientX >= r.left && ev.clientX <= r.right &&\n\t\t\t\t\t            ev.clientY >= r.top  && ev.clientY <= r.bottom;\n\t\t\t\t\tif (!inside) { t.close(); }\n\t\t\t\t}\n\t\t\t});\n\t\t</script></head><body>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<script src=\"https://unpkg.com/htmx.org@2.0.4\"></script><script src=\"https://unpkg.com/htmx-ext-sse@2.3.1/sse.js\"></script><script defer src=\"https://unpkg.com/alpinejs@3.14.8/dist/cdn.min.js\"></script><script>\n\t\t\t\tdocument.addEventListener(\"click\", function (ev) {\n\t\t\t\t\tvar t = ev.target;\n\t\t\t\t\tif (!(t instanceof Element)) return;\n\t\t\t\t\t// Open: any element with data-modal-open=\"<id>\"\n\t\t\t\t\tvar opener = t.closest(\"[data-modal-open]\");\n\t\t\t\t\tif (opener) {\n\t\t\t\t\t\tvar id = opener.getAttribute(\"data-modal-open\");\n\t\t\t\t\t\tvar d = document.getElementById(id);\n\t\t\t\t\t\tif (d && d.tagName === \"DIALOG\") {\n\t\t\t\t\t\t\td.showModal();\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\t// Close: any element with data-modal-close, or backdrop click on dialog\n\t\t\t\t\tvar closer = t.closest(\"[data-modal-close]\");\n\t\t\t\t\tif (closer) {\n\t\t\t\t\t\tvar d = closer.closest(\"dialog\");\n\t\t\t\t\t\tif (d) {\n\t\t\t\t\t\t\td.close();\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t\t// Backdrop click → close. Native dialog forwards the click to the backdrop\n\t\t\t\t// when the dialog itself is clicked (not its contents) because dialog has padding:0\n\t\t\t\t// and contents are wrapped in a full-size box. We rely on the rect check.\n\t\t\t\tdocument.addEventListener(\"click\", function (ev) {\n\t\t\t\t\tvar t = ev.target;\n\t\t\t\t\tif (t && t.tagName === \"DIALOG\" && t.classList.contains(\"ds-modal\")) {\n\t\t\t\t\t\tvar r = t.getBoundingClientRect();\n\t\t\t\t\t\tvar inside =\n\t\t\t\t\t\t\tev.clientX >= r.left &&\n\t\t\t\t\t\t\tev.clientX <= r.right &&\n\t\t\t\t\t\t\tev.clientY >= r.top &&\n\t\t\t\t\t\t\tev.clientY <= r.bottom;\n\t\t\t\t\t\tif (!inside) {\n\t\t\t\t\t\t\tt.close();\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t</script></head><body>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -467,7 +467,7 @@ func Base(props BaseProps) templ.Component {
 				var templ_7745c5c3_Var31 string
 				templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(props.User)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/layout.templ`, Line: 153, Col: 47}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/layout.templ`, Line: 163, Col: 48}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 				if templ_7745c5c3_Err != nil {
