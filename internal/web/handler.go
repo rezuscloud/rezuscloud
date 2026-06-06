@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/rezuscloud/rezuscloud/internal/api/patch"
+	"github.com/rezuscloud/rezuscloud/internal/audit"
 	"github.com/rezuscloud/rezuscloud/internal/auth"
 	"github.com/rezuscloud/rezuscloud/internal/backup"
 	"github.com/rezuscloud/rezuscloud/internal/credentials"
@@ -34,7 +35,8 @@ import (
 type Handler struct {
 	store      *state.Store
 	jwtManager *auth.JWTManager
-	bus        *watch.Bus // optional — enables /events/stream
+	bus        *watch.Bus  // optional — enables /events/stream
+	auditStore audit.Store // optional — enables /settings/audit page
 }
 
 // NewHandler creates a WebUI handler.
@@ -42,6 +44,13 @@ type Handler struct {
 // bus is optional — pass nil to disable the /events/stream endpoint.
 func NewHandler(store *state.Store, jwtManager *auth.JWTManager, bus *watch.Bus) *Handler {
 	return &Handler{store: store, jwtManager: jwtManager, bus: bus}
+}
+
+// WithAuditStore injects an audit store so the WebUI can render
+// /settings/audit without going through the REST API.
+func (h *Handler) WithAuditStore(s audit.Store) *Handler {
+	h.auditStore = s
+	return h
 }
 
 // RegisterRoutes registers WebUI routes. Must be called after WebUIAuthMiddleware
@@ -103,6 +112,9 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /settings/api-tokens", h.AuthRequired(h.APITokensPage))
 	mux.HandleFunc("POST /settings/users/{name}/api-tokens", h.AuthRequired(h.APITokenCreate))
 	mux.HandleFunc("POST /settings/api-tokens/{id}/delete", h.AuthRequired(h.APITokenDelete))
+
+	// Settings (W10 audit).
+	mux.HandleFunc("GET /settings/audit", h.AuthRequired(h.AuditPage))
 
 	// Legacy /tenants aliases (kept for backward compatibility; /clusters is the
 	// user-facing name per W2). New code should use /clusters/*.
@@ -2380,4 +2392,108 @@ func (h *Handler) APITokenDelete(w http.ResponseWriter, r *http.Request) {
 // isAdmin reports whether the current user is an admin.
 func (h *Handler) isAdmin(r *http.Request) bool {
 	return auth.RoleFromContext(r.Context()) == string(auth.RoleAdmin)
+}
+
+// --- Audit (W10) ---
+
+// AuditPage renders /settings/audit with filters + pagination.
+func (h *Handler) AuditPage(w http.ResponseWriter, r *http.Request) {
+	if h.auditStore == nil {
+		http.Error(w, "audit store unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Parse the same filter surface the API uses.
+	q := r.URL.Query()
+	f := audit.Filter{
+		User:     strings.TrimSpace(q.Get("user")),
+		Resource: strings.TrimSpace(q.Get("resource")),
+		Verb:     strings.TrimSpace(q.Get("verb")),
+	}
+	if raw := q.Get("since"); raw != "" {
+		// Accept either datetime-local ("2026-06-06T12:00") or RFC3339.
+		if t, err := time.Parse("2006-01-02T15:04", raw); err == nil {
+			f.Since = t
+		} else if t, err := time.Parse(time.RFC3339, raw); err == nil {
+			f.Since = t
+		}
+	}
+	if raw := q.Get("until"); raw != "" {
+		if t, err := time.Parse("2006-01-02T15:04", raw); err == nil {
+			f.Until = t
+		} else if t, err := time.Parse(time.RFC3339, raw); err == nil {
+			f.Until = t
+		}
+	}
+	limit := 50
+	if v, err := strconv.Atoi(q.Get("limit")); err == nil && v > 0 && v <= 200 {
+		limit = v
+	}
+	f.Limit = limit
+	if v, err := strconv.Atoi(q.Get("offset")); err == nil && v >= 0 {
+		f.Offset = v
+	}
+
+	events, err := h.auditStore.ListEvents(r.Context(), f)
+	if err != nil {
+		http.Error(w, "list audit failed", http.StatusInternalServerError)
+		return
+	}
+	total, err := h.auditStore.CountEvents(r.Context(), f)
+	if err != nil {
+		http.Error(w, "count audit failed", http.StatusInternalServerError)
+		return
+	}
+
+	rows := make([]pages.AuditRow, 0, len(events))
+	for _, ev := range events {
+		rows = append(rows, pages.AuditRow{
+			ID: ev.ID, Timestamp: ev.Timestamp, UserName: ev.UserName, Role: ev.Role,
+			Method: ev.Method, Path: ev.Path, Resource: ev.Resource, ResourceID: ev.ResourceID,
+			Verb: ev.Verb, Status: ev.Status, RequestID: ev.RequestID, SourceIP: ev.SourceIP,
+			Error: ev.Error,
+		})
+	}
+
+	// Distinct users + resources seen in this page only (cheap).
+	userSet := map[string]struct{}{}
+	resSet := map[string]struct{}{}
+	for _, ev := range events {
+		if ev.UserName != "" {
+			userSet[ev.UserName] = struct{}{}
+		}
+		if ev.Resource != "" {
+			resSet[ev.Resource] = struct{}{}
+		}
+	}
+
+	data := pages.AuditPageData{
+		Events: rows,
+		Filters: pages.AuditFilters{
+			User: f.User, Resource: f.Resource, Verb: f.Verb,
+			Since: q.Get("since"), Until: q.Get("until"),
+		},
+		Total:     total,
+		Limit:     limit,
+		Offset:    f.Offset,
+		CanMutate: h.canMutate(r),
+	}
+	for u := range userSet {
+		data.Users = append(data.Users, u)
+	}
+	for r := range resSet {
+		data.Resources = append(data.Resources, r)
+	}
+
+	toast := h.popToast(r)
+	h.render(w, r, layout.BaseProps{
+		Title:   "Audit Log",
+		Page:    "audit",
+		Content: pages.AuditPage(data),
+		Breadcrumb: []layout.BreadcrumbItem{
+			{Name: "Settings", URL: "/settings/audit"},
+			{Name: "Audit", Current: true},
+		},
+		Toast: toast,
+	})
 }

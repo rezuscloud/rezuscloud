@@ -1,0 +1,182 @@
+package pages
+
+import "fmt"
+
+// AuditPageData drives /settings/audit.
+type AuditPageData struct {
+	Events    []AuditRow
+	Filters   AuditFilters
+	Users     []string // distinct users seen in this view (for filter dropdown)
+	Resources []string // distinct resources seen (for filter dropdown)
+	Total     int
+	Limit     int
+	Offset    int
+	CanMutate bool
+}
+
+// AuditFilters mirrors the query string filters.
+type AuditFilters struct {
+	User     string
+	Resource string
+	Verb     string
+	Since    string
+	Until    string
+}
+
+// AuditRow is one rendered event.
+type AuditRow struct {
+	ID         int64
+	Timestamp  string
+	UserName   string
+	Role       string
+	Method     string
+	Path       string
+	Resource   string
+	ResourceID string
+	Verb       string
+	Status     int
+	RequestID  string
+	SourceIP   string
+	Error      string
+}
+
+// AuditPage renders /settings/audit.
+templ AuditPage(data AuditPageData) {
+	<h1 class="ds-page-title">Audit Log</h1>
+	// Filter form.
+	<form method="get" action="/settings/audit" class="ds-section-card" style="margin-bottom: 1rem;">
+		<div class="ds-form-grid ds-grid-4">
+			<label class="ds-form-field">
+				<span class="ds-label">User</span>
+				<input class="ds-input" name="user" value={ data.Filters.User } placeholder="alice"/>
+			</label>
+			<label class="ds-form-field">
+				<span class="ds-label">Resource</span>
+				<select class="ds-input" name="resource">
+					<option value="">Any</option>
+					for _, r := range data.Resources {
+						<option value={ r } selected?={ data.Filters.Resource == r }>{ r }</option>
+					}
+				</select>
+			</label>
+			<label class="ds-form-field">
+				<span class="ds-label">Verb</span>
+				<select class="ds-input" name="verb">
+					<option value="">Any</option>
+					for _, v := range []string{"create", "update", "delete", "read"} {
+						<option value={ v } selected?={ data.Filters.Verb == v }>{ v }</option>
+					}
+				</select>
+			</label>
+			<label class="ds-form-field">
+				<span class="ds-label">Since</span>
+				<input class="ds-input" type="datetime-local" name="since" value={ data.Filters.Since }/>
+			</label>
+		</div>
+		<div class="ds-form-actions" style="margin-top: 0.75rem;">
+			<button type="submit" class="ds-btn ds-btn--secondary">Apply filters</button>
+			<a href="/settings/audit" class="ds-btn ds-btn--ghost">Reset</a>
+		</div>
+	</form>
+	if len(data.Events) == 0 {
+		<div class="ds-empty"><p>No audit events match the current filters.</p></div>
+	} else {
+		<div class="ds-table-wrapper">
+			<table class="ds-table">
+				<thead>
+					<tr>
+						<th class="ds-table-th">Time</th>
+						<th class="ds-table-th">User</th>
+						<th class="ds-table-th">Role</th>
+						<th class="ds-table-th">Verb</th>
+						<th class="ds-table-th">Resource</th>
+						<th class="ds-table-th">Path</th>
+						<th class="ds-table-th">Status</th>
+						<th class="ds-table-th">Source</th>
+						<th class="ds-table-th">Error</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, ev := range data.Events {
+						<tr class="ds-table-row">
+							<td class="ds-table-td ds-table-mono">{ ev.Timestamp }</td>
+							<td class="ds-table-td">{ ev.UserName }</td>
+							<td class="ds-table-td">
+								if ev.Role != "" {
+									<span class={ "ds-status-badge ds-status-badge--" + userRoleBadgeClass(ev.Role) }>{ ev.Role }</span>
+								}
+							</td>
+							<td class="ds-table-td">{ ev.Verb }</td>
+							<td class="ds-table-td">
+								if ev.ResourceID != "" {
+									{ ev.Resource + "/" + ev.ResourceID }
+								} else {
+									{ ev.Resource }
+								}
+							</td>
+							<td class="ds-table-td ds-table-mono">{ ev.Method + " " + ev.Path }</td>
+							<td class="ds-table-td">
+								<span class={ "ds-status-badge ds-status-badge--" + auditStatusBadgeClass(ev.Status) }>{ fmt.Sprintf("%d", ev.Status) }</span>
+							</td>
+							<td class="ds-table-td ds-text-muted">{ ev.SourceIP }</td>
+							<td class="ds-table-td ds-text-danger">{ ev.Error }</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
+		// Pagination controls.
+		<div class="ds-pagination" style="margin-top: 1rem;">
+			<span class="ds-text-muted">{ fmt.Sprintf("%d total · showing %d-%d", data.Total, data.Offset+1, data.Offset+len(data.Events)) }</span>
+			<div class="ds-form-actions">
+				if data.Offset > 0 {
+					<a class="ds-btn ds-btn--secondary ds-btn--sm" href={ auditPageURL(data.Filters, maxInt(0, data.Offset-data.Limit), data.Limit) }>← Prev</a>
+				}
+				if data.Offset+data.Limit < data.Total {
+					<a class="ds-btn ds-btn--secondary ds-btn--sm" href={ auditPageURL(data.Filters, data.Offset+data.Limit, data.Limit) }>Next →</a>
+				}
+			</div>
+		</div>
+	}
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func auditStatusBadgeClass(code int) string {
+	switch {
+	case code >= 200 && code < 300:
+		return "positive"
+	case code >= 300 && code < 400:
+		return "neutral"
+	case code >= 400 && code < 500:
+		return "negative"
+	default:
+		return "negative"
+	}
+}
+
+func auditPageURL(f AuditFilters, offset, limit int) string {
+	q := ""
+	if f.User != "" {
+		q += "&user=" + f.User
+	}
+	if f.Resource != "" {
+		q += "&resource=" + f.Resource
+	}
+	if f.Verb != "" {
+		q += "&verb=" + f.Verb
+	}
+	if f.Since != "" {
+		q += "&since=" + f.Since
+	}
+	if f.Until != "" {
+		q += "&until=" + f.Until
+	}
+	q += fmt.Sprintf("&limit=%d&offset=%d", limit, offset)
+	return "/settings/audit?" + q[1:] // strip leading '&'
+}
