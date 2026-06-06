@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/rezuscloud/rezuscloud/internal/state"
+	"sigs.k8s.io/yaml"
 )
 
 // ConfigPatch represents a Talos config overlay.
@@ -35,14 +36,17 @@ type PatchSpec struct {
 var validFormats = map[string]bool{
 	"strategic": true,
 	"json6902":  true,
+	"text":      true,
 	"":          true, // defaults to strategic
 }
 
 // ValidTargetRole values.
 var validTargetRoles = map[string]bool{
 	"":             true,
+	"all":          true,
 	"controlplane": true,
 	"worker":       true,
+	"kernel":       true,
 }
 
 // API provides HTTP handlers for ConfigPatch CRUD.
@@ -135,19 +139,8 @@ func (a *API) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !validFormats[req.Spec.Format] {
-		writeError(w, "spec.format must be 'strategic' or 'json6902'", "BadRequest", http.StatusBadRequest)
-		return
-	}
-
-	if !validTargetRoles[req.Spec.TargetRole] {
-		writeError(w, "spec.targetRole must be 'controlplane', 'worker', or empty", "BadRequest", http.StatusBadRequest)
-		return
-	}
-
-	// Validate YAML is not empty/whitespace.
-	if strings.TrimSpace(req.Spec.Patch) == "" {
-		writeError(w, "spec.patch must not be empty", "BadRequest", http.StatusBadRequest)
+	if err := validatePatchSpec(req.Spec); err != nil {
+		writeError(w, err.Error(), "BadRequest", http.StatusBadRequest)
 		return
 	}
 
@@ -265,13 +258,8 @@ func (a *API) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !validFormats[req.Spec.Format] {
-		writeError(w, "spec.format must be 'strategic' or 'json6902'", "BadRequest", http.StatusBadRequest)
-		return
-	}
-
-	if !validTargetRoles[req.Spec.TargetRole] {
-		writeError(w, "spec.targetRole must be 'controlplane', 'worker', or empty", "BadRequest", http.StatusBadRequest)
+	if err := validatePatchSpec(req.Spec); err != nil {
+		writeError(w, err.Error(), "BadRequest", http.StatusBadRequest)
 		return
 	}
 
@@ -351,4 +339,35 @@ func writeError(w http.ResponseWriter, message, reason string, code int) {
 		"reason":  reason,
 		"code":    code,
 	})
+}
+
+func validatePatchSpec(spec PatchSpec) error {
+	if strings.TrimSpace(spec.Patch) == "" {
+		return fmt.Errorf("spec.patch must not be empty")
+	}
+	if !validFormats[spec.Format] {
+		return fmt.Errorf("spec.format must be one of: strategic, json6902, text")
+	}
+	if !validTargetRoles[spec.TargetRole] {
+		return fmt.Errorf("spec.targetRole must be one of: all, controlplane, worker, kernel, or empty")
+	}
+
+	switch spec.Format {
+	case "", "strategic":
+		var out any
+		if err := yaml.Unmarshal([]byte(spec.Patch), &out); err != nil {
+			return fmt.Errorf("invalid YAML for strategic patch: %v", err)
+		}
+	case "json6902":
+		var ops []map[string]any
+		if err := json.Unmarshal([]byte(spec.Patch), &ops); err != nil {
+			return fmt.Errorf("invalid JSON for json6902 patch: %v", err)
+		}
+		if len(ops) == 0 {
+			return fmt.Errorf("json6902 patch must contain at least one operation")
+		}
+	case "text":
+		// No format validation for free-form text patches.
+	}
+	return nil
 }

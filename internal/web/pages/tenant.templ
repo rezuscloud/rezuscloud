@@ -11,6 +11,9 @@ type TenantDetailData struct {
 	NodeGroups   []NodeGroupRow
 	Machines     []MachineRow
 	Patches      []PatchRow
+	// PatchPreview is the resolved patch stack for PreviewRole (patches tab).
+	PatchPreview string
+	PreviewRole  string
 	// CurrentTab is "overview", "patches", "backups", "upgrade", or "settings".
 	CurrentTab string
 	// CanMutate is true when the viewer's role is admin or edit (shows delete/scale buttons).
@@ -37,6 +40,7 @@ type PatchRow struct {
 	Format     string
 	TargetRole string
 	Enabled    bool
+	UpdatedAt  string
 }
 
 // tabItemsFor returns the tab set for the cluster detail page with the given
@@ -253,18 +257,19 @@ templ clusterOverview(data TenantDetailData) {
 	}
 }
 
-// clusterPatchesTab renders the Patches tab — a thin wrapper that surfaces
-// the existing patches table from the Overview tab. W6 will enhance this with
-// create/delete affordances.
+// clusterPatchesTab renders full ConfigPatch management (W6): list + create + preview.
 templ clusterPatchesTab(data TenantDetailData) {
+	<div class="ds-page-header-row" style="margin-bottom: 12px;">
+		<div class="ds-section-header" style="margin: 0;">Config Patches</div>
+		if data.CanMutate {
+			<button type="button" class="ds-btn ds-btn--sm" data-modal-open={ "create-patch-" + data.Name }>Create Patch</button>
+		}
+	</div>
+
 	if len(data.Patches) == 0 {
 		<div class="ds-empty-state">
 			<div class="ds-empty-state-title">No config patches</div>
-			<div class="ds-empty-state-desc">
-				Patches layered on top of the generated Talos config will appear here.
-				<br/>
-				Full patch management lands in W6.
-			</div>
+			<div class="ds-empty-state-desc">Create a patch to overlay generated Talos configs for this cluster.</div>
 		</div>
 	} else {
 		<div class="ds-table-wrapper">
@@ -275,12 +280,15 @@ templ clusterPatchesTab(data TenantDetailData) {
 						<th class="ds-table-th">Format</th>
 						<th class="ds-table-th">Target</th>
 						<th class="ds-table-th">Enabled</th>
+						<th class="ds-table-th">Updated</th>
 					</tr>
 				</thead>
 				<tbody>
 					for _, p := range data.Patches {
 						<tr class="ds-table-row">
-							<td class="ds-table-td">{ p.Name }</td>
+							<td class="ds-table-td">
+								<a href={ templ.URL("/clusters/" + data.Name + "/patches/" + p.Name) }>{ p.Name }</a>
+							</td>
 							<td class="ds-table-td"><span class="ds-table-mono">{ p.Format }</span></td>
 							<td class="ds-table-td">{ p.TargetRole }</td>
 							<td class="ds-table-td">
@@ -290,12 +298,73 @@ templ clusterPatchesTab(data TenantDetailData) {
 									<span class="ds-status-dot ds-status-dot--neutral"></span>
 								}
 							</td>
+							<td class="ds-table-td ds-text-muted">{ p.UpdatedAt }</td>
 						</tr>
 					}
 				</tbody>
 			</table>
 		</div>
 	}
+
+	<div class="ds-card" style="margin-top: 1rem;">
+		<div class="ds-card-header">Effective patch preview</div>
+		<form method="get" action={ templ.URL("/clusters/" + data.Name + "/patches") } class="ds-form" style="margin-bottom: 0.5rem;">
+			<div class="ds-input-group">
+				<label class="ds-label" for="preview-role">Role</label>
+				<select id="preview-role" name="role" class="ds-input">
+					<option value="controlplane" if data.PreviewRole == "controlplane" { selected }>controlplane</option>
+					<option value="worker" if data.PreviewRole == "worker" { selected }>worker</option>
+					<option value="kernel" if data.PreviewRole == "kernel" { selected }>kernel</option>
+				</select>
+			</div>
+			<div class="ds-form-actions"><button type="submit" class="ds-btn ds-btn--sm">Refresh preview</button></div>
+		</form>
+		<pre class="ds-code-block ds-code-block--pre">{ data.PatchPreview }</pre>
+	</div>
+
+	if data.CanMutate {
+		@createPatchModal(data.Name)
+	}
+}
+
+templ createPatchModal(cluster string) {
+	<dialog id={ "create-patch-" + cluster } class="ds-modal">
+		<form method="post" action={ templ.URL("/clusters/" + cluster + "/patches/create") } class="ds-modal-body">
+			<h2 class="ds-modal-title">Create Config Patch</h2>
+			<div class="ds-input-group">
+				<label class="ds-label" for="patch-name">Name</label>
+				<input id="patch-name" name="name" class="ds-input" required/>
+			</div>
+			<div class="ds-input-group">
+				<label class="ds-label" for="patch-format">Format</label>
+				<select id="patch-format" name="format" class="ds-input">
+					<option value="strategic">strategic</option>
+					<option value="json6902">json6902</option>
+					<option value="text">text</option>
+				</select>
+			</div>
+			<div class="ds-input-group">
+				<label class="ds-label" for="patch-target">Target Role</label>
+				<select id="patch-target" name="targetRole" class="ds-input">
+					<option value="all">all</option>
+					<option value="controlplane">controlplane</option>
+					<option value="worker">worker</option>
+					<option value="kernel">kernel</option>
+				</select>
+			</div>
+			<div class="ds-input-group">
+				<label class="ds-label"><input type="checkbox" name="enabled" value="true" checked/> Enabled</label>
+			</div>
+			<div class="ds-input-group">
+				<label class="ds-label" for="patch-body">Body</label>
+				<textarea id="patch-body" name="patch" class="ds-input ds-input--textarea" rows="12" required></textarea>
+			</div>
+			<div class="ds-modal-footer">
+				<button type="button" class="ds-btn ds-btn--secondary" data-modal-close>Cancel</button>
+				<button type="submit" class="ds-btn">Create</button>
+			</div>
+		</form>
+	</dialog>
 }
 
 // clusterSettings renders the Settings tab — currently only the Danger Zone
