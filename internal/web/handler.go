@@ -37,6 +37,7 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/web/handlers/authn"
 	"github.com/rezuscloud/rezuscloud/internal/web/handlers/clusters"
 	dashhandler "github.com/rezuscloud/rezuscloud/internal/web/handlers/dashboard"
+	"github.com/rezuscloud/rezuscloud/internal/web/handlers/machines"
 	"github.com/rezuscloud/rezuscloud/internal/web/handlers/settings"
 	"github.com/rezuscloud/rezuscloud/internal/web/layout"
 	"github.com/rezuscloud/rezuscloud/internal/web/pages"
@@ -124,22 +125,9 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	clustersHandler.RegisterRoutes(mux)
 
 	// Machines (W4).
-	mux.HandleFunc("GET /machines", h.AuthRequired(h.MachinesList))
-	mux.HandleFunc("GET /machines/jointokens", h.AuthRequired(h.JoinTokensList))
-	mux.HandleFunc("POST /machines/jointokens", h.AuthRequired(h.JoinTokenCreate))
-	mux.HandleFunc("GET /machines/pending", h.AuthRequired(h.MachinesPending))
-	mux.HandleFunc("GET /machines/{id}", h.AuthRequired(h.MachineDetail))
-	mux.HandleFunc("GET /machines/{id}/logs", h.AuthRequired(h.MachineLogs))
-	mux.HandleFunc("GET /machines/{id}/logs/poll", h.AuthRequired(h.MachineLogsPoll))
-	mux.HandleFunc("GET /machines/{id}/monitor", h.AuthRequired(h.MachineMonitor))
-	mux.HandleFunc("GET /machines/{id}/events", h.AuthRequired(h.MachineEvents))
-	mux.HandleFunc("GET /machines/{id}/config", h.AuthRequired(h.MachineConfig))
-	mux.HandleFunc("GET /machines/{id}/kernel-args", h.AuthRequired(h.MachineKernelArgs))
-	mux.HandleFunc("POST /machines/{id}/kernel-args", h.AuthRequired(h.MachineKernelArgsSave))
-	mux.HandleFunc("POST /machines/{id}/restart", h.AuthRequired(h.MachineRestart))
-	mux.HandleFunc("POST /machines/{id}/shutdown", h.AuthRequired(h.MachineShutdown))
-	mux.HandleFunc("POST /machines/{id}/approve", h.AuthRequired(h.MachineApprove))
-	mux.HandleFunc("DELETE /machines/{id}", h.AuthRequired(h.MachineDelete))
+	// Machines (W4, W5) — served by the machines sub-package.
+	machinesHandler := machines.New(h.store, h.bus, h)
+	machinesHandler.RegisterRoutes(mux)
 
 	// Settings (backups, users, API tokens, audit, index) + providers + manual
 	// join — served by the settings sub-package.
@@ -2020,6 +2008,11 @@ func (h *Handler) clusterNames() []string {
 		out = append(out, t.Metadata.Name)
 	}
 	return out
+}
+
+// ClusterNames satisfies the web/handlers/* Host interface (clusterNames alias).
+func (h *Handler) ClusterNames() []string {
+	return h.clusterNames()
 }
 
 // machineLinkEndpoint returns the configured endpoint string for kernel args preview.
