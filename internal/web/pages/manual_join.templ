@@ -1,0 +1,89 @@
+package pages
+
+import "fmt"
+
+// ManualJoinPageData drives /machines/join-manual.
+type ManualJoinPageData struct {
+	ClusterNames []string
+	JoinTokens   []ManualJoinToken
+	// HelperURL is the link to the Image Factory / schematic helper.
+	HelperURL string
+	// HelperText describes what the link does.
+	HelperText string
+	CanMutate  bool
+}
+
+// ManualJoinToken is a render-friendly view of an active join token.
+type ManualJoinToken struct {
+	Token      string
+	Cluster    string
+	NodeGroup  string
+	KernelArgs string // rendered kernel args (siderolink=... talos.config=...)
+	ExpiresAt  string
+}
+
+// ManualJoinPage renders /machines/join-manual.
+templ ManualJoinPage(data ManualJoinPageData) {
+	<h1 class="ds-page-title">Manual Join</h1>
+	<p class="ds-text-muted">
+		Boot a Talos machine from installation media (ISO / raw / PXE) and
+		apply the kernel arguments below to make it register with this
+		management plane and join the chosen cluster.
+	</p>
+	if data.HelperURL != "" {
+		<div class="ds-card ds-card--highlight" style="margin-bottom: 1rem;">
+			<h2 class="ds-card-title">Image Factory</h2>
+			<p class="ds-text-muted ds-text-small">
+				{ data.HelperText }
+			</p>
+			<code class="ds-code-block"><a href={ data.HelperURL }>{ data.HelperURL }</a></code>
+		</div>
+	}
+	<div class="ds-section-header">Active join tokens</div>
+	if len(data.JoinTokens) == 0 {
+		<div class="ds-empty">
+			<p>No active join tokens. Create one first on the Join Tokens page.</p>
+			if data.CanMutate {
+				<a href="/machines/jointokens" class="ds-btn">Create a join token</a>
+			}
+		</div>
+	} else {
+		for _, t := range data.JoinTokens {
+			<div class="ds-section-card" style="margin-bottom: 1rem;">
+				<div class="ds-section-title">{ t.Cluster } / { t.NodeGroup }</div>
+				<div class="ds-input-group">
+					<label class="ds-label">Kernel arguments</label>
+					<div class="ds-copy-row">
+						<code class="ds-code-block" id={ "args-" + t.Token }>{ t.KernelArgs }</code>
+						<button
+							type="button"
+							class="ds-btn ds-btn--sm ds-btn--secondary"
+							x-data="{ copied: false }"
+							x-on:click={ "navigator.clipboard.writeText(document.getElementById('args-" + t.Token + "').innerText); copied = true" }
+							x-on:mouseleave="setTimeout(() => copied = false, 1500)"
+						>
+							<span x-show="!copied">Copy</span>
+							<span x-show="copied" x-cloak>Copied!</span>
+						</button>
+					</div>
+				</div>
+				<div class="ds-input-group">
+					<label class="ds-label">Join token (first 8 chars)</label>
+					<code class="ds-code-inline">{ t.Token }</code>
+					if t.ExpiresAt != "" {
+						<span class="ds-text-muted" style="margin-left: 0.5rem;">expires { t.ExpiresAt }</span>
+					}
+				</div>
+			</div>
+		}
+	}
+	if len(data.ClusterNames) > 0 {
+		<div class="ds-section-header">Need a token?</div>
+		<p class="ds-text-muted ds-text-small">
+			<a href="/machines/jointokens">Manage join tokens →</a>
+		</p>
+	}
+}
+
+// fmt.Sprintf keeps the fmt import valid for downstream uses.
+var _ = fmt.Sprintf
