@@ -22,7 +22,8 @@ import (
 )
 
 // Router creates and returns a fully configured HTTP handler for the API.
-func Router(store *state.Store, jwtManager *auth.JWTManager) http.Handler {
+// auditComponent is required — the API runs audit middleware on every mutation.
+func Router(store *state.Store, jwtManager *auth.JWTManager, auditComponent *audit.Component) http.Handler {
 	mux := http.NewServeMux()
 
 	// Public endpoints (no auth required).
@@ -95,12 +96,10 @@ func Router(store *state.Store, jwtManager *auth.JWTManager) http.Handler {
 
 	// Apply auth middleware to protected routes (JWT + API tokens).
 	// Audit middleware sits after auth so it can resolve user/role from context.
-	auditStore := audit.NewSQLStore(store.DB())
-	auditRecorder := audit.NewRecorder(auditStore)
-	auditHandlers := audit.NewHandlers(auditStore)
+	auditHandlers := auditComponent.Handlers
 	auditHandlers.RegisterRoutes(protected)
 
-	protectedWithAudit := audit.Middleware(auditRecorder)(protected)
+	protectedWithAudit := audit.Middleware(auditComponent.Recorder)(protected)
 	mux.Handle("/api/v1/", auth.AuthenticateWithTokens(jwtManager, auth.StoreTokenVerifier{Store: store}, protectedWithAudit))
 
 	return middleware.Chain(mux,
