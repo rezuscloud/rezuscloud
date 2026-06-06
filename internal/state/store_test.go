@@ -659,3 +659,98 @@ func TestStore_NoBusIsSafe(t *testing.T) {
 		t.Fatalf("delete: %v", err)
 	}
 }
+
+// --- Tenant Secrets ---
+
+func TestStore_TenantSecrets_RoundTrip(t *testing.T) {
+	s := openTestStore(t)
+
+	// Create a tenant first (FK constraint).
+	_, err := s.CreateTenant("with-secrets", TenantSpec{KubernetesVersion: "1.35.0"}, nil, nil)
+	if err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+
+	// Initially no secrets.
+	bundle, err := s.LoadTenantSecrets("with-secrets")
+	if err != nil {
+		t.Fatalf("initial load: %v", err)
+	}
+	if bundle != nil {
+		t.Errorf("expected nil bundle initially, got %d bytes", len(bundle))
+	}
+
+	// Save a bundle.
+	payload := []byte(`{"version":"v1","data":"topsecret"}`)
+	if err := s.SaveTenantSecrets("with-secrets", payload); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+
+	// Load it back.
+	loaded, err := s.LoadTenantSecrets("with-secrets")
+	if err != nil {
+		t.Fatalf("load after save: %v", err)
+	}
+	if string(loaded) != string(payload) {
+		t.Errorf("bundle mismatch: got %q, want %q", string(loaded), string(payload))
+	}
+}
+
+func TestStore_TenantSecrets_Overwrite(t *testing.T) {
+	s := openTestStore(t)
+	_, err := s.CreateTenant("overwrite", TenantSpec{KubernetesVersion: "1.35.0"}, nil, nil)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	_ = s.SaveTenantSecrets("overwrite", []byte("first"))
+	_ = s.SaveTenantSecrets("overwrite", []byte("second"))
+
+	loaded, err := s.LoadTenantSecrets("overwrite")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if string(loaded) != "second" {
+		t.Errorf("expected overwrite to 'second', got %q", string(loaded))
+	}
+}
+
+func TestStore_TenantSecrets_Remove(t *testing.T) {
+	s := openTestStore(t)
+	_, err := s.CreateTenant("removable", TenantSpec{KubernetesVersion: "1.35.0"}, nil, nil)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	_ = s.SaveTenantSecrets("removable", []byte("data"))
+	if err := s.RemoveTenantSecrets("removable"); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+
+	loaded, err := s.LoadTenantSecrets("removable")
+	if err != nil {
+		t.Fatalf("load after remove: %v", err)
+	}
+	if loaded != nil {
+		t.Errorf("expected nil after remove, got %d bytes", len(loaded))
+	}
+}
+
+func TestStore_TenantSecrets_RemoveNonExistent(t *testing.T) {
+	s := openTestStore(t)
+	// Should not error when removing secrets for a non-existent tenant.
+	if err := s.RemoveTenantSecrets("never-existed"); err != nil {
+		t.Errorf("remove non-existent should be no-op, got: %v", err)
+	}
+}
+
+func TestStore_TenantSecrets_LoadNonExistent(t *testing.T) {
+	s := openTestStore(t)
+	loaded, err := s.LoadTenantSecrets("never-existed")
+	if err != nil {
+		t.Errorf("load non-existent should not error, got: %v", err)
+	}
+	if loaded != nil {
+		t.Errorf("expected nil for non-existent, got %d bytes", len(loaded))
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/rezuscloud/rezuscloud/internal/state"
@@ -206,5 +207,118 @@ func TestTenantAPI_UpdateStatus(t *testing.T) {
 	_ = json.NewDecoder(w.Body).Decode(&resp)
 	if resp.Status.Phase != state.TenantActive {
 		t.Errorf("phase = %q, want %q", resp.Status.Phase, state.TenantActive)
+	}
+}
+
+func TestTenantAPI_Create_AutoGeneratesSecretsBundle(t *testing.T) {
+	api, _ := setupTestAPI(t)
+
+	body, _ := json.Marshal(CreateTenantRequest{
+		Metadata: state.Metadata{Name: "auto-secrets"},
+		Spec:     state.TenantSpec{KubernetesVersion: "1.35.0", TalosVersion: "1.12.0"},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	api.Create(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create status = %d, want %d; body: %s", w.Code, http.StatusCreated, w.Body.String())
+	}
+
+	// Verify the secrets bundle is stored.
+	bundle, err := api.store.LoadTenantSecrets("auto-secrets")
+	if err != nil {
+		t.Fatalf("load secrets: %v", err)
+	}
+	if bundle == nil {
+		t.Error("expected secrets bundle to be auto-generated on create, got nil")
+	}
+}
+
+func TestTenantAPI_Kubeconfig_Success(t *testing.T) {
+	api, _ := setupTestAPI(t)
+
+	// Create tenant (auto-generates bundle).
+	body, _ := json.Marshal(CreateTenantRequest{
+		Metadata: state.Metadata{Name: "kc-test"},
+		Spec:     state.TenantSpec{KubernetesVersion: "1.35.0", TalosVersion: "1.12.0"},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	api.Create(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create failed: %d", w.Code)
+	}
+
+	// Fetch kubeconfig.
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/tenants/kc-test/kubeconfig", nil)
+	req.SetPathValue("name", "kc-test")
+	w = httptest.NewRecorder()
+	api.Kubeconfig(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("kubeconfig status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "application/yaml" {
+		t.Errorf("Content-Type = %q, want application/yaml", ct)
+	}
+	cd := w.Header().Get("Content-Disposition")
+	if !strings.Contains(cd, "kc-test-kubeconfig.yaml") {
+		t.Errorf("Content-Disposition = %q, missing filename", cd)
+	}
+	body2 := w.Body.String()
+	if !strings.Contains(body2, "apiVersion: v1") {
+		t.Errorf("kubeconfig body missing apiVersion; got:\n%s", body2)
+	}
+	if !strings.Contains(body2, "kind: Config") {
+		t.Errorf("kubeconfig body missing kind: Config; got:\n%s", body2)
+	}
+	if !strings.Contains(body2, "name: kc-test") && !strings.Contains(body2, "kc-test") {
+		t.Errorf("kubeconfig body missing cluster name reference; got:\n%s", body2)
+	}
+}
+
+func TestTenantAPI_Kubeconfig_TenantNotFound(t *testing.T) {
+	api, _ := setupTestAPI(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/tenants/nope/kubeconfig", nil)
+	req.SetPathValue("name", "nope")
+	w := httptest.NewRecorder()
+	api.Kubeconfig(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", w.Code)
+	}
+}
+
+func TestTenantAPI_Talosconfig_Success(t *testing.T) {
+	api, _ := setupTestAPI(t)
+
+	body, _ := json.Marshal(CreateTenantRequest{
+		Metadata: state.Metadata{Name: "tc-test"},
+		Spec:     state.TenantSpec{KubernetesVersion: "1.35.0", TalosVersion: "1.12.0"},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	api.Create(w, req)
+
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/tenants/tc-test/talosconfig", nil)
+	req.SetPathValue("name", "tc-test")
+	w = httptest.NewRecorder()
+	api.Talosconfig(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("talosconfig status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "application/yaml" {
+		t.Errorf("Content-Type = %q, want application/yaml", ct)
+	}
+	cd := w.Header().Get("Content-Disposition")
+	if !strings.Contains(cd, "tc-test-talosconfig.yaml") {
+		t.Errorf("Content-Disposition = %q, missing filename", cd)
+	}
+	body2 := w.Body.String()
+	if !strings.Contains(body2, "context:") {
+		t.Errorf("talosconfig body missing 'context:'; got:\n%s", body2)
 	}
 }

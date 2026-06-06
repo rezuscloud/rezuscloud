@@ -6,6 +6,7 @@ package state
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -873,6 +874,44 @@ func (s *Store) DeleteTenant(name string) error {
 	_ = s.AddFinalizer("tenant", name, "rezuscloud.io/secrets")
 	_ = s.AddFinalizer("tenant", name, "rezuscloud.io/tokens")
 
+	return nil
+}
+
+// SaveTenantSecrets stores the secrets bundle for a tenant.
+// Overwrites any existing bundle for the same tenant.
+func (s *Store) SaveTenantSecrets(name string, bundle []byte) error {
+	now := time.Now().UTC()
+	_, err := s.db.Exec(`
+		INSERT INTO tenant_secrets (tenant_name, bundle, created_at)
+		VALUES (?, ?, ?)
+		ON CONFLICT(tenant_name) DO UPDATE SET bundle = excluded.bundle, created_at = excluded.created_at
+	`, name, bundle, now)
+	if err != nil {
+		return fmt.Errorf("save tenant secrets: %w", err)
+	}
+	return nil
+}
+
+// LoadTenantSecrets returns the secrets bundle bytes for a tenant, or nil if none.
+func (s *Store) LoadTenantSecrets(name string) ([]byte, error) {
+	var bundle []byte
+	err := s.db.QueryRow(`SELECT bundle FROM tenant_secrets WHERE tenant_name = ?`, name).Scan(&bundle)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load tenant secrets: %w", err)
+	}
+	return bundle, nil
+}
+
+// RemoveTenantSecrets deletes the secrets bundle for a tenant.
+// No-op if no bundle exists.
+func (s *Store) RemoveTenantSecrets(name string) error {
+	_, err := s.db.Exec(`DELETE FROM tenant_secrets WHERE tenant_name = ?`, name)
+	if err != nil {
+		return fmt.Errorf("remove tenant secrets: %w", err)
+	}
 	return nil
 }
 

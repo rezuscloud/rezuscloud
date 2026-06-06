@@ -2,6 +2,7 @@ package pages
 
 import "fmt"
 
+// TenantDetailData drives the /clusters/{name} detail page.
 type TenantDetailData struct {
 	Name         string
 	Phase        string
@@ -10,6 +11,10 @@ type TenantDetailData struct {
 	NodeGroups   []NodeGroupRow
 	Machines     []MachineRow
 	Patches      []PatchRow
+	// CurrentTab is "overview", "patches", "backups", "upgrade", or "settings".
+	CurrentTab string
+	// CanMutate is true when the viewer's role is admin or edit (shows delete/scale buttons).
+	CanMutate bool
 }
 
 type NodeGroupRow struct {
@@ -34,12 +39,50 @@ type PatchRow struct {
 	Enabled    bool
 }
 
+// tabItemsFor returns the tab set for the cluster detail page with the given
+// tab marked active. Order matches the visual order in the UI.
+func tabItemsFor(cluster, current string) []tabItem {
+	tabs := []tabItem{
+		{ID: "overview", Label: "Overview", URL: "/clusters/" + cluster},
+		{ID: "patches", Label: "Patches", URL: "/clusters/" + cluster + "/patches"},
+		{ID: "backups", Label: "Backups", URL: "/clusters/" + cluster + "/backups"},
+		{ID: "upgrade", Label: "Upgrade", URL: "/clusters/" + cluster + "/upgrade"},
+		{ID: "settings", Label: "Settings", URL: "/clusters/" + cluster + "/settings"},
+	}
+	for i := range tabs {
+		if tabs[i].ID == current {
+			tabs[i].Active = true
+			return tabs
+		}
+	}
+	// Default to overview when current is empty or unknown.
+	tabs[0].Active = true
+	return tabs
+}
+
+// tabItem is a single entry in a Tabs component. Same shape as layout.TabItem
+// but kept local to avoid an import cycle.
+type tabItem struct {
+	ID     string
+	Label  string
+	URL    string
+	Active bool
+}
+
+// TenantDetail renders the /clusters/{name} detail page.
+//
+// Includes:
+//   - Header with phase badge and download buttons
+//   - Tabs (Overview / Patches / Backups / Upgrade / Settings)
+//   - Per-tab content (only Overview is populated for v1)
+//   - Settings tab carries the delete-cluster confirm modal (admin/edit only)
 templ TenantDetail(data TenantDetailData) {
-	<div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1.5rem;">
-		<h1 class="ds-page-title" style="margin-bottom: 0;">{ data.Name }</h1>
+	<div class="ds-page-header-row">
+		<h1 class="ds-page-title">{ data.Name }</h1>
 		<span class={ "ds-status-badge ds-status-badge--" + phaseBadgeClass(data.Phase) }>{ data.Phase }</span>
 	</div>
-	<div class="ds-grid ds-grid-3" style="margin-bottom: 1.5rem;">
+
+	<div class="ds-grid ds-grid-4" style="margin-bottom: 1.5rem;">
 		<div class="ds-stat-block">
 			<div class="ds-stat-label">Kubernetes</div>
 			<div class="ds-stat-value" style="font-size: 1.125rem;">{ data.K8sVersion }</div>
@@ -52,7 +95,59 @@ templ TenantDetail(data TenantDetailData) {
 			<div class="ds-stat-label">Machines</div>
 			<div class="ds-stat-value" style="font-size: 1.125rem;">{ fmt.Sprintf("%d", len(data.Machines)) }</div>
 		</div>
+		<div class="ds-stat-block">
+			<div class="ds-stat-label">Credentials</div>
+			<div class="ds-stat-value" style="font-size: 0.75rem; line-height: 1.4;">
+				<a href={ templ.URL("/clusters/" + data.Name + "/kubeconfig") } class="ds-link">kubeconfig</a>
+				<br/>
+				<a href={ templ.URL("/clusters/" + data.Name + "/talosconfig") } class="ds-link">talosconfig</a>
+			</div>
+		</div>
 	</div>
+
+	@clusterTabs(data)
+
+	// Always render the scale + delete modals so their DOM nodes are present
+	// when the user clicks the corresponding triggers. They start hidden
+	// (native <dialog> is closed by default).
+	for _, ng := range data.NodeGroups {
+		@scaleNodeGroupModal(data.Name, ng)
+	}
+	if data.CanMutate {
+		@deleteClusterModal(data.Name)
+	}
+}
+
+// clusterTabs renders the tab strip + per-tab content.
+// Only Overview and Settings have content for v1; the other tabs render a
+// "coming soon" stub.
+templ clusterTabs(data TenantDetailData) {
+	<div class="ds-tabs-wrapper">
+		<nav class="ds-tabs" role="tablist">
+			for _, t := range tabItemsFor(data.Name, data.CurrentTab) {
+				if t.Active {
+					<a class="ds-tabs-link ds-tabs-link--active" role="tab" aria-selected="true" href={ templ.URL(t.URL) }>{ t.Label }</a>
+				} else {
+					<a class="ds-tabs-link" role="tab" aria-selected="false" href={ templ.URL(t.URL) }>{ t.Label }</a>
+				}
+			}
+		</nav>
+	</div>
+	if data.CurrentTab == "settings" {
+		@clusterSettings(data)
+	} else if data.CurrentTab == "patches" {
+		@clusterPatchesTab(data)
+	} else if data.CurrentTab == "backups" {
+		@stubTab("Backups", "etcd snapshots and S3-style restores will land here in a future release.")
+	} else if data.CurrentTab == "upgrade" {
+		@stubTab("Upgrade", "rolling upgrade workflow will land here in a future release.")
+	} else {
+		@clusterOverview(data)
+	}
+}
+
+// clusterOverview renders the Overview tab content (the previous default view).
+templ clusterOverview(data TenantDetailData) {
 	if len(data.NodeGroups) > 0 {
 		<div class="ds-section-header">Node Groups</div>
 		<div class="ds-table-wrapper">
@@ -63,6 +158,9 @@ templ TenantDetail(data TenantDetailData) {
 						<th class="ds-table-th">Role</th>
 						<th class="ds-table-th">Count</th>
 						<th class="ds-table-th">Ready</th>
+						if data.CanMutate {
+							<th class="ds-table-th"></th>
+						}
 					</tr>
 				</thead>
 				<tbody>
@@ -72,6 +170,17 @@ templ TenantDetail(data TenantDetailData) {
 							<td class="ds-table-td"><span class="ds-status-badge ds-status-badge--neutral">{ ng.Role }</span></td>
 							<td class="ds-table-td">{ fmt.Sprintf("%d", ng.Count) }</td>
 							<td class="ds-table-td">{ fmt.Sprintf("%d", ng.Ready) }</td>
+							if data.CanMutate {
+								<td class="ds-table-td">
+									<button
+										type="button"
+										class="ds-btn ds-btn--secondary ds-btn--sm"
+										data-modal-open={ "scale-" + data.Name + "-" + ng.Name }
+									>
+										Scale
+									</button>
+								</td>
+							}
 						</tr>
 					}
 				</tbody>
@@ -142,4 +251,160 @@ templ TenantDetail(data TenantDetailData) {
 			</table>
 		</div>
 	}
+}
+
+// clusterPatchesTab renders the Patches tab — a thin wrapper that surfaces
+// the existing patches table from the Overview tab. W6 will enhance this with
+// create/delete affordances.
+templ clusterPatchesTab(data TenantDetailData) {
+	if len(data.Patches) == 0 {
+		<div class="ds-empty-state">
+			<div class="ds-empty-state-title">No config patches</div>
+			<div class="ds-empty-state-desc">
+				Patches layered on top of the generated Talos config will appear here.
+				<br/>
+				Full patch management lands in W6.
+			</div>
+		</div>
+	} else {
+		<div class="ds-table-wrapper">
+			<table class="ds-table">
+				<thead>
+					<tr>
+						<th class="ds-table-th">Name</th>
+						<th class="ds-table-th">Format</th>
+						<th class="ds-table-th">Target</th>
+						<th class="ds-table-th">Enabled</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, p := range data.Patches {
+						<tr class="ds-table-row">
+							<td class="ds-table-td">{ p.Name }</td>
+							<td class="ds-table-td"><span class="ds-table-mono">{ p.Format }</span></td>
+							<td class="ds-table-td">{ p.TargetRole }</td>
+							<td class="ds-table-td">
+								if p.Enabled {
+									<span class="ds-status-dot ds-status-dot--positive"></span>
+								} else {
+									<span class="ds-status-dot ds-status-dot--neutral"></span>
+								}
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	}
+}
+
+// clusterSettings renders the Settings tab — currently only the Danger Zone
+// containing the delete-cluster confirm modal trigger.
+templ clusterSettings(data TenantDetailData) {
+	<div class="ds-section-header">Cluster</div>
+	<div class="ds-card" style="margin-bottom: 1rem;">
+		<div class="ds-card-header">Name</div>
+		<div>{ data.Name }</div>
+	</div>
+
+	if data.CanMutate {
+		<div class="ds-section-header ds-section-header--danger">Danger Zone</div>
+		<div class="ds-card ds-card--danger">
+			<div class="ds-card-header">Delete this cluster</div>
+			<div style="margin-bottom: 0.75rem;">Once deleted, the cluster record and its secrets are removed.</div>
+			<button
+				type="button"
+				class="ds-btn ds-btn--danger"
+				data-modal-open={ "delete-" + data.Name }
+			>
+				Delete cluster
+			</button>
+		</div>
+	}
+}
+
+// stubTab renders a "coming soon" placeholder for tabs whose content lands in
+// a later milestone (Backups → W8, Upgrade → W7).
+templ stubTab(title, message string) {
+	<div class="ds-empty-state">
+		<div class="ds-empty-state-title">{ title }</div>
+		<div class="ds-empty-state-desc">{ message }</div>
+	</div>
+}
+
+// scaleNodeGroupModal renders a <dialog> for scaling a node group.
+// The form posts to /clusters/{tenant}/nodegroups/{ng}/scale and the handler
+// re-renders the table row on success.
+templ scaleNodeGroupModal(tenant string, ng NodeGroupRow) {
+	<dialog id={ "scale-" + tenant + "-" + ng.Name } class="ds-modal">
+		<div class="ds-modal-header">
+			<h2 class="ds-modal-title">Scale { ng.Name }</h2>
+			<button type="button" class="ds-modal-close" data-modal-close aria-label="Close">×</button>
+		</div>
+		<div class="ds-modal-body">
+			<form
+				hx-post={ "/clusters/" + tenant + "/nodegroups/" + ng.Name + "/scale" }
+				hx-target="this"
+				hx-swap="outerHTML"
+				class="ds-form"
+			>
+				<div class="ds-input-group">
+					<label class="ds-label">Node Group</label>
+					<div class="ds-input-hint">{ ng.Name } ({ ng.Role })</div>
+				</div>
+				<div class="ds-input-group">
+					<label class="ds-label" for={ "count-" + ng.Name }>Current count</label>
+					<input
+						type="text"
+						id={ "current-" + ng.Name }
+						class="ds-input"
+						value={ fmt.Sprintf("%d", ng.Count) }
+						disabled
+					/>
+				</div>
+				<div class="ds-input-group">
+					<label class="ds-label" for={ "count-" + ng.Name }>New count</label>
+					<input
+						type="number"
+						id={ "count-" + ng.Name }
+						name="count"
+						class="ds-input"
+						value={ fmt.Sprintf("%d", ng.Count) }
+						min="0"
+						max="100"
+						required
+					/>
+				</div>
+				<div class="ds-form-actions">
+					<button type="button" class="ds-btn ds-btn--secondary" data-modal-close>Cancel</button>
+					<button type="submit" class="ds-btn">Apply</button>
+				</div>
+			</form>
+		</div>
+	</dialog>
+}
+
+// deleteClusterModal renders a confirmation modal for deleting a cluster.
+// The form does an hx-delete to /clusters/{name} (WebUI handler) which proxies
+// to DELETE /api/v1/tenants/{name}. On success, the handler returns HX-Redirect
+// to /clusters with a toast.
+templ deleteClusterModal(name string) {
+	<dialog id={ "delete-" + name } class="ds-modal ds-modal--sm">
+		<div class="ds-modal-header">
+			<h2 class="ds-modal-title">Delete cluster?</h2>
+			<button type="button" class="ds-modal-close" data-modal-close aria-label="Close">×</button>
+		</div>
+		<div class="ds-modal-body">
+			<p style="margin-bottom: 1rem;">This will permanently remove cluster <strong>{ name }</strong> and its secrets.</p>
+			<form
+				hx-delete={ "/clusters/" + name }
+				hx-target="this"
+				hx-swap="outerHTML"
+				class="ds-form-actions"
+			>
+				<button type="button" class="ds-btn ds-btn--secondary" data-modal-close>Cancel</button>
+				<button type="submit" class="ds-btn ds-btn--danger">Delete cluster</button>
+			</form>
+		</div>
+	</dialog>
 }

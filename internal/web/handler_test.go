@@ -730,3 +730,510 @@ func TestSidebar_HasActiveHighlight(t *testing.T) {
 		t.Error("dashboard should mark a sidebar link as active")
 	}
 }
+
+// --- W3 tests ---
+
+// authedRequestAs builds a request with a valid session cookie AND the
+// user/role injected into the request context. Use this for tests that call
+// the inner handler directly (without going through AuthRequired middleware).
+func authedRequestAs(method, target string, cookie *http.Cookie, body, user, role string) *http.Request {
+	req := authedRequest(method, target, cookie, body)
+	ctx := auth.WithClaims(req.Context(), user, role)
+	return req.WithContext(ctx)
+}
+
+func TestTenantsList_HasCreateButton(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	req := authedRequestAs(http.MethodGet, "/clusters", cookie, "", "admin", auth.RoleAdmin)
+	w := httptest.NewRecorder()
+	h.TenantsList(w, req)
+
+	body := w.Body.String()
+	if !strings.Contains(body, "/clusters/create") {
+		t.Errorf("expected /clusters/create link in /clusters page; got body tail: %s", body[len(body)-min(len(body), 400):])
+	}
+	if !strings.Contains(body, "Create Cluster") {
+		t.Errorf("expected 'Create Cluster' button label; got body tail: %s", body[len(body)-min(len(body), 400):])
+	}
+}
+
+func TestClusterCreatePage_Renders(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	req := authedRequestAs(http.MethodGet, "/clusters/create", cookie, "", "admin", auth.RoleAdmin)
+	w := httptest.NewRecorder()
+	h.ClusterCreatePage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "Create Cluster") {
+		t.Error("page should render 'Create Cluster' title")
+	}
+	if !strings.Contains(body, `name="name"`) {
+		t.Error("page should render the name input")
+	}
+	if !strings.Contains(body, `name="kubernetesVersion"`) {
+		t.Error("page should render the kubernetesVersion select")
+	}
+	if !strings.Contains(body, `name="talosVersion"`) {
+		t.Error("page should render the talosVersion select")
+	}
+}
+
+func TestClusterCreateSubmit_Valid(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	form := "name=my-new-cluster&kubernetesVersion=1.35.0&talosVersion=1.12.0"
+	req := authedRequestAs(http.MethodPost, "/clusters/create", cookie, form, "admin", auth.RoleAdmin)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.ClusterCreateSubmit(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Errorf("status = %d, want 204; body: %s", w.Code, w.Body.String())
+	}
+	loc := w.Header().Get("HX-Redirect")
+	if !strings.Contains(loc, "/clusters/my-new-cluster") {
+		t.Errorf("HX-Redirect = %q, want /clusters/my-new-cluster...", loc)
+	}
+	if !strings.Contains(loc, "toast=") {
+		t.Errorf("HX-Redirect = %q, missing toast query param", loc)
+	}
+
+	// Verify the tenant was actually created.
+	tenant, err := store.GetTenant("my-new-cluster")
+	if err != nil || tenant == nil {
+		t.Errorf("tenant not found after create: err=%v, tenant=%v", err, tenant)
+	}
+
+	// Verify secrets were auto-generated.
+	bundle, _ := store.LoadTenantSecrets("my-new-cluster")
+	if bundle == nil {
+		t.Error("expected auto-generated secrets bundle after create")
+	}
+}
+
+func TestClusterCreateSubmit_InvalidName(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	form := "name=UPPERCASE&kubernetesVersion=1.35.0&talosVersion=1.12.0"
+	req := authedRequestAs(http.MethodPost, "/clusters/create", cookie, form, "admin", auth.RoleAdmin)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.ClusterCreateSubmit(w, req)
+
+	// No redirect — form re-renders with validation error.
+	if loc := w.Header().Get("HX-Redirect"); loc != "" {
+		t.Errorf("HX-Redirect should be empty on validation error, got %q", loc)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "must match") && !strings.Contains(body, "lowercase") {
+		t.Errorf("expected validation error mentioning lowercase/must match; got body: %s", body)
+	}
+}
+
+func TestClusterCreateSubmit_Duplicate(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	// First create succeeds.
+	form := "name=existing&kubernetesVersion=1.35.0&talosVersion=1.12.0"
+	req := authedRequestAs(http.MethodPost, "/clusters/create", cookie, form, "admin", auth.RoleAdmin)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.ClusterCreateSubmit(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("first create failed: %d", w.Code)
+	}
+
+	// Second create with same name fails.
+	req = authedRequestAs(http.MethodPost, "/clusters/create", cookie, form, "admin", auth.RoleAdmin)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w = httptest.NewRecorder()
+	h.ClusterCreateSubmit(w, req)
+
+	if loc := w.Header().Get("HX-Redirect"); loc != "" {
+		t.Errorf("HX-Redirect should be empty on duplicate, got %q", loc)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "already exists") {
+		t.Errorf("expected 'already exists' error; got body: %s", body)
+	}
+}
+
+func TestClusterDelete_Admin(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	// Create a tenant via the store directly.
+	setupTenant(t, store, "to-delete")
+
+	req := authedRequestAs(http.MethodDelete, "/clusters/to-delete", cookie, "", "admin", auth.RoleAdmin)
+	req.SetPathValue("name", "to-delete")
+	w := httptest.NewRecorder()
+	h.ClusterDelete(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Errorf("status = %d, want 204; body: %s", w.Code, w.Body.String())
+	}
+	loc := w.Header().Get("HX-Redirect")
+	if !strings.Contains(loc, "/clusters") {
+		t.Errorf("HX-Redirect = %q, want /clusters", loc)
+	}
+
+	// Verify the tenant is marked deleted (deletionTimestamp set).
+	tenant, _ := store.GetTenant("to-delete")
+	if tenant == nil {
+		// OK — depends on store behaviour. Either deleted outright or marked.
+		return
+	}
+	if tenant.Metadata.DeletionTimestamp == nil {
+		t.Error("expected deletionTimestamp to be set after DELETE")
+	}
+}
+
+func TestClusterDelete_ViewRole_Forbidden(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "viewer", "pass", auth.RoleView)
+	cookie := loginCookie(t, h, "viewer", "pass")
+
+	setupTenant(t, store, "view-only")
+
+	req := authedRequestAs(http.MethodDelete, "/clusters/view-only", cookie, "", "viewer", auth.RoleView)
+	req.SetPathValue("name", "view-only")
+	w := httptest.NewRecorder()
+	h.ClusterDelete(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want 403 for view role; body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestClusterKubeconfig_Download(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	// Create tenant via the submit handler so secrets are auto-generated.
+	form := "name=kc-cluster&kubernetesVersion=1.35.0&talosVersion=1.12.0"
+	req := authedRequestAs(http.MethodPost, "/clusters/create", cookie, form, "admin", auth.RoleAdmin)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.ClusterCreateSubmit(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("create failed: %d; body: %s", w.Code, w.Body.String())
+	}
+
+	// Download kubeconfig.
+	req = authedRequestAs(http.MethodGet, "/clusters/kc-cluster/kubeconfig", cookie, "", "admin", auth.RoleAdmin)
+	req.SetPathValue("name", "kc-cluster")
+	w = httptest.NewRecorder()
+	h.ClusterKubeconfig(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "application/yaml" {
+		t.Errorf("Content-Type = %q, want application/yaml", ct)
+	}
+	cd := w.Header().Get("Content-Disposition")
+	if !strings.Contains(cd, `filename="kc-cluster-kubeconfig.yaml"`) {
+		t.Errorf("Content-Disposition = %q, missing filename", cd)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "apiVersion: v1") {
+		t.Errorf("kubeconfig missing apiVersion: v1; got:\n%s", body[:min(len(body), 200)])
+	}
+}
+
+func TestClusterKubeconfig_NotFound(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	req := authedRequestAs(http.MethodGet, "/clusters/nope/kubeconfig", cookie, "", "admin", auth.RoleAdmin)
+	req.SetPathValue("name", "nope")
+	w := httptest.NewRecorder()
+	h.ClusterKubeconfig(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", w.Code)
+	}
+}
+
+func TestClusterTalosconfig_Download(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	form := "name=tc-cluster&kubernetesVersion=1.35.0&talosVersion=1.12.0"
+	req := authedRequestAs(http.MethodPost, "/clusters/create", cookie, form, "admin", auth.RoleAdmin)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.ClusterCreateSubmit(w, req)
+
+	req = authedRequestAs(http.MethodGet, "/clusters/tc-cluster/talosconfig", cookie, "", "admin", auth.RoleAdmin)
+	req.SetPathValue("name", "tc-cluster")
+	w = httptest.NewRecorder()
+	h.ClusterTalosconfig(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d; body: %s", w.Code, w.Body.String())
+	}
+	cd := w.Header().Get("Content-Disposition")
+	if !strings.Contains(cd, `filename="tc-cluster-talosconfig.yaml"`) {
+		t.Errorf("Content-Disposition = %q", cd)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "context:") {
+		t.Errorf("talosconfig missing 'context:'; got:\n%s", body[:min(len(body), 200)])
+	}
+}
+
+func TestNodeGroupScale_Admin(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	// Create tenant + node group.
+	setupTenant(t, store, "ng-test")
+	_, err := store.CreateResource("nodegroup", "workers",
+		map[string]any{"name": "workers", "role": "worker", "count": 3},
+		nil,
+		map[string]string{"rezuscloud.io/tenant": "ng-test"},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("create nodegroup: %v", err)
+	}
+
+	// Scale up to 5.
+	form := "count=5"
+	req := authedRequestAs(http.MethodPost, "/clusters/ng-test/nodegroups/workers/scale", cookie, form, "admin", auth.RoleAdmin)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetPathValue("name", "ng-test")
+	req.SetPathValue("ng", "workers")
+	w := httptest.NewRecorder()
+	h.NodeGroupScale(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Errorf("status = %d, want 204; body: %s", w.Code, w.Body.String())
+	}
+	loc := w.Header().Get("HX-Redirect")
+	if !strings.Contains(loc, "/clusters/ng-test") {
+		t.Errorf("HX-Redirect = %q, want /clusters/ng-test", loc)
+	}
+	if !strings.Contains(loc, "toast=") {
+		t.Errorf("HX-Redirect = %q, missing toast param", loc)
+	}
+
+	// Verify the count was updated.
+	var spec struct {
+		Count int `json:"count"`
+	}
+	_, err = store.GetResource("nodegroup", "workers", &spec, nil)
+	if err != nil {
+		t.Fatalf("get nodegroup: %v", err)
+	}
+	if spec.Count != 5 {
+		t.Errorf("count = %d, want 5", spec.Count)
+	}
+}
+
+func TestNodeGroupScale_ViewRole_Forbidden(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "viewer", "pass", auth.RoleView)
+	cookie := loginCookie(t, h, "viewer", "pass")
+
+	setupTenant(t, store, "view-test")
+	_, _ = store.CreateResource("nodegroup", "w",
+		map[string]any{"name": "w", "role": "worker", "count": 1},
+		nil,
+		map[string]string{"rezuscloud.io/tenant": "view-test"},
+		nil,
+	)
+
+	req := authedRequestAs(http.MethodPost, "/clusters/view-test/nodegroups/w/scale", cookie, "count=3", "viewer", auth.RoleView)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetPathValue("name", "view-test")
+	req.SetPathValue("ng", "w")
+	w := httptest.NewRecorder()
+	h.NodeGroupScale(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want 403", w.Code)
+	}
+}
+
+func TestNodeGroupScale_InvalidCount(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	setupTenant(t, store, "bad-count")
+	_, _ = store.CreateResource("nodegroup", "w",
+		map[string]any{"name": "w", "role": "worker", "count": 1},
+		nil,
+		map[string]string{"rezuscloud.io/tenant": "bad-count"},
+		nil,
+	)
+
+	// Negative count.
+	req := authedRequestAs(http.MethodPost, "/clusters/bad-count/nodegroups/w/scale", cookie, "count=-5", "admin", auth.RoleAdmin)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetPathValue("name", "bad-count")
+	req.SetPathValue("ng", "w")
+	w := httptest.NewRecorder()
+	h.NodeGroupScale(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400 for negative count", w.Code)
+	}
+
+	// Non-numeric. (Returns 403 — role check fires before count validation.)
+	req = authedRequestAs(http.MethodPost, "/clusters/bad-count/nodegroups/w/scale", cookie, "count=not-a-number", "admin", auth.RoleAdmin)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetPathValue("name", "bad-count")
+	req.SetPathValue("ng", "w")
+	w = httptest.NewRecorder()
+	h.NodeGroupScale(w, req)
+	// Role check passes for admin (we're authenticated as admin above); expect 400.
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400 for non-numeric count", w.Code)
+	}
+}
+
+func TestTenantDetail_TabsRender(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+	setupTenant(t, store, "with-tabs")
+
+	// Default URL: /clusters/{name} → overview tab.
+	req := authedRequestAs(http.MethodGet, "/clusters/with-tabs", cookie, "", "admin", auth.RoleAdmin)
+	req.SetPathValue("name", "with-tabs")
+	w := httptest.NewRecorder()
+	h.TenantDetail(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	body := w.Body.String()
+	// Strip <style> content so class assertions don't match CSS rules.
+	if i := strings.Index(body, "</style>"); i >= 0 {
+		body = body[i+len("</style>"):]
+	}
+	if !strings.Contains(body, `class="ds-tabs-link ds-tabs-link--active"`) {
+		t.Errorf("expected exactly one active tab (Overview by default). Body tail:\n%s", body[:min(len(body), 800)])
+	}
+	if !strings.Contains(body, `aria-selected="true"`) {
+		t.Errorf("expected aria-selected=\"true\" on active tab. Body tail:\n%s", body[:min(len(body), 800)])
+	}
+}
+
+func TestTenantDetail_SettingsTab_AdminShowsDelete(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+	setupTenant(t, store, "destroy-me")
+
+	req := authedRequestAs(http.MethodGet, "/clusters/destroy-me/settings", cookie, "", "admin", auth.RoleAdmin)
+	req.SetPathValue("name", "destroy-me")
+	req.SetPathValue("tab", "settings")
+	w := httptest.NewRecorder()
+	h.TenantDetail(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	body := w.Body.String()
+	if i := strings.Index(body, "</style>"); i >= 0 {
+		body = body[i+len("</style>"):]
+	}
+	if !strings.Contains(body, "Danger Zone") {
+		t.Errorf("settings tab should show 'Danger Zone' section for admin. Body tail:\n%s", body[:min(len(body), 800)])
+	}
+	if !strings.Contains(body, `data-modal-open="delete-destroy-me"`) {
+		t.Errorf("settings tab should render delete modal trigger. Body tail:\n%s", body[:min(len(body), 800)])
+	}
+}
+
+func TestTenantDetail_SettingsTab_ViewHidesDelete(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "viewer", "pass", auth.RoleView)
+	cookie := loginCookie(t, h, "viewer", "pass")
+	setupTenant(t, store, "no-delete")
+
+	req := authedRequestAs(http.MethodGet, "/clusters/no-delete/settings", cookie, "", "viewer", auth.RoleView)
+	req.SetPathValue("name", "no-delete")
+	req.SetPathValue("tab", "settings")
+	w := httptest.NewRecorder()
+	h.TenantDetail(w, req)
+
+	body := w.Body.String()
+	if i := strings.Index(body, "</style>"); i >= 0 {
+		body = body[i+len("</style>"):]
+	}
+	if strings.Contains(body, "Danger Zone") {
+		t.Error("settings tab should NOT show 'Danger Zone' for view role")
+	}
+	if strings.Contains(body, "data-modal-open=\"delete-") {
+		t.Error("settings tab should NOT render delete modal trigger for view role")
+	}
+}
+
+func TestValidClusterName(t *testing.T) {
+	cases := []struct {
+		name string
+		want bool
+	}{
+		{"my-cluster", true},
+		{"a", false}, // too short
+		{"ab", true}, // min length
+		{"abc123-xyz", true},
+		{"UPPERCASE", false},
+		{"1starts-with-digit", false},
+		{"-starts-with-hyphen", false},
+		{"has/slash", false},
+		{"has_underscore", false},
+		{strings.Repeat("a", 63), true},  // max length
+		{strings.Repeat("a", 64), false}, // too long
+		{"", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := validClusterName(tc.name)
+			if got != tc.want {
+				t.Errorf("validClusterName(%q) = %v, want %v", tc.name, got, tc.want)
+			}
+		})
+	}
+}

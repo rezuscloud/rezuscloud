@@ -665,3 +665,69 @@ dialog.ds-modal[open] {
   background: none;
   padding: 0;
 }
+
+/* ===== W3 additions ===== */
+
+/* Page header row — title + actions side-by-side */
+.ds-page-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  gap: 1rem;
+}
+
+/* Form */
+.ds-form {
+  max-width: 32rem;
+}
+.ds-input--error {
+  border-color: var(--negative);
+}
+.ds-input-error {
+  font-family: var(--font-display);
+  font-size: 0.5625rem;
+  color: var(--negative);
+  margin-top: 0.25rem;
+}
+.ds-input-hint {
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  color: var(--ink-muted);
+  margin-top: 0.25rem;
+}
+.ds-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1.5rem;
+}
+
+/* Small button variant for inline table actions */
+.ds-btn--sm {
+  padding: 0.25rem 0.625rem;
+  font-size: 0.5625rem;
+}
+
+/* Tab strip wrapper */
+.ds-tabs-wrapper {
+  margin-bottom: 1.5rem;
+}
+
+/* Card variants for cluster detail Settings tab */
+.ds-card--danger {
+  border-color: var(--negative);
+}
+.ds-section-header--danger {
+  color: var(--negative);
+}
+
+/* Link — slight color lift */
+.ds-link {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.ds-link:hover {
+  color: var(--accent);
+}
