@@ -2724,9 +2724,9 @@ func TestAuditPage_Filters(t *testing.T) {
 	if !strings.Contains(body, "DELETE") {
 		t.Errorf("expected DELETE in body")
 	}
-	if strings.Contains(body, "/api/v1/tenants</td>") || strings.Contains(body, "/api/v1/tenants</") {
-		// The "POST /api/v1/tenants" row should be filtered out.
-		// (Loose check; the rendered path includes method.)
+	// The create row should be filtered out (verb=delete only).
+	if strings.Contains(body, "POST /api/v1/tenants<") {
+		t.Errorf("POST row should be filtered out")
 	}
 	if strings.Count(body, "<tr class=\"ds-table-row\">") != 1 {
 		t.Errorf("filter should produce 1 row, body had %d", strings.Count(body, "<tr class=\"ds-table-row\">"))

@@ -452,9 +452,5 @@ func (rp *RetentionPolicy) sweep(ctx context.Context) {
 // the state adapter (internal/audit/storeadapter.go).
 var _ Store = (Store)(nil)
 
-// errNotImplemented is a sentinel for nil-store callers; unused but kept to
-// make the interface intent explicit.
-var errNotImplemented = errors.New("audit store: not implemented")
-
 // helper to satisfy sql.ErrNoRows import if extended later
 var _ = sql.ErrNoRows
