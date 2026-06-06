@@ -1,0 +1,101 @@
+package pages
+
+import (
+	"fmt"
+
+	"github.com/rezuscloud/rezuscloud/internal/backup"
+)
+
+// BackupsPageData drives /settings/backups.
+type BackupsPageData struct {
+	Snapshots   []backup.SnapshotRecord
+	Retention   int
+	LastSuccess string
+	Failures    int
+	RPOEstimate string
+	CanMutate   bool
+}
+
+templ BackupsPage(data BackupsPageData) {
+	<h1 class="ds-page-title">Backups</h1>
+
+	<div class="ds-grid ds-grid-4" style="margin-bottom: 1rem;">
+		<div class="ds-stat-block"><div class="ds-stat-label">Snapshots</div><div class="ds-stat-value">{ fmt.Sprintf("%d", len(data.Snapshots)) }</div></div>
+		<div class="ds-stat-block"><div class="ds-stat-label">Last Success</div><div class="ds-stat-value" style="font-size:0.875rem;">{ data.LastSuccess }</div></div>
+		<div class="ds-stat-block"><div class="ds-stat-label">Failures</div><div class="ds-stat-value">{ fmt.Sprintf("%d", data.Failures) }</div></div>
+		<div class="ds-stat-block"><div class="ds-stat-label">RPO Estimate</div><div class="ds-stat-value">{ data.RPOEstimate }</div></div>
+	</div>
+
+	<div class="ds-grid ds-grid-2" style="margin-bottom: 1rem;">
+		<div class="ds-section-card">
+			<div class="ds-section-title">Run backup now</div>
+			<div class="ds-form-actions">
+				<form method="post" action="/settings/backups/database"><button type="submit" class="ds-btn ds-btn--primary" disabled?={ !data.CanMutate }>Backup database</button></form>
+				<form method="post" action="/settings/backups/resources"><button type="submit" class="ds-btn ds-btn--secondary" disabled?={ !data.CanMutate }>Backup resources</button></form>
+			</div>
+		</div>
+		<div class="ds-section-card">
+			<div class="ds-section-title">Retention policy</div>
+			<form method="post" action="/settings/backups/policy" class="ds-form-grid ds-grid-2">
+				<label class="ds-form-field"><span class="ds-label">Keep latest snapshots</span><input type="number" min="1" class="ds-input" name="retention" value={ fmt.Sprintf("%d", data.Retention) }/></label>
+				<div class="ds-form-actions" style="align-self:end;"><button type="submit" class="ds-btn ds-btn--secondary" disabled?={ !data.CanMutate }>Save policy</button></div>
+			</form>
+		</div>
+	</div>
+
+	<div class="ds-section-header">Restore</div>
+	<div class="ds-section-card" style="margin-bottom: 1rem;">
+		<form method="post" action="/settings/backups/restore" class="ds-form-grid ds-grid-4">
+			<label class="ds-form-field" style="grid-column: span 2;"><span class="ds-label">Snapshot ID</span><input class="ds-input ds-table-mono" name="snapshotID" placeholder="resources-..." required/></label>
+			<label class="ds-form-field"><span class="ds-label">Mode</span><select name="dryRun" class="ds-input"><option value="true">Dry-run</option><option value="false">Apply restore</option></select></label>
+			<div class="ds-form-actions" style="align-self:end;"><button type="submit" class="ds-btn ds-btn--danger" disabled?={ !data.CanMutate }>Run restore</button></div>
+		</form>
+	</div>
+
+	<div class="ds-section-header">Snapshot catalog</div>
+	if len(data.Snapshots) == 0 {
+		<div class="ds-muted">No snapshots found.</div>
+	} else {
+		<div class="ds-table-wrapper">
+			<table class="ds-table">
+				<thead>
+					<tr>
+						<th class="ds-table-th">ID</th>
+						<th class="ds-table-th">Type</th>
+						<th class="ds-table-th">Status</th>
+						<th class="ds-table-th">Size</th>
+						<th class="ds-table-th">Duration</th>
+						<th class="ds-table-th">Checksum</th>
+						<th class="ds-table-th">Created</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, s := range data.Snapshots {
+						<tr class="ds-table-row">
+							<td class="ds-table-td ds-table-mono">{ s.ID }</td>
+							<td class="ds-table-td">{ s.Spec.Type }</td>
+							<td class="ds-table-td"><span class={ "ds-status-badge ds-status-badge--" + backupStatusBadge(s.Status.Status) }>{ s.Status.Status }</span></td>
+							<td class="ds-table-td">{ fmt.Sprintf("%d", s.Spec.Size) }</td>
+							<td class="ds-table-td">{ fmt.Sprintf("%dms", s.Spec.Duration) }</td>
+							<td class="ds-table-td ds-table-mono">{ s.Spec.Checksum }</td>
+							<td class="ds-table-td">{ s.CreatedAt }</td>
+						</tr>
+						if s.Status.Error != "" {
+							<tr class="ds-table-row"><td class="ds-table-td" colspan="7"><span class="ds-text-danger">{ s.Status.Error }</span></td></tr>
+						}
+					}
+				</tbody>
+			</table>
+		</div>
+	}
+}
+
+func backupStatusBadge(status string) string {
+	if status == "success" {
+		return "positive"
+	}
+	if status == "failed" {
+		return "negative"
+	}
+	return "neutral"
+}
