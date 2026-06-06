@@ -3,6 +3,7 @@
 package controller
 
 import (
+	"encoding/json"
 	"log"
 
 	"github.com/rezuscloud/rezuscloud/internal/state"
@@ -124,14 +125,14 @@ func (c *FinalizerController) ReconcileNodeGroup(tenant, name string) error {
 
 // cleanupTenantTokens revokes all join tokens for a tenant.
 func (c *FinalizerController) cleanupTenantTokens(tenant string) error {
-	opts := state.ListOptions{
-		LabelSelector: "rezuscloud.io/tenant=" + tenant,
-	}
-	metas, _, _, _, err := c.store.ListResources("jointoken", opts)
+	items, _, err := state.ListTypedByTenant(c.store, "jointoken", tenant,
+		func(meta state.Metadata, _, _ json.RawMessage) (state.Metadata, error) {
+			return meta, nil
+		})
 	if err != nil {
 		return err
 	}
-	for _, md := range metas {
+	for _, md := range items {
 		_ = c.store.RemoveResource("jointoken", md.Name)
 	}
 	return nil

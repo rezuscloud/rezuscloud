@@ -195,23 +195,18 @@ func (a *API) Create(w http.ResponseWriter, r *http.Request) {
 func (a *API) List(w http.ResponseWriter, r *http.Request) {
 	tenant := r.PathValue("tenant")
 
-	opts := state.ListOptions{
-		LabelSelector: "rezuscloud.io/tenant=" + tenant,
-	}
-	metas, specs, _, total, err := a.store.ListResources("configpatch", opts)
+	items, total, err := state.ListTypedByTenant(a.store, "configpatch", tenant,
+		func(meta state.Metadata, specRaw, statusRaw json.RawMessage) (ConfigPatch, error) {
+			var p ConfigPatch
+			p.Metadata = meta
+			if err := json.Unmarshal(specRaw, &p.Spec); err != nil {
+				return p, err
+			}
+			return p, nil
+		})
 	if err != nil {
 		writeError(w, "list failed", "InternalError", http.StatusInternalServerError)
 		return
-	}
-
-	items := make([]ConfigPatch, 0, total)
-	for i := range metas {
-		var p ConfigPatch
-		p.Metadata = metas[i]
-		if err := json.Unmarshal(specs[i], &p.Spec); err != nil {
-			continue
-		}
-		items = append(items, p)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
