@@ -1,0 +1,136 @@
+package pages
+
+// ClusterCreateData holds form state for the /clusters/create page.
+//
+// All fields are pre-filled when the form re-renders after validation errors.
+// On success, the handler sends an HX-Redirect response header and the form
+// is not re-rendered.
+type ClusterCreateData struct {
+	Name           string // submitted name (echoed back on error)
+	K8sVersion     string // submitted kubernetes version
+	TalosVersion   string // submitted talos version
+	NameError      string // validation error for name field (empty if valid)
+	FormError      string // top-of-form error message (e.g. "tenant already exists")
+}
+
+// k8sVersionOptions returns the hardcoded dropdown options for v1.
+// The first element is the default selection when K8sVersion is empty.
+func k8sVersionOptions(current string) []versionOption {
+	opts := []versionOption{
+		{Value: "1.35.0", Label: "v1.35.0"},
+		{Value: "1.34.0", Label: "v1.34.0"},
+		{Value: "1.33.0", Label: "v1.33.0"},
+	}
+	markSelected(opts, current, "1.35.0")
+	return opts
+}
+
+// talosVersionOptions returns the hardcoded dropdown options for v1.
+func talosVersionOptions(current string) []versionOption {
+	opts := []versionOption{
+		{Value: "1.12.0", Label: "v1.12.0"},
+		{Value: "1.11.0", Label: "v1.11.0"},
+		{Value: "1.10.0", Label: "v1.10.0"},
+	}
+	markSelected(opts, current, "1.12.0")
+	return opts
+}
+
+// versionOption pairs a form value with a visible label and selected state.
+type versionOption struct {
+	Value    string
+	Label    string
+	Selected bool
+}
+
+// markSelected sets Selected=true on the option matching current, or on the
+// default value if current is empty and nothing matches.
+func markSelected(opts []versionOption, current, defaultVal string) {
+	matched := false
+	for i := range opts {
+		if opts[i].Value == current {
+			opts[i].Selected = true
+			matched = true
+		}
+	}
+	if !matched {
+		for i := range opts {
+			if opts[i].Value == defaultVal {
+				opts[i].Selected = true
+				return
+			}
+		}
+	}
+}
+
+// ClusterCreate renders the single-step create cluster form.
+//
+// The form posts to /clusters/create (the WebUI handler, not the REST API).
+// On validation error, the handler re-rends this template with error fields
+// populated; on success, the handler returns HX-Redirect.
+//
+// The handler dispatches to the API server internally (server-side form
+// submission) so this is one round-trip from the browser's perspective.
+templ ClusterCreate(data ClusterCreateData) {
+	<h1 class="ds-page-title">Create Cluster</h1>
+	if data.FormError != "" {
+		<div class="ds-alert" role="alert">{ data.FormError }</div>
+	}
+	<form
+		hx-post="/clusters/create"
+		hx-target="this"
+		hx-swap="outerHTML"
+		class="ds-form"
+	>
+		<div class="ds-input-group">
+			<label class="ds-label" for="name">Name</label>
+			<input
+				type="text"
+				id="name"
+				name="name"
+				class={ "ds-input", templ.KV("ds-input--error", data.NameError != "") }
+				value={ data.Name }
+				pattern="^[a-z][a-z0-9-]{{1,62}}$"
+				required
+				autocomplete="off"
+				placeholder="my-cluster"
+			/>
+			if data.NameError != "" {
+				<div class="ds-input-error">{ data.NameError }</div>
+			} else {
+				<div class="ds-input-hint">Lowercase letters, digits, hyphens. Must start with a letter. 2–63 chars.</div>
+			}
+		</div>
+
+		<div class="ds-input-group">
+			<label class="ds-label" for="kubernetesVersion">Kubernetes version</label>
+			<select id="kubernetesVersion" name="kubernetesVersion" class="ds-input">
+				for _, opt := range k8sVersionOptions(data.K8sVersion) {
+					if opt.Selected {
+						<option value={ opt.Value } selected>{ opt.Label }</option>
+					} else {
+						<option value={ opt.Value }>{ opt.Label }</option>
+					}
+				}
+			</select>
+		</div>
+
+		<div class="ds-input-group">
+			<label class="ds-label" for="talosVersion">Talos version</label>
+			<select id="talosVersion" name="talosVersion" class="ds-input">
+				for _, opt := range talosVersionOptions(data.TalosVersion) {
+					if opt.Selected {
+						<option value={ opt.Value } selected>{ opt.Label }</option>
+					} else {
+						<option value={ opt.Value }>{ opt.Label }</option>
+					}
+				}
+			</select>
+		</div>
+
+		<div class="ds-form-actions">
+			<a href="/clusters" class="ds-btn ds-btn--secondary">Cancel</a>
+			<button type="submit" class="ds-btn">Create Cluster</button>
+		</div>
+	</form>
+}

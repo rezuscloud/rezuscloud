@@ -156,3 +156,62 @@ func TestGenerateTalosconfig_NoBundle(t *testing.T) {
 		t.Error("should error without secrets bundle")
 	}
 }
+
+func TestUnmarshalSecretsBundle_RoundTrip(t *testing.T) {
+	original, err := GenerateSecretsBundle("1.12.0")
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+
+	data, err := SecretsBundleJSON(original)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	roundtripped, err := UnmarshalSecretsBundle(data)
+	if err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if roundtripped == nil {
+		t.Fatal("expected non-nil bundle after unmarshal")
+	}
+
+	// Clock field is json:"-"; unmarshal should restore it.
+	if roundtripped.Clock == nil {
+		t.Error("expected Clock to be restored after unmarshal")
+	}
+
+	// We should be able to generate a kubeconfig from the round-tripped bundle.
+	_, err = GenerateKubeconfig(KubeconfigRequest{
+		ClusterName: "rt-test",
+		Bundle:      roundtripped,
+	})
+	if err != nil {
+		t.Errorf("kubeconfig generation from round-tripped bundle failed: %v", err)
+	}
+}
+
+func TestUnmarshalSecretsBundle_EmptyData(t *testing.T) {
+	bundle, err := UnmarshalSecretsBundle(nil)
+	if err != nil {
+		t.Errorf("expected nil error for nil input, got: %v", err)
+	}
+	if bundle != nil {
+		t.Errorf("expected nil bundle for nil input, got non-nil")
+	}
+
+	bundle, err = UnmarshalSecretsBundle([]byte{})
+	if err != nil {
+		t.Errorf("expected nil error for empty input, got: %v", err)
+	}
+	if bundle != nil {
+		t.Errorf("expected nil bundle for empty input, got non-nil")
+	}
+}
+
+func TestUnmarshalSecretsBundle_MalformedJSON(t *testing.T) {
+	_, err := UnmarshalSecretsBundle([]byte("not-json"))
+	if err == nil {
+		t.Error("expected error for malformed JSON, got nil")
+	}
+}

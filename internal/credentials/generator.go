@@ -117,3 +117,22 @@ func SecretsBundleJSON(bundle *secrets.Bundle) (json.RawMessage, error) {
 	}
 	return data, nil
 }
+
+// UnmarshalSecretsBundle deserializes a secrets bundle from JSON.
+// Returns nil only if the input is empty or nil; an error is returned for
+// malformed JSON.
+// The Clock field is json:"-" in the bundle type, so we restore it with
+// NewFixedClock(time.Now()) so callers can immediately generate client certs.
+func UnmarshalSecretsBundle(data []byte) (*secrets.Bundle, error) {
+	if len(data) == 0 {
+		return nil, nil
+	}
+	var bundle secrets.Bundle
+	if err := json.Unmarshal(data, &bundle); err != nil {
+		return nil, fmt.Errorf("unmarshal secrets: %w", err)
+	}
+	// The Clock field doesn't survive JSON serialization. Restore it so the
+	// bundle can be used to generate client certs.
+	bundle.Clock = secrets.NewFixedClock(time.Now().UTC())
+	return &bundle, nil
+}

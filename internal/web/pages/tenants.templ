@@ -2,12 +2,32 @@ package pages
 
 import "fmt"
 
-templ TenantsList(tenants []TenantSummary) {
-	<h1 class="ds-page-title">Clusters</h1>
-	if len(tenants) == 0 {
+// TenantListData drives the /clusters list page.
+// It carries the tenant rows plus a LiveStream flag so the template can wire
+// up SSE-based refresh when the watch bus is available.
+type TenantListData struct {
+	Tenants    []TenantSummary
+	LiveStream bool
+}
+
+// TenantsList renders the /clusters list page.
+//
+// Includes a "Create Cluster" button in the header and a hint pointing to the
+// create page when the list is empty. When LiveStream is true, the table is
+// wrapped in an HTMX sse extension that swaps rows on watch events.
+templ TenantsList(data TenantListData) {
+	<div class="ds-page-header-row">
+		<h1 class="ds-page-title">Clusters</h1>
+		<a href="/clusters/create" class="ds-btn">+ Create Cluster</a>
+	</div>
+	if len(data.Tenants) == 0 {
 		<div class="ds-empty-state">
 			<div class="ds-empty-state-title">No clusters yet</div>
-			<div class="ds-empty-state-desc">Create a cluster via the CLI: rezusctl create cluster &lt;name&gt;</div>
+			<div class="ds-empty-state-desc">
+				Create your first cluster to provision Talos nodes.
+				<br/>
+				<a href="/clusters/create">Create a cluster →</a>
+			</div>
 		</div>
 	} else {
 		<div class="ds-table-wrapper">
@@ -20,10 +40,12 @@ templ TenantsList(tenants []TenantSummary) {
 					</tr>
 				</thead>
 				<tbody>
-					for _, t := range tenants {
+					for _, t := range data.Tenants {
 						<tr class="ds-table-row">
 							<td class="ds-table-td"><a href={ templ.URL("/clusters/" + t.Name) }>{ t.Name }</a></td>
-							<td class="ds-table-td"><span class={ "ds-status-badge ds-status-badge--" + phaseBadgeClass(t.Phase) }>{ t.Phase }</span></td>
+							<td class="ds-table-td">
+								<span class={ "ds-status-badge ds-status-badge--" + phaseBadgeClass(t.Phase) }>{ t.Phase }</span>
+							</td>
 							<td class="ds-table-td">{ fmt.Sprintf("%d / %d", t.Ready, t.Total) }</td>
 						</tr>
 					}

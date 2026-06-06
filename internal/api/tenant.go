@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/rezuscloud/rezuscloud/internal/credentials"
 	"github.com/rezuscloud/rezuscloud/internal/state"
 )
 
@@ -27,6 +28,8 @@ func (a *TenantAPI) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/v1/tenants/{name}", a.Update)
 	mux.HandleFunc("DELETE /api/v1/tenants/{name}", a.Delete)
 	mux.HandleFunc("PUT /api/v1/tenants/{name}/status", a.UpdateStatus)
+	mux.HandleFunc("GET /api/v1/tenants/{name}/kubeconfig", a.Kubeconfig)
+	mux.HandleFunc("GET /api/v1/tenants/{name}/talosconfig", a.Talosconfig)
 }
 
 // CreateTenantRequest is the JSON body for creating a tenant.
@@ -107,6 +110,21 @@ func (a *TenantAPI) Create(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, fmt.Sprintf("create failed: %v", err), "InternalError", http.StatusInternalServerError)
 		return
+	}
+
+	// Auto-generate a secrets bundle so kubeconfig/talosconfig work immediately.
+	// Failure here is non-fatal — the tenant exists, but credentials download
+	// will return 404 until a bundle is added (via future credentials API).
+	talosVersion := req.Spec.TalosVersion
+	if talosVersion == "" {
+		talosVersion = "1.12.0" // sensible default; matches default Kubernetes version 1.35.0.
+	}
+	bundle, err := credentials.GenerateSecretsBundle(talosVersion)
+	if err == nil {
+		bundleJSON, err := credentials.SecretsBundleJSON(bundle)
+		if err == nil {
+			_ = a.store.SaveTenantSecrets(req.Metadata.Name, bundleJSON)
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -240,4 +258,96 @@ func (a *TenantAPI) Delete(w http.ResponseWriter, r *http.Request) {
 	} else {
 		w.WriteHeader(http.StatusNoContent)
 	}
+}
+
+// Kubeconfig handles GET /api/v1/tenants/{name}/kubeconfig.
+// Returns a YAML admin kubeconfig for the tenant.
+func (a *TenantAPI) Kubeconfig(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+
+	tenant, err := a.store.GetTenant(name)
+	if err != nil {
+		writeError(w, fmt.Sprintf("get tenant: %v", err), "InternalError", http.StatusInternalServerError)
+		return
+	}
+	if tenant == nil {
+		writeError(w, fmt.Sprintf("tenant %q not found", name), "NotFound", http.StatusNotFound)
+		return
+	}
+
+	bundleJSON, err := a.store.LoadTenantSecrets(name)
+	if err != nil {
+		writeError(w, fmt.Sprintf("load secrets: %v", err), "InternalError", http.StatusInternalServerError)
+		return
+	}
+	if bundleJSON == nil {
+		writeError(w, "no secrets bundle for tenant; recreate the tenant or wait for the controller", "NotFound", http.StatusNotFound)
+		return
+	}
+
+	bundle, err := credentials.UnmarshalSecretsBundle(bundleJSON)
+	if err != nil {
+		writeError(w, fmt.Sprintf("unmarshal secrets: %v", err), "InternalError", http.StatusInternalServerError)
+		return
+	}
+
+	kc, err := credentials.GenerateKubeconfig(credentials.KubeconfigRequest{
+		ClusterName:     name,
+		ClusterEndpoint: tenant.Spec.ControlPlaneEndpoint,
+		Bundle:          bundle,
+	})
+	if err != nil {
+		writeError(w, fmt.Sprintf("generate kubeconfig: %v", err), "InternalError", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/yaml")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", name+"-kubeconfig.yaml"))
+	w.Write(kc)
+}
+
+// Talosconfig handles GET /api/v1/tenants/{name}/talosconfig.
+// Returns a YAML admin talosconfig for the tenant.
+func (a *TenantAPI) Talosconfig(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+
+	tenant, err := a.store.GetTenant(name)
+	if err != nil {
+		writeError(w, fmt.Sprintf("get tenant: %v", err), "InternalError", http.StatusInternalServerError)
+		return
+	}
+	if tenant == nil {
+		writeError(w, fmt.Sprintf("tenant %q not found", name), "NotFound", http.StatusNotFound)
+		return
+	}
+
+	bundleJSON, err := a.store.LoadTenantSecrets(name)
+	if err != nil {
+		writeError(w, fmt.Sprintf("load secrets: %v", err), "InternalError", http.StatusInternalServerError)
+		return
+	}
+	if bundleJSON == nil {
+		writeError(w, "no secrets bundle for tenant; recreate the tenant or wait for the controller", "NotFound", http.StatusNotFound)
+		return
+	}
+
+	bundle, err := credentials.UnmarshalSecretsBundle(bundleJSON)
+	if err != nil {
+		writeError(w, fmt.Sprintf("unmarshal secrets: %v", err), "InternalError", http.StatusInternalServerError)
+		return
+	}
+
+	tc, err := credentials.GenerateTalosconfig(credentials.TalosconfigRequest{
+		ClusterName:     name,
+		MachineLinkAddr: tenant.Spec.ControlPlaneEndpoint,
+		Bundle:          bundle,
+	})
+	if err != nil {
+		writeError(w, fmt.Sprintf("generate talosconfig: %v", err), "InternalError", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/yaml")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", name+"-talosconfig.yaml"))
+	w.Write(tc)
 }
