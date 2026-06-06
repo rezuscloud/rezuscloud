@@ -901,6 +901,9 @@ func TestW4_MachineActions_Admin(t *testing.T) {
 	if status != http.StatusSeeOther {
 		t.Errorf("shutdown status = %d, want 303", status)
 	}
+	if !strings.Contains(hdr.Get("Location"), "/machines/action-target") {
+		t.Errorf("shutdown Location = %q", hdr.Get("Location"))
+	}
 }
 
 func TestW4_MachineDelete_Admin(t *testing.T) {
