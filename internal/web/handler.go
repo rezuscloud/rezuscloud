@@ -20,6 +20,7 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/auth"
 	"github.com/rezuscloud/rezuscloud/internal/backup"
 	"github.com/rezuscloud/rezuscloud/internal/credentials"
+	"github.com/rezuscloud/rezuscloud/internal/dashboard"
 	"github.com/rezuscloud/rezuscloud/internal/state"
 	"github.com/rezuscloud/rezuscloud/internal/statemachine"
 	"github.com/rezuscloud/rezuscloud/internal/talosconfig"
@@ -331,8 +332,37 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	// SSE hint: signal to the template that live updates are available.
 	data.LiveStream = h.bus != nil
 
-	// W14 posture cards.
-	data.Posture = h.dashboardPosture(tenants, machines, providers)
+	// W14 posture cards — computed via the dedicated dashboard module so that
+	// phase classification uses the real machine fleet, not tenant metadata.
+	builder := dashboard.NewBuilder(dashboard.Deps{
+		Store:    h.store,
+		Backup:   h.backupAdapter(),
+		Upgrades: h.upgradeAdapter(),
+	})
+	posture := builder.Build(r.Context())
+	data.Posture = pages.DashboardPosture{
+		Clusters: pages.ClusterPosture{
+			Active: posture.Clusters.Active, Forming: posture.Clusters.Forming,
+			Removing: posture.Clusters.Removing, Ready: posture.Clusters.Ready,
+			Expected: posture.Clusters.Expected, Erroring: posture.Clusters.Erroring,
+		},
+		Machines: pages.MachinePosture{
+			Connected: posture.Machines.Connected, Pending: posture.Machines.Pending,
+			Failed: posture.Machines.Failed, Total: posture.Machines.Total,
+		},
+		Providers: pages.ProviderPosture{
+			Connected: posture.Providers.Connected, Disconnected: posture.Providers.Disconnected,
+			Errors: posture.Providers.Errors, Total: posture.Providers.Total,
+		},
+		Backups: pages.BackupPosture{
+			LastSuccess: posture.Backups.LastSuccess, Failures: posture.Backups.Failures,
+			RPOLabel: posture.Backups.RPOLabel,
+		},
+		Upgrades: pages.UpgradePosture{
+			ActiveRuns: posture.Upgrades.ActiveRuns, BlockedPrecheck: posture.Upgrades.BlockedPrecheck,
+			LatestTarget: posture.Upgrades.LatestTarget, LatestPhase: posture.Upgrades.LatestPhase,
+		},
+	}
 	if h.auditStore != nil {
 		events, _ := h.auditStore.ListEvents(r.Context(), audit.Filter{Limit: 8})
 		data.RecentAudit = make([]pages.AuditRow, 0, len(events))
@@ -2843,148 +2873,62 @@ func envDefault(key, fallback string) string {
 	return fallback
 }
 
-// dashboardPosture aggregates day-2 operational health across resources.
-func (h *Handler) dashboardPosture(tenants []*state.Tenant, machines []*state.Machine, providers []*state.Provider) pages.DashboardPosture {
-	var posture pages.DashboardPosture
-
-	// --- Clusters ---
-	for _, t := range tenants {
-		phase := "active"
-		status := statemachine.ComputeTenantStatus(t, nil, nil)
-		if status.Phase != "" {
-			phase = string(status.Phase)
-		}
-		switch phase {
-		case "active", "ready", "Healthy":
-			posture.Clusters.Active++
-		case "forming", "Forming", "pending", "Pending", "Progressing":
-			posture.Clusters.Forming++
-		case "removing", "Removing", "Deleting":
-			posture.Clusters.Removing++
-		case "failed", "Failed", "Error", "Degraded":
-			posture.Clusters.Erroring = append(posture.Clusters.Erroring, t.Metadata.Name)
-		}
+// backupAdapter wraps the optional *backup.Service into the dashboard.BackupReader
+// interface. Returns nil if backups are not configured (the dashboard module
+// treats a nil adapter as "card shows empty").
+func (h *Handler) backupAdapter() dashboard.BackupReader {
+	if h.backupSvc == nil {
+		return nil
 	}
-
-	// Build expected/ready machine counts across clusters.
-	for _, t := range tenants {
-		ngSums := h.nodeGroupSummaries(t.Metadata.Name)
-		posture.Clusters.Expected += expectedMachineCount(ngSums)
-		machinesFor, _, _ := h.store.ListMachinesByTenant(t.Metadata.Name)
-		for _, m := range machinesFor {
-			if machineIsReady(m) {
-				posture.Clusters.Ready++
-			}
-		}
-	}
-
-	// --- Machines ---
-	posture.Machines.Total = len(machines)
-	for _, m := range machines {
-		if m.Spec.Connected {
-			posture.Machines.Connected++
-		}
-		if isPendingStage(m.Status.Stage) {
-			posture.Machines.Pending++
-		}
-		if isFailedStage(m.Status.Stage) {
-			posture.Machines.Failed++
-		}
-	}
-
-	// --- Providers ---
-	posture.Providers.Total = len(providers)
-	for _, p := range providers {
-		if p.Status.Connected {
-			posture.Providers.Connected++
-		} else {
-			posture.Providers.Disconnected++
-		}
-		if p.Status.Error != "" {
-			posture.Providers.Errors++
-		}
-	}
-
-	// --- Backups ---
-	posture.Backups = h.backupPostureSnapshot()
-
-	// --- Upgrades ---
-	posture.Upgrades = h.upgradePostureSnapshot()
-
-	return posture
+	return &backupDashboardAdapter{svc: h.backupSvc}
 }
 
-func machineIsReady(m *state.Machine) bool {
-	return m.Status.Stage == state.StageReady
+type backupDashboardAdapter struct {
+	svc *backup.Service
 }
 
-func isPendingStage(s state.MachineStage) bool {
-	switch s {
-	case state.StageInitializing, state.StageInstalling, state.StageConfiguring, state.StageUpdating:
-		return true
-	}
-	return false
-}
-
-func isFailedStage(s state.MachineStage) bool {
-	switch s {
-	case state.StageOff, state.StageRemoving:
-		return true
-	}
-	return false
-}
-
-// backupPostureSnapshot reads the latest backup metadata.
-func (h *Handler) backupPostureSnapshot() pages.BackupPosture {
-	svc, err := h.backupService()
+func (a *backupDashboardAdapter) ListSnapshots() ([]dashboard.BackupSnapshot, error) {
+	snaps, err := a.svc.ListSnapshots()
 	if err != nil {
-		return pages.BackupPosture{LastSuccess: "unavailable"}
+		return nil, err
 	}
-	snapshots, _ := svc.ListSnapshots()
-	last := "never"
-	failed := 0
-	for _, s := range snapshots {
-		if s.Status.Status == "success" && last == "never" {
-			last = s.CreatedAt
-		}
-		if s.Status.Status == "failed" {
-			failed++
-		}
+	out := make([]dashboard.BackupSnapshot, 0, len(snaps))
+	for _, s := range snaps {
+		out = append(out, dashboard.BackupSnapshot{
+			CreatedAt: s.CreatedAt,
+			Status:    dashboard.BackupSnapshotStatus{Status: s.Status.Status},
+		})
 	}
-	return pages.BackupPosture{LastSuccess: last, Failures: failed, RPOLabel: rpoEstimate(last)}
+	return out, nil
 }
 
-// upgradePostureSnapshot reads the latest upgrade runs across all tenants.
-func (h *Handler) upgradePostureSnapshot() pages.UpgradePosture {
-	tenants, _, _ := h.store.ListTenants()
-	active := 0
-	blocked := false
-	latestTarget := ""
-	latestPhase := ""
-	var latestTS time.Time
-	for _, t := range tenants {
-		if h.upgradeMgr == nil {
-			continue
-		}
-		runs, err := h.upgradeMgr.ListRuns(t.Metadata.Name)
-		if err != nil || len(runs) == 0 {
-			continue
-		}
-		run := runs[0]
-		if run.Status.Phase == "running" || run.Status.Phase == "precheck" {
-			active++
-		}
-		if run.Status.Phase == "precheck" {
-			// Precheck runs that have been stuck for a while are likely blocked.
-			if run.Status.Error != "" {
-				blocked = true
-			}
-		}
-		if run.Status.StartedAt.After(latestTS) {
-			latestTS = run.Status.StartedAt
-			latestTarget = run.Spec.Target
-			latestPhase = string(run.Status.Phase)
-		}
+// upgradeAdapter wraps the optional *upgrade.Manager into the dashboard.UpgradeReader
+// interface. Returns nil if upgrades are not configured.
+func (h *Handler) upgradeAdapter() dashboard.UpgradeReader {
+	if h.upgradeMgr == nil {
+		return nil
 	}
-	return pages.UpgradePosture{ActiveRuns: active, BlockedPrecheck: blocked, LatestTarget: latestTarget, LatestPhase: latestPhase}
+	return &upgradeDashboardAdapter{mgr: h.upgradeMgr}
+}
+
+type upgradeDashboardAdapter struct {
+	mgr *upgrade.Manager
+}
+
+func (a *upgradeDashboardAdapter) ListRuns(tenant string) ([]dashboard.UpgradeRun, error) {
+	runs, err := a.mgr.ListRuns(tenant)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]dashboard.UpgradeRun, 0, len(runs))
+	for _, r := range runs {
+		out = append(out, dashboard.UpgradeRun{
+			Tenant:  r.Spec.Tenant,
+			Target:  r.Spec.Target,
+			Phase:   string(r.Status.Phase),
+			Error:   r.Status.Error,
+			Started: r.Status.StartedAt,
+		})
+	}
+	return out, nil
 }
