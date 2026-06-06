@@ -61,6 +61,11 @@ func withAuditStore(s audit.Store) func(*handlerCfg) {
 	return func(c *handlerCfg) { c.auditStore = s }
 }
 
+// withoutBus returns an opt that disables the watch bus (so SSE endpoints return 503).
+func withoutBus() func(*handlerCfg) {
+	return func(c *handlerCfg) { c.bus = nil }
+}
+
 type handlerCfg struct {
 	jwt        *auth.JWTManager
 	bus        *watch.Bus
@@ -2870,5 +2875,116 @@ func TestManualJoinPage_ImageFactoryLink(t *testing.T) {
 	body := w.Body.String()
 	if !strings.Contains(body, "https://custom-factory.example.com") {
 		t.Errorf("expected custom factory URL in body")
+	}
+}
+
+// --- W12: Machine monitor + events ---
+
+func TestMachineMonitor_Renders(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	setupMachine(t, store, "mon-machine", "prod", "worker", state.StageReady, true)
+
+	req := authedRequestAs(http.MethodGet, "/machines/mon-machine/monitor", cookie, "", "admin", auth.RoleAdmin)
+	req.SetPathValue("id", "mon-machine")
+	w := httptest.NewRecorder()
+	h.MachineMonitor(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "Monitor —") {
+		t.Error("missing monitor title")
+	}
+	if !strings.Contains(body, "/machines/mon-machine/events") {
+		t.Error("expected SSE URL in body")
+	}
+	if !strings.Contains(body, "/static/monitor-stream.js") {
+		t.Error("expected static JS include")
+	}
+}
+
+func TestMachineMonitor_NotFound(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	req := authedRequestAs(http.MethodGet, "/machines/nonexistent/monitor", cookie, "", "admin", auth.RoleAdmin)
+	req.SetPathValue("id", "nonexistent")
+	w := httptest.NewRecorder()
+	h.MachineMonitor(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", w.Code)
+	}
+}
+
+func TestMachineEvents_NoBus(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store, withoutBus()) // bus is nil
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	req := authedRequestAs(http.MethodGet, "/machines/m1/events", cookie, "", "admin", auth.RoleAdmin)
+	req.SetPathValue("id", "m1")
+	w := httptest.NewRecorder()
+	h.MachineEvents(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("no bus: status = %d, want 503", w.Code)
+	}
+}
+
+func TestMachineLogs_RendersSSEControls(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	setupMachine(t, store, "logs-machine", "prod", "worker", state.StageReady, true)
+
+	req := authedRequestAs(http.MethodGet, "/machines/logs-machine/logs", cookie, "", "admin", auth.RoleAdmin)
+	req.SetPathValue("id", "logs-machine")
+	w := httptest.NewRecorder()
+	h.MachineLogs(w, req)
+
+	body := w.Body.String()
+	if !strings.Contains(body, "/api/v1/tenants/prod/machines/logs-machine/logs?follow=true") {
+		t.Errorf("expected SSE URL in body")
+	}
+	if !strings.Contains(body, "logs-pause") {
+		t.Errorf("expected pause button")
+	}
+	if !strings.Contains(body, "logs-level") {
+		t.Errorf("expected level filter")
+	}
+	if !strings.Contains(body, "/static/logs-stream.js") {
+		t.Errorf("expected static JS include")
+	}
+}
+
+func TestStaticAssets_ServesLogsJS(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	// Register routes on a fresh mux so we exercise the static handler.
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	req := authedRequestAs(http.MethodGet, "/static/logs-stream.js", cookie, "", "admin", auth.RoleAdmin)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	// File server returns 200 (no auth gating on /static/ — by design).
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "EventSource") {
+		t.Error("expected EventSource in logs-stream.js")
 	}
 }
