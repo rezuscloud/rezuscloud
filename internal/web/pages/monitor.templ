@@ -1,0 +1,45 @@
+package pages
+
+// MachineMonitorData drives /machines/{id}/monitor.
+type MachineMonitorData struct {
+	MachineID string
+	Cluster   string
+	Stage     string
+	Role      string
+	SSEURL    string // machine lifecycle events stream
+	PollURL   string // optional fallback for events (JSON poll)
+}
+
+// MachineMonitor renders the lifecycle events viewer + status timeline.
+templ MachineMonitor(data MachineMonitorData) {
+	<div class="ds-page-header-row">
+		<div>
+			<h1 class="ds-page-title">
+				Monitor —
+				<code class="ds-code-inline">{ data.MachineID }</code>
+			</h1>
+			<div class="ds-page-subtitle">
+				if data.Cluster != "" {
+					<a href={ templ.URL("/clusters/" + data.Cluster) }>{ data.Cluster }</a>
+					<span class="ds-text-muted">·</span>
+				}
+				<a href={ templ.URL("/machines/" + data.MachineID) }>Machine</a>
+			</div>
+		</div>
+		<div class="ds-header-actions">
+			<a href={ templ.URL("/machines/" + data.MachineID + "/logs") } class="ds-btn ds-btn--secondary">Logs</a>
+			<a href={ templ.URL("/machines/" + data.MachineID) } class="ds-btn ds-btn--secondary">Back</a>
+		</div>
+	</div>
+	<div class="ds-grid ds-grid-4" style="margin-bottom: 1rem;">
+		<div class="ds-stat-block"><div class="ds-stat-label">Stage</div><div class="ds-stat-value">{ data.Stage }</div></div>
+		<div class="ds-stat-block"><div class="ds-stat-label">Role</div><div class="ds-stat-value">{ data.Role }</div></div>
+		<div class="ds-stat-block"><div class="ds-stat-label">Stream</div><div class="ds-stat-value" id="monitor-conn">connecting…</div></div>
+		<div class="ds-stat-block"><div class="ds-stat-label">Events</div><div class="ds-stat-value" id="monitor-count">0</div></div>
+	</div>
+	<div class="ds-section-header">Lifecycle events</div>
+	<div class="ds-logs" id="monitor-stream" data-sse-url={ data.SSEURL }>
+		<p class="ds-text-muted ds-text-small" id="monitor-status">Waiting for events…</p>
+	</div>
+	<script src="/static/monitor-stream.js" defer></script>
+}

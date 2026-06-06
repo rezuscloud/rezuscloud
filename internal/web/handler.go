@@ -28,6 +28,7 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/watch"
 	"github.com/rezuscloud/rezuscloud/internal/web/layout"
 	"github.com/rezuscloud/rezuscloud/internal/web/pages"
+	staticFiles "github.com/rezuscloud/rezuscloud/internal/web/static"
 	"sigs.k8s.io/yaml"
 )
 
@@ -90,6 +91,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /machines/{id}", h.AuthRequired(h.MachineDetail))
 	mux.HandleFunc("GET /machines/{id}/logs", h.AuthRequired(h.MachineLogs))
 	mux.HandleFunc("GET /machines/{id}/logs/poll", h.AuthRequired(h.MachineLogsPoll))
+	mux.HandleFunc("GET /machines/{id}/monitor", h.AuthRequired(h.MachineMonitor))
+	mux.HandleFunc("GET /machines/{id}/events", h.AuthRequired(h.MachineEvents))
 	mux.HandleFunc("GET /machines/{id}/config", h.AuthRequired(h.MachineConfig))
 	mux.HandleFunc("GET /machines/{id}/kernel-args", h.AuthRequired(h.MachineKernelArgs))
 	mux.HandleFunc("POST /machines/{id}/kernel-args", h.AuthRequired(h.MachineKernelArgsSave))
@@ -129,6 +132,9 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	if h.bus != nil {
 		mux.HandleFunc("GET /events/stream", h.AuthRequired(h.EventsStream))
 	}
+
+	// Static assets (W12 logs/monitor SSE consumers).
+	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticFiles.Files))))
 }
 
 // AuthRequired wraps a WebUI page handler with JWT cookie authentication.
@@ -1422,13 +1428,19 @@ func (h *Handler) MachineLogs(w http.ResponseWriter, r *http.Request) {
 
 	cluster := m.Metadata.Labels["rezuscloud.io/tenant"]
 
+	sseURL := ""
+	if cluster != "" {
+		sseURL = "/api/v1/tenants/" + cluster + "/machines/" + id + "/logs?follow=true"
+	}
+
 	data := pages.MachineLogsData{
-		MachineID:    id,
-		Cluster:      cluster,
-		Lines:        h.recentLogs(id),
-		DownloadURL:  "/api/v1/tenants/" + cluster + "/machines/" + id + "/logs?tail=1000",
-		PollURL:      "/machines/" + id + "/logs/poll",
-		PollInterval: "5s",
+		MachineID:       id,
+		Cluster:         cluster,
+		Lines:           h.recentLogs(id),
+		DownloadURL:     "/api/v1/tenants/" + cluster + "/machines/" + id + "/logs?tail=1000",
+		SSEURL:          sseURL,
+		FallbackPollURL: "/machines/" + id + "/logs/poll",
+		PollInterval:    "5s",
 	}
 
 	// If requested via HTMX (polling), return just the inner lines.
@@ -2621,4 +2633,108 @@ func (h *Handler) tenantNames() []string {
 		out = append(out, t.Metadata.Name)
 	}
 	return out
+}
+
+// --- W12: Machine monitor + events ---
+
+// MachineMonitor renders /machines/{id}/monitor with stage/role stats + lifecycle events SSE stream.
+func (h *Handler) MachineMonitor(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		http.NotFound(w, r)
+		return
+	}
+	m, err := h.store.GetMachine(id)
+	if err != nil {
+		http.Error(w, "load machine failed", http.StatusInternalServerError)
+		return
+	}
+	if m == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	data := pages.MachineMonitorData{
+		MachineID: id,
+		Cluster:   m.Metadata.Labels["rezuscloud.io/tenant"],
+		Stage:     string(m.Status.Stage),
+		Role:      m.Status.Role,
+		SSEURL:    "/machines/" + id + "/events",
+	}
+
+	h.render(w, r, layout.BaseProps{
+		Title:   "Monitor — " + shortDisplayID(id),
+		Page:    "machine",
+		Content: pages.MachineMonitor(data),
+		Breadcrumb: []layout.BreadcrumbItem{
+			{Name: "Machines", URL: "/machines"},
+			{Name: shortDisplayID(id), URL: "/machines/" + id},
+			{Name: "Monitor", Current: true},
+		},
+	})
+}
+
+// MachineEvents streams lifecycle events for a specific machine via SSE.
+// Filters the global watch bus to the machine's resource events.
+func (h *Handler) MachineEvents(w http.ResponseWriter, r *http.Request) {
+	if h.bus == nil {
+		http.Error(w, "events bus unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	id := r.PathValue("id")
+	if id == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	ch, cancel := h.bus.Subscribe("machine")
+	defer cancel()
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	flusher, canFlush := w.(http.Flusher)
+	if canFlush {
+		flusher.Flush()
+	}
+
+	// Send an initial heartbeat so the client knows we're connected.
+	fmt.Fprintf(w, "data: {\"type\":\"READY\",\"object\":{\"metadata\":{\"name\":%q}}}\n\n", id)
+	if canFlush {
+		flusher.Flush()
+	}
+
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+
+	ctx := r.Context()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case ev, ok := <-ch:
+			if !ok {
+				return
+			}
+			// Filter to this machine.
+			obj, _ := ev.Object.(map[string]any)
+			meta, _ := obj["metadata"].(map[string]any)
+			name, _ := meta["name"].(string)
+			if name != id {
+				continue
+			}
+			data, _ := json.Marshal(ev)
+			fmt.Fprintf(w, "data: %s\n\n", data)
+			if canFlush {
+				flusher.Flush()
+			}
+		case <-ticker.C:
+			// Heartbeat keeps proxies from closing idle connections.
+			fmt.Fprintf(w, ": heartbeat\n\n")
+			if canFlush {
+				flusher.Flush()
+			}
+		}
+	}
 }
