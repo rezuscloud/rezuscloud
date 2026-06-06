@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rezuscloud/rezuscloud/internal/api/patch"
 	"github.com/rezuscloud/rezuscloud/internal/auth"
 	"github.com/rezuscloud/rezuscloud/internal/credentials"
 	"github.com/rezuscloud/rezuscloud/internal/state"
@@ -2092,5 +2093,146 @@ func TestBuildKernelArgsPatch(t *testing.T) {
 	}
 	if !strings.Contains(got, "- reboot=k") {
 		t.Error("patch should contain second arg")
+	}
+}
+
+// --- W6: ConfigPatch management tests ---
+
+func TestClusterPatchCreate_Admin(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+	setupTenant(t, store, "alpha")
+
+	form := "name=my-patch&format=strategic&targetRole=worker&enabled=true&patch=machine:%0A++install:%0A++++extraKernelArgs:%0A++++++-+console=ttyS0"
+	req := authedRequestAs(http.MethodPost, "/clusters/alpha/patches/create", cookie, form, "admin", auth.RoleAdmin)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetPathValue("name", "alpha")
+	w := httptest.NewRecorder()
+	h.ClusterPatchCreate(w, req)
+
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	var ps patch.PatchSpec
+	md, err := store.GetResource("configpatch", "my-patch", &ps, nil)
+	if err != nil || md.Name == "" {
+		t.Fatalf("expected patch created: %v", err)
+	}
+	if ps.TargetRole != "worker" {
+		t.Errorf("targetRole=%q", ps.TargetRole)
+	}
+}
+
+func TestClusterPatchCreate_ViewForbidden(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "viewer", "pass", auth.RoleView)
+	cookie := loginCookie(t, h, "viewer", "pass")
+	setupTenant(t, store, "alpha")
+
+	req := authedRequestAs(http.MethodPost, "/clusters/alpha/patches/create", cookie, "name=x&format=text&patch=a", "viewer", auth.RoleView)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetPathValue("name", "alpha")
+	w := httptest.NewRecorder()
+	h.ClusterPatchCreate(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Errorf("status=%d want 403", w.Code)
+	}
+}
+
+func TestClusterPatchEdit_SaveToggleDelete(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+	setupTenant(t, store, "alpha")
+
+	_, _ = store.CreateResource("configpatch", "my-patch", patch.PatchSpec{Patch: "machine:\n  install:\n    extraKernelArgs:\n      - console=ttyS0", Format: "strategic", TargetRole: "worker", Enabled: true}, nil, map[string]string{"rezuscloud.io/tenant": "alpha"}, nil)
+
+	// GET edit page.
+	req := authedRequestAs(http.MethodGet, "/clusters/alpha/patches/my-patch", cookie, "", "admin", auth.RoleAdmin)
+	req.SetPathValue("name", "alpha")
+	req.SetPathValue("patch", "my-patch")
+	w := httptest.NewRecorder()
+	h.ClusterPatchEditPage(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("edit page status=%d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "Edit Patch") {
+		t.Error("edit page title missing")
+	}
+
+	// SAVE update.
+	form := "format=text&targetRole=all&enabled=true&patch=plain+text+patch"
+	req = authedRequestAs(http.MethodPost, "/clusters/alpha/patches/my-patch/save", cookie, form, "admin", auth.RoleAdmin)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetPathValue("name", "alpha")
+	req.SetPathValue("patch", "my-patch")
+	w = httptest.NewRecorder()
+	h.ClusterPatchSave(w, req)
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("save status=%d body=%s", w.Code, w.Body.String())
+	}
+	var ps patch.PatchSpec
+	_, _ = store.GetResource("configpatch", "my-patch", &ps, nil)
+	if ps.Format != "text" || ps.Patch != "plain text patch" {
+		t.Errorf("patch not updated: %+v", ps)
+	}
+	if ps.TargetRole != "" {
+		t.Errorf("targetRole should map all->empty, got %q", ps.TargetRole)
+	}
+
+	// TOGGLE enabled.
+	req = authedRequestAs(http.MethodPost, "/clusters/alpha/patches/my-patch/toggle", cookie, "", "admin", auth.RoleAdmin)
+	req.SetPathValue("name", "alpha")
+	req.SetPathValue("patch", "my-patch")
+	w = httptest.NewRecorder()
+	h.ClusterPatchToggle(w, req)
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("toggle status=%d", w.Code)
+	}
+	_, _ = store.GetResource("configpatch", "my-patch", &ps, nil)
+	if ps.Enabled {
+		t.Error("expected enabled toggled to false")
+	}
+
+	// DELETE patch.
+	req = authedRequestAs(http.MethodPost, "/clusters/alpha/patches/my-patch/delete", cookie, "", "admin", auth.RoleAdmin)
+	req.SetPathValue("name", "alpha")
+	req.SetPathValue("patch", "my-patch")
+	w = httptest.NewRecorder()
+	h.ClusterPatchDelete(w, req)
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("delete status=%d", w.Code)
+	}
+	md, _ := store.GetResource("configpatch", "my-patch", nil, nil)
+	if md.Name != "" {
+		t.Error("patch should be deleted")
+	}
+}
+
+func TestClusterPatchesPreview(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+	setupTenant(t, store, "alpha")
+
+	_, _ = store.CreateResource("configpatch", "cp", patch.PatchSpec{Patch: "cluster:\n  foo: bar", Format: "strategic", TargetRole: "controlplane", Enabled: true}, nil, map[string]string{"rezuscloud.io/tenant": "alpha"}, nil)
+	_, _ = store.CreateResource("configpatch", "all", patch.PatchSpec{Patch: "machine:\n  time: yes", Format: "strategic", TargetRole: "all", Enabled: true}, nil, map[string]string{"rezuscloud.io/tenant": "alpha"}, nil)
+
+	req := authedRequestAs(http.MethodGet, "/clusters/alpha/patches/preview?role=controlplane", cookie, "", "admin", auth.RoleAdmin)
+	req.SetPathValue("name", "alpha")
+	w := httptest.NewRecorder()
+	h.ClusterPatchesPreview(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("preview status=%d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "cluster:") || !strings.Contains(body, "machine:") {
+		t.Errorf("preview should contain resolved patches, got: %s", body)
 	}
 }

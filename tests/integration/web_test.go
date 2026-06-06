@@ -1073,3 +1073,69 @@ func TestW5_KernelArgs_InvalidArg(t *testing.T) {
 		t.Errorf("Location should have error toast: %q", hdr.Get("Location"))
 	}
 }
+
+func TestW6_ConfigPatch_CRUDFlow(t *testing.T) {
+	s := newWebUIServer(t)
+	s.createUser(t, "admin", "secret", auth.RoleAdmin)
+	cookie := s.login(t, "admin", "secret")
+
+	_, _ = s.store.CreateTenant("w6", state.TenantSpec{KubernetesVersion: "1.35.0"}, nil, nil)
+
+	// Open patches tab page.
+	status, body, _ := s.getWithCookieHeaders(t, "/clusters/w6/patches", cookie)
+	if status != http.StatusOK {
+		t.Fatalf("patches page status=%d", status)
+	}
+	if !strings.Contains(body, "Config Patches") {
+		t.Fatal("patches tab not rendered")
+	}
+
+	// Create patch.
+	form := "name=p1&format=text&targetRole=all&enabled=true&patch=hello"
+	status, _, hdr := s.postFormWithCookie(t, "/clusters/w6/patches/create", form, cookie)
+	if status != http.StatusSeeOther {
+		t.Fatalf("create status=%d", status)
+	}
+	if !strings.Contains(hdr.Get("Location"), "/clusters/w6/patches") {
+		t.Fatalf("bad redirect: %s", hdr.Get("Location"))
+	}
+
+	// Edit page exists.
+	status, body, _ = s.getWithCookieHeaders(t, "/clusters/w6/patches/p1", cookie)
+	if status != http.StatusOK || !strings.Contains(body, "Edit Patch") {
+		t.Fatalf("edit page failed: status=%d", status)
+	}
+
+	// Save update.
+	form = "format=text&targetRole=worker&enabled=true&patch=hello-updated"
+	status, _, _ = s.postFormWithCookie(t, "/clusters/w6/patches/p1/save", form, cookie)
+	if status != http.StatusSeeOther {
+		t.Fatalf("save status=%d", status)
+	}
+
+	var ps patch.PatchSpec
+	_, err := s.store.GetResource("configpatch", "p1", &ps, nil)
+	if err != nil || ps.Patch != "hello-updated" {
+		t.Fatalf("patch not updated: %v %+v", err, ps)
+	}
+
+	// Toggle.
+	status, _, _ = s.postFormWithCookie(t, "/clusters/w6/patches/p1/toggle", "", cookie)
+	if status != http.StatusSeeOther {
+		t.Fatalf("toggle status=%d", status)
+	}
+	_, _ = s.store.GetResource("configpatch", "p1", &ps, nil)
+	if ps.Enabled {
+		t.Fatal("patch should be disabled after toggle")
+	}
+
+	// Delete.
+	status, _, _ = s.postFormWithCookie(t, "/clusters/w6/patches/p1/delete", "", cookie)
+	if status != http.StatusSeeOther {
+		t.Fatalf("delete status=%d", status)
+	}
+	md, _ := s.store.GetResource("configpatch", "p1", nil, nil)
+	if md.Name != "" {
+		t.Fatal("patch should be deleted")
+	}
+}

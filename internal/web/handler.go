@@ -23,6 +23,7 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/watch"
 	"github.com/rezuscloud/rezuscloud/internal/web/layout"
 	"github.com/rezuscloud/rezuscloud/internal/web/pages"
+	"sigs.k8s.io/yaml"
 )
 
 // Handler serves the WebUI.
@@ -54,6 +55,12 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /clusters/create", h.AuthRequired(h.ClusterCreateSubmit))
 	mux.HandleFunc("GET /clusters/{name}", h.AuthRequired(h.TenantDetail))
 	mux.HandleFunc("GET /clusters/{name}/{tab}", h.AuthRequired(h.TenantDetail))
+	mux.HandleFunc("POST /clusters/{name}/patches/create", h.AuthRequired(h.ClusterPatchCreate))
+	mux.HandleFunc("GET /clusters/{name}/patches/{patch}", h.AuthRequired(h.ClusterPatchEditPage))
+	mux.HandleFunc("POST /clusters/{name}/patches/{patch}/save", h.AuthRequired(h.ClusterPatchSave))
+	mux.HandleFunc("POST /clusters/{name}/patches/{patch}/delete", h.AuthRequired(h.ClusterPatchDelete))
+	mux.HandleFunc("POST /clusters/{name}/patches/{patch}/toggle", h.AuthRequired(h.ClusterPatchToggle))
+	mux.HandleFunc("GET /clusters/{name}/patches/preview", h.AuthRequired(h.ClusterPatchesPreview))
 	mux.HandleFunc("DELETE /clusters/{name}", h.AuthRequired(h.ClusterDelete))
 	mux.HandleFunc("POST /clusters/{name}/nodegroups/{ng}/scale", h.AuthRequired(h.NodeGroupScale))
 	mux.HandleFunc("GET /clusters/{name}/kubeconfig", h.AuthRequired(h.ClusterKubeconfig))
@@ -337,12 +344,32 @@ func (h *Handler) TenantDetail(w http.ResponseWriter, r *http.Request) {
 			Enabled    bool   `json:"enabled"`
 		}
 		_ = json.Unmarshal(patchSpecs[i], &ps)
+		tr := ps.TargetRole
+		if tr == "" {
+			tr = "all"
+		}
 		data.Patches = append(data.Patches, pages.PatchRow{
 			Name:       m.Name,
 			Format:     ps.Format,
-			TargetRole: ps.TargetRole,
+			TargetRole: tr,
 			Enabled:    ps.Enabled,
+			UpdatedAt:  m.UpdatedAt.Format("2006-01-02 15:04"),
 		})
+	}
+
+	// Effective patch preview (for patches tab).
+	previewRole := r.URL.Query().Get("role")
+	if previewRole == "" {
+		previewRole = "controlplane"
+	}
+	data.PreviewRole = previewRole
+	resolved, err := patch.ResolvePatches(h.store, name, previewRole)
+	if err != nil {
+		data.PatchPreview = "# failed to resolve patches: " + err.Error()
+	} else if len(resolved) == 0 {
+		data.PatchPreview = "# no patches apply to role \"" + previewRole + "\""
+	} else {
+		data.PatchPreview = strings.Join(resolved, "\n---\n")
 	}
 
 	toast := h.popToast(r)
@@ -764,6 +791,208 @@ func (h *Handler) credentialDownload(w http.ResponseWriter, r *http.Request, kin
 	w.Header().Set("Content-Type", "application/yaml")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", name+"-"+kind+".yaml"))
 	_, _ = w.Write(data)
+}
+
+// --- W6: ConfigPatch management ---
+
+func (h *Handler) ClusterPatchCreate(w http.ResponseWriter, r *http.Request) {
+	if !h.canMutate(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	name := r.PathValue("name")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form", http.StatusBadRequest)
+		return
+	}
+	patchName := strings.TrimSpace(r.FormValue("name"))
+	format := strings.TrimSpace(r.FormValue("format"))
+	targetRole := strings.TrimSpace(r.FormValue("targetRole"))
+	enabled := r.FormValue("enabled") == "true"
+	body := r.FormValue("patch")
+	if targetRole == "all" {
+		targetRole = ""
+	}
+	if err := validatePatchInput(format, targetRole, body); err != nil {
+		http.Redirect(w, r, "/clusters/"+name+"/patches?toast="+url.QueryEscape(err.Error())+"&toast-type=error", http.StatusSeeOther)
+		return
+	}
+	spec := patch.PatchSpec{Patch: body, Format: format, TargetRole: targetRole, Enabled: enabled}
+	labels := map[string]string{"rezuscloud.io/tenant": name}
+	if targetRole != "" {
+		labels["rezuscloud.io/role"] = targetRole
+	}
+	if _, err := h.store.CreateResource("configpatch", patchName, spec, nil, labels, nil); err != nil {
+		http.Redirect(w, r, "/clusters/"+name+"/patches?toast="+url.QueryEscape("create failed: "+err.Error())+"&toast-type=error", http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/clusters/"+name+"/patches?toast=patch+created&toast-type=success", http.StatusSeeOther)
+}
+
+func (h *Handler) ClusterPatchEditPage(w http.ResponseWriter, r *http.Request) {
+	cluster := r.PathValue("name")
+	patchName := r.PathValue("patch")
+	var spec patch.PatchSpec
+	md, err := h.store.GetResource("configpatch", patchName, &spec, nil)
+	if err != nil || md.Name == "" || md.Labels["rezuscloud.io/tenant"] != cluster {
+		http.NotFound(w, r)
+		return
+	}
+	tr := spec.TargetRole
+	if tr == "" {
+		tr = "all"
+	}
+	h.render(w, r, layout.BaseProps{
+		Title: "Patch " + patchName,
+		Page:  "cluster",
+		Content: pages.PatchEdit(pages.PatchEditData{
+			Cluster:    cluster,
+			Name:       patchName,
+			Format:     spec.Format,
+			TargetRole: tr,
+			Enabled:    spec.Enabled,
+			Patch:      spec.Patch,
+			CanMutate:  h.canMutate(r),
+		}),
+		Breadcrumb: []layout.BreadcrumbItem{{Name: "Clusters", URL: "/clusters"}, {Name: cluster, URL: "/clusters/" + cluster + "/patches"}, {Name: patchName, Current: true}},
+		Toast:      h.popToast(r),
+	})
+}
+
+func (h *Handler) ClusterPatchSave(w http.ResponseWriter, r *http.Request) {
+	if !h.canMutate(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	cluster := r.PathValue("name")
+	patchName := r.PathValue("patch")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form", http.StatusBadRequest)
+		return
+	}
+	format := strings.TrimSpace(r.FormValue("format"))
+	targetRole := strings.TrimSpace(r.FormValue("targetRole"))
+	if targetRole == "all" {
+		targetRole = ""
+	}
+	enabled := r.FormValue("enabled") == "true"
+	body := r.FormValue("patch")
+	if err := validatePatchInput(format, targetRole, body); err != nil {
+		http.Redirect(w, r, "/clusters/"+cluster+"/patches/"+patchName+"?toast="+url.QueryEscape(err.Error())+"&toast-type=error", http.StatusSeeOther)
+		return
+	}
+	var old patch.PatchSpec
+	md, err := h.store.GetResource("configpatch", patchName, &old, nil)
+	if err != nil || md.Name == "" || md.Labels["rezuscloud.io/tenant"] != cluster {
+		http.NotFound(w, r)
+		return
+	}
+	newSpec := patch.PatchSpec{Patch: body, Format: format, TargetRole: targetRole, Enabled: enabled}
+	labels := md.Labels
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	labels["rezuscloud.io/tenant"] = cluster
+	if targetRole != "" {
+		labels["rezuscloud.io/role"] = targetRole
+	} else {
+		delete(labels, "rezuscloud.io/role")
+	}
+	if _, err := h.store.UpdateResource("configpatch", patchName, md.ResourceVersion, newSpec, labels, md.Annotations); err != nil {
+		http.Redirect(w, r, "/clusters/"+cluster+"/patches/"+patchName+"?toast="+url.QueryEscape("save failed: "+err.Error())+"&toast-type=error", http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/clusters/"+cluster+"/patches/"+patchName+"?toast=patch+saved&toast-type=success", http.StatusSeeOther)
+}
+
+func (h *Handler) ClusterPatchDelete(w http.ResponseWriter, r *http.Request) {
+	if !h.canMutate(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	cluster := r.PathValue("name")
+	patchName := r.PathValue("patch")
+	var spec patch.PatchSpec
+	md, err := h.store.GetResource("configpatch", patchName, &spec, nil)
+	if err != nil || md.Name == "" || md.Labels["rezuscloud.io/tenant"] != cluster {
+		http.NotFound(w, r)
+		return
+	}
+	if err := h.store.RemoveResource("configpatch", patchName); err != nil {
+		http.Redirect(w, r, "/clusters/"+cluster+"/patches/"+patchName+"?toast="+url.QueryEscape("delete failed: "+err.Error())+"&toast-type=error", http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/clusters/"+cluster+"/patches?toast=patch+deleted&toast-type=success", http.StatusSeeOther)
+}
+
+func (h *Handler) ClusterPatchToggle(w http.ResponseWriter, r *http.Request) {
+	if !h.canMutate(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	cluster := r.PathValue("name")
+	patchName := r.PathValue("patch")
+	var spec patch.PatchSpec
+	md, err := h.store.GetResource("configpatch", patchName, &spec, nil)
+	if err != nil || md.Name == "" || md.Labels["rezuscloud.io/tenant"] != cluster {
+		http.NotFound(w, r)
+		return
+	}
+	spec.Enabled = !spec.Enabled
+	if _, err := h.store.UpdateResource("configpatch", patchName, md.ResourceVersion, spec, md.Labels, md.Annotations); err != nil {
+		http.Redirect(w, r, "/clusters/"+cluster+"/patches/"+patchName+"?toast="+url.QueryEscape("toggle failed: "+err.Error())+"&toast-type=error", http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/clusters/"+cluster+"/patches/"+patchName+"?toast=toggled&toast-type=success", http.StatusSeeOther)
+}
+
+func (h *Handler) ClusterPatchesPreview(w http.ResponseWriter, r *http.Request) {
+	cluster := r.PathValue("name")
+	role := r.URL.Query().Get("role")
+	if role == "" {
+		role = "controlplane"
+	}
+	resolved, err := patch.ResolvePatches(h.store, cluster, role)
+	if err != nil {
+		http.Error(w, "resolve patches: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	if len(resolved) == 0 {
+		_, _ = w.Write([]byte("# no patches apply"))
+		return
+	}
+	_, _ = w.Write([]byte(strings.Join(resolved, "\n---\n")))
+}
+
+func validatePatchInput(format, targetRole, body string) error {
+	if strings.TrimSpace(body) == "" {
+		return fmt.Errorf("patch body must not be empty")
+	}
+	validFormats := map[string]bool{"": true, "strategic": true, "json6902": true, "text": true}
+	if !validFormats[format] {
+		return fmt.Errorf("format must be strategic, json6902, or text")
+	}
+	validTargets := map[string]bool{"": true, "all": true, "controlplane": true, "worker": true, "kernel": true}
+	if !validTargets[targetRole] {
+		return fmt.Errorf("target role must be all, controlplane, worker, kernel")
+	}
+	switch format {
+	case "", "strategic":
+		var y any
+		if err := yaml.Unmarshal([]byte(body), &y); err != nil {
+			return fmt.Errorf("invalid YAML: %v", err)
+		}
+	case "json6902":
+		var ops []map[string]any
+		if err := json.Unmarshal([]byte(body), &ops); err != nil {
+			return fmt.Errorf("invalid JSON patch: %v", err)
+		}
+		if len(ops) == 0 {
+			return fmt.Errorf("json6902 patch must contain operations")
+		}
+	}
+	return nil
 }
 
 // --- W4: Machines & Join Tokens ---
