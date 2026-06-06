@@ -1,6 +1,13 @@
 // Package web provides HTTP handlers for the WebUI dashboard.
 // It renders server-side HTML using templ templates and calls
 // the internal store directly (no HTTP roundtrip).
+//
+// Note (issue #45): this file is being progressively decomposed into
+// sub-packages under internal/web/handlers/. The authn sub-package is the
+// first to be extracted (login/logout). Other sections (dashboard, clusters,
+// machines, settings) follow in subsequent PRs. The legacy methods on
+// Handler remain callable so existing tests don't break during the
+// transition; new code should live in sub-packages.
 package web
 
 import (
@@ -27,6 +34,7 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/statemachine"
 	"github.com/rezuscloud/rezuscloud/internal/upgrade"
 	"github.com/rezuscloud/rezuscloud/internal/watch"
+	"github.com/rezuscloud/rezuscloud/internal/web/handlers/authn"
 	"github.com/rezuscloud/rezuscloud/internal/web/layout"
 	"github.com/rezuscloud/rezuscloud/internal/web/pages"
 	staticFiles "github.com/rezuscloud/rezuscloud/internal/web/static"
@@ -98,10 +106,11 @@ func (h *Handler) WithAuditComponent(c *audit.Component) *Handler {
 // RegisterRoutes registers WebUI routes. Must be called after WebUIAuthMiddleware
 // is installed on the parent mux (if authentication is desired).
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
-	// Public (no auth required) — login/logout flow.
-	mux.HandleFunc("GET /login", h.LoginPage)
-	mux.HandleFunc("POST /login", h.LoginSubmit)
-	mux.HandleFunc("GET /logout", h.Logout)
+	// Public (no auth required) — login/logout flow, served by the authn
+	// sub-package. (The legacy LoginPage/LoginSubmit/Logout methods on
+	// Handler are kept as fallbacks; a follow-up will delete them.)
+	authnHandler := authn.New(h.store, h.jwtManager, h)
+	authnHandler.RegisterRoutes(mux)
 
 	// Authenticated pages.
 	mux.HandleFunc("GET /", h.AuthRequired(h.Dashboard))
@@ -211,6 +220,8 @@ func (h *Handler) AuthRequired(next http.HandlerFunc) http.HandlerFunc {
 
 // --- Helpers ---
 
+// render writes the layout.Base page to w. Exported as Render so sub-packages
+// (web/handlers/*) can reuse the same wiring without re-implementing it.
 func (h *Handler) render(w http.ResponseWriter, r *http.Request, props layout.BaseProps) {
 	props.User = auth.UserFromContext(r.Context())
 	if props.User == "" && props.Page != "login" {
@@ -220,6 +231,11 @@ func (h *Handler) render(w http.ResponseWriter, r *http.Request, props layout.Ba
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_ = layout.Base(props).Render(r.Context(), w)
+}
+
+// Render satisfies the web/handlers/* Renderer interface (render alias).
+func (h *Handler) Render(w http.ResponseWriter, r *http.Request, props layout.BaseProps) {
+	h.render(w, r, props)
 }
 
 // popToast reads + clears a flash toast from a query-string param.
