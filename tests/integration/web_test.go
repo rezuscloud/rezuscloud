@@ -437,3 +437,292 @@ func TestWebUI_Sidebar_HasAllNavEntries(t *testing.T) {
 		}
 	}
 }
+
+// --- W3 integration tests ---
+
+// postFormWithCookie submits a form-encoded POST with the session cookie.
+// Returns status, response body, and response headers.
+func (s *webuiServer) postFormWithCookie(t *testing.T, path, form string, cookie *http.Cookie) (int, string, http.Header) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPost, s.server.URL+path, strings.NewReader(form))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	if cookie != nil {
+		req.AddCookie(cookie)
+	}
+	// Don't follow redirects — HTMX responses are 204 + HX-Redirect header.
+	client := &http.Client{
+		Transport: s.server.Client().Transport,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("post: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(body), resp.Header
+}
+
+// deleteWithCookie issues a DELETE with the session cookie.
+func (s *webuiServer) deleteWithCookie(t *testing.T, path string, cookie *http.Cookie) (int, string, http.Header) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodDelete, s.server.URL+path, nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	if cookie != nil {
+		req.AddCookie(cookie)
+	}
+	client := &http.Client{
+		Transport: s.server.Client().Transport,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(body), resp.Header
+}
+
+// getWithCookieHeaders issues a GET with the session cookie and returns headers too.
+func (s *webuiServer) getWithCookieHeaders(t *testing.T, path string, cookie *http.Cookie) (int, string, http.Header) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, s.server.URL+path, nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	if cookie != nil {
+		req.AddCookie(cookie)
+	}
+	resp, err := s.server.Client().Do(req)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(body), resp.Header
+}
+
+func TestW3_ClusterCRUD_FullLifecycle(t *testing.T) {
+	s := newWebUIServer(t)
+	s.createUser(t, "admin", "secret", auth.RoleAdmin)
+	cookie := s.login(t, "admin", "secret")
+
+	// Step 1: /clusters page shows empty state with Create link.
+	status, body, _ := s.getWithCookieHeaders(t, "/clusters", cookie)
+	if status != http.StatusOK {
+		t.Fatalf("list status = %d, want 200", status)
+	}
+	if !strings.Contains(body, "/clusters/create") {
+		t.Error("/clusters page should show Create link")
+	}
+
+	// Step 2: GET /clusters/create renders the form.
+	status, body, _ = s.getWithCookieHeaders(t, "/clusters/create", cookie)
+	if status != http.StatusOK {
+		t.Fatalf("create page status = %d", status)
+	}
+	if !strings.Contains(body, `name="name"`) {
+		t.Error("create page should render name field")
+	}
+
+	// Step 3: POST /clusters/create with valid form redirects to detail page.
+	form := "name=lifecycle-cluster&kubernetesVersion=1.35.0&talosVersion=1.12.0"
+	status, body, hdr := s.postFormWithCookie(t, "/clusters/create", form, cookie)
+	if status != http.StatusNoContent {
+		t.Fatalf("create submit status = %d, want 204; body: %s", status, body)
+	}
+	redirect := hdr.Get("HX-Redirect")
+	if !strings.Contains(redirect, "/clusters/lifecycle-cluster") {
+		t.Errorf("HX-Redirect = %q, want /clusters/lifecycle-cluster", redirect)
+	}
+
+	// Step 4: GET /clusters/lifecycle-cluster renders detail with tabs.
+	status, body, _ = s.getWithCookieHeaders(t, "/clusters/lifecycle-cluster", cookie)
+	if status != http.StatusOK {
+		t.Fatalf("detail status = %d", status)
+	}
+	// Strip <style>...</style> for assertion.
+	if i := strings.Index(body, "</style>"); i >= 0 {
+		body = body[i+len("</style>"):]
+	}
+	if !strings.Contains(body, `ds-tabs-link--active`) {
+		t.Error("detail page should render active tab")
+	}
+	if !strings.Contains(body, "lifecycle-cluster") {
+		t.Error("detail page should show cluster name")
+	}
+
+	// Step 5: GET kubeconfig returns YAML attachment.
+	status, body, hdr = s.getWithCookieHeaders(t, "/clusters/lifecycle-cluster/kubeconfig", cookie)
+	if status != http.StatusOK {
+		t.Fatalf("kubeconfig status = %d", status)
+	}
+	if !strings.Contains(body, "apiVersion: v1") {
+		t.Errorf("kubeconfig body missing apiVersion: v1; got:\n%s", body[:min(len(body), 200)])
+	}
+	if !strings.Contains(hdr.Get("Content-Disposition"), "lifecycle-cluster-kubeconfig.yaml") {
+		t.Errorf("Content-Disposition = %q", hdr.Get("Content-Disposition"))
+	}
+
+	// Step 6: GET talosconfig returns YAML attachment.
+	status, body, hdr = s.getWithCookieHeaders(t, "/clusters/lifecycle-cluster/talosconfig", cookie)
+	if status != http.StatusOK {
+		t.Fatalf("talosconfig status = %d", status)
+	}
+	if !strings.Contains(body, "context:") {
+		t.Errorf("talosconfig body missing 'context:'; got:\n%s", body[:min(len(body), 200)])
+	}
+	if !strings.Contains(hdr.Get("Content-Disposition"), "lifecycle-cluster-talosconfig.yaml") {
+		t.Errorf("talosconfig Content-Disposition = %q", hdr.Get("Content-Disposition"))
+	}
+
+	// Step 7: Settings tab shows delete button for admin.
+	status, body, _ = s.getWithCookieHeaders(t, "/clusters/lifecycle-cluster/settings", cookie)
+	if status != http.StatusOK {
+		t.Fatalf("settings status = %d", status)
+	}
+	if i := strings.Index(body, "</style>"); i >= 0 {
+		body = body[i+len("</style>"):]
+	}
+	if !strings.Contains(body, "Danger Zone") {
+		t.Error("settings tab should show Danger Zone for admin")
+	}
+	if !strings.Contains(body, `data-modal-open="delete-lifecycle-cluster"`) {
+		t.Error("settings tab should render delete modal trigger")
+	}
+
+	// Step 8: DELETE /clusters/lifecycle-cluster redirects to /clusters.
+	status, body, hdr = s.deleteWithCookie(t, "/clusters/lifecycle-cluster", cookie)
+	if status != http.StatusNoContent {
+		t.Fatalf("delete status = %d, want 204; body: %s", status, body)
+	}
+	redirect = hdr.Get("HX-Redirect")
+	if !strings.Contains(redirect, "/clusters") {
+		t.Errorf("delete HX-Redirect = %q, want /clusters", redirect)
+	}
+
+	// Step 9: After delete, the tenant still exists (graceful deletion sets
+	// deletionTimestamp and adds finalizers). Verify deletionTimestamp is set.
+	tenant, err := s.store.GetTenant("lifecycle-cluster")
+	if err != nil {
+		t.Fatalf("get tenant after delete: %v", err)
+	}
+	if tenant == nil {
+		t.Fatal("tenant should still exist after graceful delete (finalizers pending)")
+	}
+	if tenant.Metadata.DeletionTimestamp == nil {
+		t.Error("expected deletionTimestamp to be set after DELETE")
+	}
+}
+
+func TestW3_ClusterCreate_Validation(t *testing.T) {
+	s := newWebUIServer(t)
+	s.createUser(t, "admin", "secret", auth.RoleAdmin)
+	cookie := s.login(t, "admin", "secret")
+
+	// Invalid name (uppercase) — form re-renders with error.
+	form := "name=BAD-NAME&kubernetesVersion=1.35.0&talosVersion=1.12.0"
+	status, body, _ := s.postFormWithCookie(t, "/clusters/create", form, cookie)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (form re-renders)", status)
+	}
+	if !strings.Contains(body, "must match") && !strings.Contains(body, "lowercase") {
+		t.Errorf("expected validation error; got body tail: %s", body[:min(len(body), 300)])
+	}
+}
+
+func TestW3_ClusterCreate_Duplicate(t *testing.T) {
+	s := newWebUIServer(t)
+	s.createUser(t, "admin", "secret", auth.RoleAdmin)
+	cookie := s.login(t, "admin", "secret")
+
+	// First create.
+	form := "name=duplicate-test&kubernetesVersion=1.35.0&talosVersion=1.12.0"
+	status, _, _ := s.postFormWithCookie(t, "/clusters/create", form, cookie)
+	if status != http.StatusNoContent {
+		t.Fatalf("first create failed: %d", status)
+	}
+
+	// Second create with same name → error.
+	status, body, _ := s.postFormWithCookie(t, "/clusters/create", form, cookie)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (form re-renders)", status)
+	}
+	if !strings.Contains(body, "already exists") {
+		t.Errorf("expected 'already exists' error; got body tail: %s", body[:min(len(body), 300)])
+	}
+}
+
+func TestW3_ClusterDelete_ViewRoleForbidden(t *testing.T) {
+	s := newWebUIServer(t)
+	s.createUser(t, "admin", "secret", auth.RoleAdmin)
+	s.createUser(t, "viewer", "secret", auth.RoleView)
+	adminCookie := s.login(t, "admin", "secret")
+	viewerCookie := s.login(t, "viewer", "secret")
+
+	// Admin creates.
+	form := "name=viewonly-delete&kubernetesVersion=1.35.0&talosVersion=1.12.0"
+	status, _, _ := s.postFormWithCookie(t, "/clusters/create", form, adminCookie)
+	if status != http.StatusNoContent {
+		t.Fatalf("create failed: %d", status)
+	}
+
+	// Viewer cannot delete.
+	status, body, _ := s.deleteWithCookie(t, "/clusters/viewonly-delete", viewerCookie)
+	if status != http.StatusForbidden {
+		t.Errorf("viewer delete status = %d, want 403; body: %s", status, body)
+	}
+}
+
+func TestW3_NodeGroupScale(t *testing.T) {
+	s := newWebUIServer(t)
+	s.createUser(t, "admin", "secret", auth.RoleAdmin)
+	cookie := s.login(t, "admin", "secret")
+
+	// Create tenant with a node group via direct store.
+	_, err := s.store.CreateTenant("ng-scale", state.TenantSpec{KubernetesVersion: "1.35.0"}, nil, nil)
+	if err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+	_, err = s.store.CreateResource("nodegroup", "workers",
+		map[string]any{"name": "workers", "role": "worker", "count": 1},
+		nil,
+		map[string]string{"rezuscloud.io/tenant": "ng-scale"},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("create nodegroup: %v", err)
+	}
+
+	// Scale to 5 via WebUI.
+	form := "count=5"
+	status, body, hdr := s.postFormWithCookie(t, "/clusters/ng-scale/nodegroups/workers/scale", form, cookie)
+	if status != http.StatusNoContent {
+		t.Fatalf("scale status = %d, want 204; body: %s", status, body)
+	}
+	if !strings.Contains(hdr.Get("HX-Redirect"), "/clusters/ng-scale") {
+		t.Errorf("HX-Redirect = %q", hdr.Get("HX-Redirect"))
+	}
+
+	// Verify count was updated.
+	var spec struct {
+		Count int `json:"count"`
+	}
+	_, err = s.store.GetResource("nodegroup", "workers", &spec, nil)
+	if err != nil {
+		t.Fatalf("get nodegroup: %v", err)
+	}
+	if spec.Count != 5 {
+		t.Errorf("count = %d, want 5", spec.Count)
+	}
+}

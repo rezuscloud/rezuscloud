@@ -10,7 +10,20 @@ import templruntime "github.com/a-h/templ/runtime"
 
 import "fmt"
 
-func TenantsList(tenants []TenantSummary) templ.Component {
+// TenantListData drives the /clusters list page.
+// It carries the tenant rows plus a LiveStream flag so the template can wire
+// up SSE-based refresh when the watch bus is available.
+type TenantListData struct {
+	Tenants    []TenantSummary
+	LiveStream bool
+}
+
+// TenantsList renders the /clusters list page.
+//
+// Includes a "Create Cluster" button in the header and a hint pointing to the
+// create page when the list is empty. When LiveStream is true, the table is
+// wrapped in an HTMX sse extension that swaps rows on watch events.
+func TenantsList(data TenantListData) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -31,12 +44,12 @@ func TenantsList(tenants []TenantSummary) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<h1 class=\"ds-page-title\">Clusters</h1>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<div class=\"ds-page-header-row\"><h1 class=\"ds-page-title\">Clusters</h1><a href=\"/clusters/create\" class=\"ds-btn\">+ Create Cluster</a></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		if len(tenants) == 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<div class=\"ds-empty-state\"><div class=\"ds-empty-state-title\">No clusters yet</div><div class=\"ds-empty-state-desc\">Create a cluster via the CLI: rezusctl create cluster &lt;name&gt;</div></div>")
+		if len(data.Tenants) == 0 {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "<div class=\"ds-empty-state\"><div class=\"ds-empty-state-title\">No clusters yet</div><div class=\"ds-empty-state-desc\">Create your first cluster to provision Talos nodes.<br><a href=\"/clusters/create\">Create a cluster →</a></div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -45,7 +58,7 @@ func TenantsList(tenants []TenantSummary) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			for _, t := range tenants {
+			for _, t := range data.Tenants {
 				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<tr class=\"ds-table-row\"><td class=\"ds-table-td\"><a href=\"")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
@@ -53,7 +66,7 @@ func TenantsList(tenants []TenantSummary) templ.Component {
 				var templ_7745c5c3_Var2 templ.SafeURL
 				templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL("/clusters/" + t.Name))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/tenants.templ`, Line: 25, Col: 73}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/tenants.templ`, Line: 45, Col: 73}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 				if templ_7745c5c3_Err != nil {
@@ -66,7 +79,7 @@ func TenantsList(tenants []TenantSummary) templ.Component {
 				var templ_7745c5c3_Var3 string
 				templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(t.Name)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/tenants.templ`, Line: 25, Col: 84}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/tenants.templ`, Line: 45, Col: 84}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 				if templ_7745c5c3_Err != nil {
@@ -101,7 +114,7 @@ func TenantsList(tenants []TenantSummary) templ.Component {
 				var templ_7745c5c3_Var6 string
 				templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(t.Phase)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/tenants.templ`, Line: 26, Col: 119}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/tenants.templ`, Line: 47, Col: 96}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 				if templ_7745c5c3_Err != nil {
@@ -114,7 +127,7 @@ func TenantsList(tenants []TenantSummary) templ.Component {
 				var templ_7745c5c3_Var7 string
 				templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%d / %d", t.Ready, t.Total))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/tenants.templ`, Line: 27, Col: 73}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/tenants.templ`, Line: 49, Col: 73}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 				if templ_7745c5c3_Err != nil {
