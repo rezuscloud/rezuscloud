@@ -3,8 +3,6 @@ package backup
 import (
 	"encoding/json"
 	"net/http"
-
-	"github.com/rezuscloud/rezuscloud/internal/state"
 )
 
 // API provides HTTP handlers for backup management.
@@ -12,9 +10,11 @@ type API struct {
 	service *Service
 }
 
-// NewAPI creates a backup API handler.
-func NewAPI(manager *Manager, store *state.Store) *API {
-	return &API{service: NewService(manager, store)}
+// NewAPI creates a backup API handler backed by the given Service.
+// Construct the Service once (typically via backup.NewComponent) and share
+// it across API + WebUI to avoid duplicate wiring.
+func NewAPI(svc *Service) *API {
+	return &API{service: svc}
 }
 
 // RegisterRoutes registers backup routes.

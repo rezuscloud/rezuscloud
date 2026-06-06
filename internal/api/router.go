@@ -4,8 +4,6 @@ package api
 import (
 	"encoding/json"
 	"net/http"
-	"os"
-	"path/filepath"
 
 	"github.com/rezuscloud/rezuscloud/internal/api/jointoken"
 	"github.com/rezuscloud/rezuscloud/internal/api/logs"
@@ -23,7 +21,8 @@ import (
 
 // Router creates and returns a fully configured HTTP handler for the API.
 // auditComponent is required — the API runs audit middleware on every mutation.
-func Router(store *state.Store, jwtManager *auth.JWTManager, auditComponent *audit.Component) http.Handler {
+// backupComponent may be nil — if nil, /api/v1/backups/* is not registered.
+func Router(store *state.Store, jwtManager *auth.JWTManager, auditComponent *audit.Component, backupComponent *backup.Component) http.Handler {
 	mux := http.NewServeMux()
 
 	// Public endpoints (no auth required).
@@ -65,15 +64,9 @@ func Router(store *state.Store, jwtManager *auth.JWTManager, auditComponent *aud
 	upgradeAPI := upgrade.NewAPI(store, nil)
 	upgradeAPI.RegisterRoutes(protected)
 
-	// Backup endpoints.
-	backupRoot := os.Getenv("REZUSCLOUD_BACKUP_DIR")
-	if backupRoot == "" {
-		backupRoot = filepath.Join(os.TempDir(), "rezuscloud-backups")
-	}
-	fileStore, err := backup.NewFileStore(backupRoot)
-	if err == nil {
-		backupAPI := backup.NewAPI(backup.NewManager(fileStore, backup.Config{Prefix: "backups"}), store)
-		backupAPI.RegisterRoutes(protected)
+	// Backup endpoints (optional — registered only if component is provided).
+	if backupComponent != nil {
+		backupComponent.API.RegisterRoutes(protected)
 	}
 
 	// User management — admin only.
