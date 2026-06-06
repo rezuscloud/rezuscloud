@@ -143,7 +143,7 @@ func (s *Service) recordFailure(snapshotType string, started time.Time, failure 
 
 func (s *Service) databaseSnapshot() ([]byte, error) {
 	tmp := filepath.Join(os.TempDir(), fmt.Sprintf("rezuscloud-backup-%d.db", time.Now().UTC().UnixNano()))
-	defer os.Remove(tmp)
+	defer func() { _ = os.Remove(tmp) }()
 	quoted := strings.ReplaceAll(tmp, "'", "''")
 	if _, err := s.store.DB().Exec("VACUUM INTO '" + quoted + "'"); err != nil {
 		return nil, fmt.Errorf("vacuum into snapshot: %w", err)
