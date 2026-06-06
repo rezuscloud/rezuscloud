@@ -15,6 +15,7 @@ const (
 	PhaseRollback  Phase = "rollback"
 	PhaseComplete  Phase = "complete"
 	PhaseFailed    Phase = "failed"
+	PhaseCanceled  Phase = "canceled"
 )
 
 // Status tracks the progress of an upgrade.

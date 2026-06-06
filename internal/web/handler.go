@@ -20,6 +20,7 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/state"
 	"github.com/rezuscloud/rezuscloud/internal/statemachine"
 	"github.com/rezuscloud/rezuscloud/internal/talosconfig"
+	"github.com/rezuscloud/rezuscloud/internal/upgrade"
 	"github.com/rezuscloud/rezuscloud/internal/watch"
 	"github.com/rezuscloud/rezuscloud/internal/web/layout"
 	"github.com/rezuscloud/rezuscloud/internal/web/pages"
@@ -65,6 +66,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /clusters/{name}/nodegroups/{ng}/scale", h.AuthRequired(h.NodeGroupScale))
 	mux.HandleFunc("GET /clusters/{name}/kubeconfig", h.AuthRequired(h.ClusterKubeconfig))
 	mux.HandleFunc("GET /clusters/{name}/talosconfig", h.AuthRequired(h.ClusterTalosconfig))
+	mux.HandleFunc("POST /clusters/{name}/upgrade/start", h.AuthRequired(h.ClusterUpgradeStart))
+	mux.HandleFunc("POST /clusters/{name}/upgrade/{id}/cancel", h.AuthRequired(h.ClusterUpgradeCancel))
 
 	// Machines (W4).
 	mux.HandleFunc("GET /machines", h.AuthRequired(h.MachinesList))
@@ -292,12 +295,14 @@ func (h *Handler) TenantDetail(w http.ResponseWriter, r *http.Request) {
 	status := statemachine.ComputeTenantStatus(tenant, machines, nodeGroups)
 
 	data := pages.TenantDetailData{
-		Name:         name,
-		Phase:        string(status.Phase),
-		K8sVersion:   spec.KubernetesVersion,
-		TalosVersion: spec.TalosVersion,
-		CurrentTab:   currentTab(r),
-		CanMutate:    h.canMutate(r),
+		Name:             name,
+		Phase:            string(status.Phase),
+		K8sVersion:       spec.KubernetesVersion,
+		TalosVersion:     spec.TalosVersion,
+		CurrentTab:       currentTab(r),
+		CanMutate:        h.canMutate(r),
+		UpgradeComponent: r.URL.Query().Get("component"),
+		UpgradeTarget:    r.URL.Query().Get("version"),
 	}
 
 	// Node groups.
@@ -331,6 +336,22 @@ func (h *Handler) TenantDetail(w http.ResponseWriter, r *http.Request) {
 			Connected: m.Spec.Connected,
 			Role:      role,
 			NodeGroup: m.Metadata.Labels["rezuscloud.io/nodegroup"],
+		})
+	}
+
+	// Upgrade runs.
+	runs, _ := upgrade.GetManager(h.store).ListRuns(name)
+	data.UpgradeRuns = make([]pages.UpgradeRunRow, 0, len(runs))
+	for _, run := range runs {
+		data.UpgradeRuns = append(data.UpgradeRuns, pages.UpgradeRunRow{
+			ID:            run.Metadata.Name,
+			Component:     run.Spec.Component,
+			Target:        run.Spec.Target,
+			Phase:         string(run.Status.Phase),
+			Completed:     run.Status.Completed,
+			TotalMachines: run.Status.TotalMachines,
+			StartedAt:     run.Status.StartedAt.Format("2006-01-02 15:04"),
+			Error:         run.Status.Error,
 		})
 	}
 
@@ -736,6 +757,53 @@ func (h *Handler) ClusterKubeconfig(w http.ResponseWriter, r *http.Request) {
 // Returns the YAML file as an attachment.
 func (h *Handler) ClusterTalosconfig(w http.ResponseWriter, r *http.Request) {
 	h.credentialDownload(w, r, "talosconfig")
+}
+
+func (h *Handler) ClusterUpgradeStart(w http.ResponseWriter, r *http.Request) {
+	if !h.canMutate(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	name := r.PathValue("name")
+	if err := r.ParseForm(); err != nil {
+		h.redirectAction(w, r, "/clusters/"+name+"/upgrade?toast="+url.QueryEscape("Invalid form")+"&toast-type=error")
+		return
+	}
+	component := strings.TrimSpace(r.FormValue("component"))
+	version := strings.TrimSpace(r.FormValue("version"))
+	user := auth.UserFromContext(r.Context())
+	if user == "" {
+		user = "web"
+	}
+	_, err := upgrade.GetManager(h.store).StartRun(name, component, version, user)
+	if err != nil {
+		h.redirectAction(w, r, "/clusters/"+name+"/upgrade?component="+url.QueryEscape(component)+"&version="+url.QueryEscape(version)+"&toast="+url.QueryEscape(err.Error())+"&toast-type=error")
+		return
+	}
+	h.redirectAction(w, r, "/clusters/"+name+"/upgrade?toast="+url.QueryEscape("Upgrade run started")+"&toast-type=success")
+}
+
+func (h *Handler) ClusterUpgradeCancel(w http.ResponseWriter, r *http.Request) {
+	if !h.canMutate(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	name := r.PathValue("name")
+	runID := r.PathValue("id")
+	if err := upgrade.GetManager(h.store).CancelRun(runID); err != nil {
+		h.redirectAction(w, r, "/clusters/"+name+"/upgrade?toast="+url.QueryEscape(err.Error())+"&toast-type=error")
+		return
+	}
+	h.redirectAction(w, r, "/clusters/"+name+"/upgrade?toast="+url.QueryEscape("Upgrade canceled")+"&toast-type=success")
+}
+
+func (h *Handler) redirectAction(w http.ResponseWriter, r *http.Request, target string) {
+	if r.Header.Get("HX-Request") == "true" {
+		w.Header().Set("HX-Redirect", target)
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
 // credentialDownload is the shared implementation for kubeconfig/talosconfig.

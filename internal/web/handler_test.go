@@ -2236,3 +2236,75 @@ func TestClusterPatchesPreview(t *testing.T) {
 		t.Errorf("preview should contain resolved patches, got: %s", body)
 	}
 }
+
+func TestClusterUpgradeStart(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+	setupTenant(t, store, "alpha")
+	setupMachine(t, store, "m1", "alpha", "controlplane", state.StageReady, true)
+
+	req := authedRequestAs(http.MethodPost, "/clusters/alpha/upgrade/start", cookie, "component=talos&version=1.13.0", "admin", auth.RoleAdmin)
+	req.SetPathValue("name", "alpha")
+	w := httptest.NewRecorder()
+	h.ClusterUpgradeStart(w, req)
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("start status=%d", w.Code)
+	}
+	loc := w.Header().Get("Location")
+	if !strings.Contains(loc, "/clusters/alpha/upgrade") {
+		t.Fatalf("expected redirect to upgrade tab, got %s", loc)
+	}
+}
+
+func TestClusterUpgradeStart_HTMXRedirect(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+	setupTenant(t, store, "alpha")
+	setupMachine(t, store, "m1", "alpha", "controlplane", state.StageReady, true)
+
+	req := authedRequestAs(http.MethodPost, "/clusters/alpha/upgrade/start", cookie, "component=talos&version=1.13.0", "admin", auth.RoleAdmin)
+	req.Header.Set("HX-Request", "true")
+	req.SetPathValue("name", "alpha")
+	w := httptest.NewRecorder()
+	h.ClusterUpgradeStart(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("start status=%d", w.Code)
+	}
+	if !strings.Contains(w.Header().Get("HX-Redirect"), "/clusters/alpha/upgrade") {
+		t.Fatalf("expected HX-Redirect to upgrade tab, got %s", w.Header().Get("HX-Redirect"))
+	}
+}
+
+func TestTenantDetail_UpgradeTabRendersRuns(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+	setupTenant(t, store, "alpha")
+	setupMachine(t, store, "m1", "alpha", "controlplane", state.StageReady, true)
+
+	startReq := authedRequestAs(http.MethodPost, "/clusters/alpha/upgrade/start", cookie, "component=talos&version=1.13.0", "admin", auth.RoleAdmin)
+	startReq.SetPathValue("name", "alpha")
+	startW := httptest.NewRecorder()
+	h.ClusterUpgradeStart(startW, startReq)
+
+	req := authedRequestAs(http.MethodGet, "/clusters/alpha/upgrade", cookie, "", "admin", auth.RoleAdmin)
+	req.SetPathValue("name", "alpha")
+	req.SetPathValue("tab", "upgrade")
+	w := httptest.NewRecorder()
+	h.TenantDetail(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("detail status=%d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "Upgrade Runs") {
+		t.Fatalf("expected upgrade runs section")
+	}
+	if !strings.Contains(body, "1.13.0") {
+		t.Fatalf("expected target version in rendered table")
+	}
+}

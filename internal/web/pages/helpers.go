@@ -7,8 +7,12 @@ func phaseBadgeClass(phase string) string {
 		return "positive"
 	case "removing":
 		return "negative"
-	case "forming", "shrinking":
+	case "forming", "shrinking", "upgrading", "precheck", "idle", "canceled":
 		return "neutral"
+	case "complete":
+		return "positive"
+	case "failed":
+		return "negative"
 	default:
 		return "neutral"
 	}
