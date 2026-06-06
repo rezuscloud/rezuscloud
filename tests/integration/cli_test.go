@@ -18,6 +18,7 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/cli/apiclient"
 	"github.com/rezuscloud/rezuscloud/internal/cli/registry"
 	"github.com/rezuscloud/rezuscloud/internal/state"
+	"github.com/rezuscloud/rezuscloud/internal/upgrade"
 )
 
 // cliTestEnv sets up a real API server and returns a configured client + cleanup.
@@ -32,7 +33,7 @@ func cliTestEnv(t *testing.T) (*apiclient.Client, *state.Store, string) {
 	t.Cleanup(func() { _ = store.Close() })
 
 	jwtManager := auth.NewJWTManager("cli-integration-test-secret")
-	handler := api.Router(store, jwtManager, audit.NewComponent(store.DB(), audit.ComponentOptions{}), nil)
+	handler := api.Router(store, jwtManager, audit.NewComponent(store.DB(), audit.ComponentOptions{}), nil, upgrade.NewManager(store))
 
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)

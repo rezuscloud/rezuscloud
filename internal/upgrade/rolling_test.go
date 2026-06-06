@@ -183,7 +183,7 @@ func TestPreCheck_Success(t *testing.T) {
 	setupTenant(t, store, "prod")
 	setupMachine(t, store, "prod", "m1")
 
-	api := NewAPI(store, nil)
+	api := NewAPI(store, nil, NewManager(store))
 	mux := http.NewServeMux()
 	api.RegisterRoutes(mux)
 
@@ -209,7 +209,7 @@ func TestPreCheck_NoMachines(t *testing.T) {
 	store := newTestStore(t)
 	setupTenant(t, store, "prod")
 
-	api := NewAPI(store, nil)
+	api := NewAPI(store, nil, NewManager(store))
 	mux := http.NewServeMux()
 	api.RegisterRoutes(mux)
 
@@ -232,7 +232,7 @@ func TestPreCheck_AlreadyAtVersion(t *testing.T) {
 	setupTenant(t, store, "prod")
 	setupMachine(t, store, "prod", "m1")
 
-	api := NewAPI(store, nil)
+	api := NewAPI(store, nil, NewManager(store))
 	mux := http.NewServeMux()
 	api.RegisterRoutes(mux)
 
@@ -252,7 +252,7 @@ func TestPreCheck_AlreadyAtVersion(t *testing.T) {
 
 func TestPreCheck_InvalidComponent(t *testing.T) {
 	store := newTestStore(t)
-	api := NewAPI(store, nil)
+	api := NewAPI(store, nil, NewManager(store))
 
 	mux := http.NewServeMux()
 	api.RegisterRoutes(mux)
@@ -271,7 +271,7 @@ func TestPreCheck_InvalidComponent(t *testing.T) {
 
 func TestPreCheck_TenantNotFound(t *testing.T) {
 	store := newTestStore(t)
-	api := NewAPI(store, nil)
+	api := NewAPI(store, nil, NewManager(store))
 	mux := http.NewServeMux()
 	api.RegisterRoutes(mux)
 
@@ -292,7 +292,7 @@ func TestPreCheck_Downgrade(t *testing.T) {
 	setupTenant(t, store, "prod")
 	setupMachine(t, store, "prod", "m1")
 
-	api := NewAPI(store, nil)
+	api := NewAPI(store, nil, NewManager(store))
 	mux := http.NewServeMux()
 	api.RegisterRoutes(mux)
 
@@ -314,7 +314,7 @@ func TestGetStatus_Idle(t *testing.T) {
 	store := newTestStore(t)
 	setupTenant(t, store, "prod")
 
-	api := NewAPI(store, nil)
+	api := NewAPI(store, nil, NewManager(store))
 	mux := http.NewServeMux()
 	api.RegisterRoutes(mux)
 
@@ -337,7 +337,7 @@ func TestGetStatus_Idle(t *testing.T) {
 
 func TestGetStatus_TenantNotFound(t *testing.T) {
 	store := newTestStore(t)
-	api := NewAPI(store, nil)
+	api := NewAPI(store, nil, NewManager(store))
 	mux := http.NewServeMux()
 	api.RegisterRoutes(mux)
 
@@ -357,7 +357,7 @@ func TestStartAndListRuns(t *testing.T) {
 	setupTenant(t, store, "prod")
 	setupMachine(t, store, "prod", "m1")
 
-	api := NewAPI(store, nil)
+	api := NewAPI(store, nil, NewManager(store))
 	mux := http.NewServeMux()
 	api.RegisterRoutes(mux)
 
@@ -385,7 +385,7 @@ func TestStartAndListRuns(t *testing.T) {
 
 func TestStartRun_TenantNotFound(t *testing.T) {
 	store := newTestStore(t)
-	api := NewAPI(store, nil)
+	api := NewAPI(store, nil, NewManager(store))
 	mux := http.NewServeMux()
 	api.RegisterRoutes(mux)
 
@@ -406,7 +406,7 @@ func TestCancelRun(t *testing.T) {
 		setupMachine(t, store, "prod", fmt.Sprintf("m%d", i))
 	}
 
-	mgr := GetManager(store)
+	mgr := NewManager(store)
 	run, err := mgr.StartRun("prod", "talos", "1.13.0", "test")
 	if err != nil {
 		t.Fatalf("start run: %v", err)
@@ -438,7 +438,7 @@ func TestGetRunAndCancelEndpoints(t *testing.T) {
 		setupMachine(t, store, "prod", fmt.Sprintf("m%d", i))
 	}
 
-	api := NewAPI(store, nil)
+	api := NewAPI(store, nil, NewManager(store))
 	mux := http.NewServeMux()
 	api.RegisterRoutes(mux)
 

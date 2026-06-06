@@ -20,6 +20,7 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/audit"
 	"github.com/rezuscloud/rezuscloud/internal/auth"
 	"github.com/rezuscloud/rezuscloud/internal/state"
+	"github.com/rezuscloud/rezuscloud/internal/upgrade"
 )
 
 // testServer holds the dependencies for an integration test.
@@ -41,7 +42,7 @@ func newTestServer(t *testing.T) *testServer {
 
 	jwtManager := auth.NewJWTManager("integration-test-secret")
 
-	handler := api.Router(store, jwtManager, audit.NewComponent(store.DB(), audit.ComponentOptions{}), nil)
+	handler := api.Router(store, jwtManager, audit.NewComponent(store.DB(), audit.ComponentOptions{}), nil, upgrade.NewManager(store))
 
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
