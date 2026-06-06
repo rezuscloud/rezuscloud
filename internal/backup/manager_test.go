@@ -149,7 +149,7 @@ func TestAPI_BackupDatabase_Success(t *testing.T) {
 	store := newTestStore(t)
 	ms := newMockStore()
 	mgr := NewManager(ms, Config{Bucket: "test"})
-	api := NewAPI(mgr, store)
+	api := NewAPI(NewService(mgr, store))
 	mux := http.NewServeMux()
 	api.RegisterRoutes(mux)
 
@@ -175,7 +175,7 @@ func TestAPI_BackupResources_Success(t *testing.T) {
 
 	ms := newMockStore()
 	mgr := NewManager(ms, Config{Bucket: "test"})
-	api := NewAPI(mgr, store)
+	api := NewAPI(NewService(mgr, store))
 	mux := http.NewServeMux()
 	api.RegisterRoutes(mux)
 
@@ -195,7 +195,7 @@ func TestAPI_BackupResources_Success(t *testing.T) {
 
 func TestAPI_BackupDatabase_NotConfigured(t *testing.T) {
 	store := newTestStore(t)
-	api := NewAPI(nil, store)
+	api := NewAPI(NewService(nil, store))
 	mux := http.NewServeMux()
 	api.RegisterRoutes(mux)
 
@@ -211,7 +211,7 @@ func TestAPI_BackupDatabase_NotConfigured(t *testing.T) {
 
 func TestAPI_List(t *testing.T) {
 	store := newTestStore(t)
-	api := NewAPI(nil, store)
+	api := NewAPI(NewService(nil, store))
 	mux := http.NewServeMux()
 	api.RegisterRoutes(mux)
 
@@ -228,7 +228,7 @@ func TestAPI_List(t *testing.T) {
 func TestAPI_PolicyCRUD(t *testing.T) {
 	store := newTestStore(t)
 	ms := newMockStore()
-	api := NewAPI(NewManager(ms, Config{Prefix: "backups"}), store)
+	api := NewAPI(NewService(NewManager(ms, Config{Prefix: "backups"}), store))
 	mux := http.NewServeMux()
 	api.RegisterRoutes(mux)
 

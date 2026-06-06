@@ -31,7 +31,7 @@ func setupRouter(t *testing.T) (*state.Store, http.Handler, *auth.JWTManager) {
 		PasswordHash: hash,
 	})
 
-	return store, Router(store, jwtManager, audit.NewComponent(store.DB(), audit.ComponentOptions{})), jwtManager
+	return store, Router(store, jwtManager, audit.NewComponent(store.DB(), audit.ComponentOptions{}), nil), jwtManager
 }
 
 func stringReader(s string) io.Reader {

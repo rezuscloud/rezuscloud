@@ -14,6 +14,7 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/api/patch"
 	"github.com/rezuscloud/rezuscloud/internal/audit"
 	"github.com/rezuscloud/rezuscloud/internal/auth"
+	"github.com/rezuscloud/rezuscloud/internal/backup"
 	"github.com/rezuscloud/rezuscloud/internal/credentials"
 	"github.com/rezuscloud/rezuscloud/internal/state"
 	"github.com/rezuscloud/rezuscloud/internal/watch"
@@ -53,6 +54,9 @@ func newTestHandler(t *testing.T, store *state.Store, opts ...func(*handlerCfg))
 	if cfg.auditStore != nil {
 		h = h.WithAuditStore(cfg.auditStore)
 	}
+	if cfg.backupSvc != nil {
+		h = h.WithBackupService(cfg.backupSvc)
+	}
 	return h
 }
 
@@ -61,15 +65,32 @@ func withAuditStore(s audit.Store) func(*handlerCfg) {
 	return func(c *handlerCfg) { c.auditStore = s }
 }
 
+// withBackupService injects a real backup service backed by a temp directory.
+func withBackupService(svc *backup.Service) func(*handlerCfg) {
+	return func(c *handlerCfg) { c.backupSvc = svc }
+}
+
 // withoutBus returns an opt that disables the watch bus (so SSE endpoints return 503).
 func withoutBus() func(*handlerCfg) {
 	return func(c *handlerCfg) { c.bus = nil }
+}
+
+// newTestBackupService builds a real backup.Service against a temp directory
+// so /settings/backups can be exercised without depending on REZUSCLOUD_BACKUP_DIR.
+func newTestBackupService(t *testing.T, store *state.Store) *backup.Service {
+	t.Helper()
+	comp, err := backup.NewComponent(store, backup.ComponentOptions{Root: t.TempDir()})
+	if err != nil {
+		t.Fatalf("backup component: %v", err)
+	}
+	return comp.Service
 }
 
 type handlerCfg struct {
 	jwt        *auth.JWTManager
 	bus        *watch.Bus
 	auditStore audit.Store
+	backupSvc  *backup.Service
 }
 
 // createUser adds a user with a known bcrypt-hashed password.
@@ -2246,7 +2267,8 @@ func TestClusterPatchEdit_SaveToggleDelete(t *testing.T) {
 
 func TestBackupsPage(t *testing.T) {
 	store := newTestStore(t)
-	h := newTestHandler(t, store)
+	svc := newTestBackupService(t, store)
+	h := newTestHandler(t, store, withBackupService(svc))
 	createUser(t, store, "admin", "pass", auth.RoleAdmin)
 	cookie := loginCookie(t, h, "admin", "pass")
 
@@ -2263,7 +2285,8 @@ func TestBackupsPage(t *testing.T) {
 
 func TestBackupsRunResources(t *testing.T) {
 	store := newTestStore(t)
-	h := newTestHandler(t, store)
+	svc := newTestBackupService(t, store)
+	h := newTestHandler(t, store, withBackupService(svc))
 	createUser(t, store, "admin", "pass", auth.RoleAdmin)
 	cookie := loginCookie(t, h, "admin", "pass")
 

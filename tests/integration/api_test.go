@@ -41,7 +41,7 @@ func newTestServer(t *testing.T) *testServer {
 
 	jwtManager := auth.NewJWTManager("integration-test-secret")
 
-	handler := api.Router(store, jwtManager, audit.NewComponent(store.DB(), audit.ComponentOptions{}))
+	handler := api.Router(store, jwtManager, audit.NewComponent(store.DB(), audit.ComponentOptions{}), nil)
 
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)

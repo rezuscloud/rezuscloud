@@ -32,7 +32,7 @@ func cliTestEnv(t *testing.T) (*apiclient.Client, *state.Store, string) {
 	t.Cleanup(func() { _ = store.Close() })
 
 	jwtManager := auth.NewJWTManager("cli-integration-test-secret")
-	handler := api.Router(store, jwtManager, audit.NewComponent(store.DB(), audit.ComponentOptions{}))
+	handler := api.Router(store, jwtManager, audit.NewComponent(store.DB(), audit.ComponentOptions{}), nil)
 
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)

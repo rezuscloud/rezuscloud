@@ -17,6 +17,7 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/api"
 	"github.com/rezuscloud/rezuscloud/internal/audit"
 	"github.com/rezuscloud/rezuscloud/internal/auth"
+	"github.com/rezuscloud/rezuscloud/internal/backup"
 	"github.com/rezuscloud/rezuscloud/internal/ingress"
 	"github.com/rezuscloud/rezuscloud/internal/state"
 	"github.com/rezuscloud/rezuscloud/internal/watch"
@@ -83,17 +84,26 @@ func main() {
 	go auditComponent.StartRetention(ctx)
 	defer auditComponent.Close()
 
+	// Backup subsystem: one component owns Manager + Service + API.
+	backupDir := os.Getenv("REZUSCLOUD_BACKUP_DIR")
+	backupComponent, backupErr := backup.NewComponent(store, backup.ComponentOptions{Root: backupDir})
+	if backupErr != nil {
+		log.Printf("backup subsystem disabled: %v", backupErr)
+	}
+
 	// API router with middleware (recovery, logging, auth).
 	// Registered with explicit methods because the WebUI registers method-scoped
 	// routes ("GET /", "GET /tenants", ...) and Go 1.22+ ServeMux panics when
 	// method-scoped and method-less patterns share a path prefix.
-	apiRouter := api.Router(store, jwtManager, auditComponent)
+	apiRouter := api.Router(store, jwtManager, auditComponent, backupComponent)
 	for _, method := range []string{"GET", "POST", "PUT", "DELETE", "PATCH"} {
 		mux.Handle(method+" /api/", apiRouter)
 	}
 
 	// WebUI.
-	webHandler := web.NewHandler(store, jwtManager, bus).WithAuditComponent(auditComponent)
+	webHandler := web.NewHandler(store, jwtManager, bus).
+		WithAuditComponent(auditComponent).
+		WithBackupComponent(backupComponent)
 	webHandler.RegisterRoutes(mux)
 
 	srv := &http.Server{
