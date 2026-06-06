@@ -10,12 +10,15 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/rezuscloud/rezuscloud/internal/api/patch"
 	"github.com/rezuscloud/rezuscloud/internal/auth"
+	"github.com/rezuscloud/rezuscloud/internal/backup"
 	"github.com/rezuscloud/rezuscloud/internal/credentials"
 	"github.com/rezuscloud/rezuscloud/internal/state"
 	"github.com/rezuscloud/rezuscloud/internal/statemachine"
@@ -84,6 +87,13 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /machines/{id}/shutdown", h.AuthRequired(h.MachineShutdown))
 	mux.HandleFunc("POST /machines/{id}/approve", h.AuthRequired(h.MachineApprove))
 	mux.HandleFunc("DELETE /machines/{id}", h.AuthRequired(h.MachineDelete))
+
+	// Settings (W8 backups).
+	mux.HandleFunc("GET /settings/backups", h.AuthRequired(h.BackupsPage))
+	mux.HandleFunc("POST /settings/backups/database", h.AuthRequired(h.BackupsRunDatabase))
+	mux.HandleFunc("POST /settings/backups/resources", h.AuthRequired(h.BackupsRunResources))
+	mux.HandleFunc("POST /settings/backups/restore", h.AuthRequired(h.BackupsRestore))
+	mux.HandleFunc("POST /settings/backups/policy", h.AuthRequired(h.BackupsPolicySave))
 
 	// Legacy /tenants aliases (kept for backward compatibility; /clusters is the
 	// user-facing name per W2). New code should use /clusters/*.
@@ -804,6 +814,168 @@ func (h *Handler) redirectAction(w http.ResponseWriter, r *http.Request, target 
 		return
 	}
 	http.Redirect(w, r, target, http.StatusSeeOther)
+}
+
+func (h *Handler) backupService() (*backup.Service, error) {
+	root := os.Getenv("REZUSCLOUD_BACKUP_DIR")
+	if root == "" {
+		root = filepath.Join(os.TempDir(), "rezuscloud-backups")
+	}
+	fs, err := backup.NewFileStore(root)
+	if err != nil {
+		return nil, err
+	}
+	mgr := backup.NewManager(fs, backup.Config{Prefix: "backups"})
+	return backup.NewService(mgr, h.store), nil
+}
+
+func (h *Handler) BackupsPage(w http.ResponseWriter, r *http.Request) {
+	svc, err := h.backupService()
+	if err != nil {
+		http.Error(w, "backup service unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	snapshots, _ := svc.ListSnapshots()
+	policy, _ := svc.GetPolicy()
+
+	lastSuccess := "never"
+	failed := 0
+	if len(snapshots) > 0 {
+		for _, snap := range snapshots {
+			if snap.Status.Status == "success" && lastSuccess == "never" {
+				lastSuccess = snap.CreatedAt
+			}
+			if snap.Status.Status == "failed" {
+				failed++
+			}
+		}
+	}
+	data := pages.BackupsPageData{
+		Snapshots:   snapshots,
+		Retention:   policy.Retention,
+		LastSuccess: lastSuccess,
+		Failures:    failed,
+		RPOEstimate: rpoEstimate(lastSuccess),
+		CanMutate:   h.canMutate(r),
+	}
+	toast := h.popToast(r)
+	h.render(w, r, layout.BaseProps{
+		Title:   "Backups",
+		Page:    "settings-backups",
+		Content: pages.BackupsPage(data),
+		Breadcrumb: []layout.BreadcrumbItem{
+			{Name: "Settings", URL: "/settings/backups"},
+			{Name: "Backups", Current: true},
+		},
+		Toast: toast,
+	})
+}
+
+func (h *Handler) BackupsRunDatabase(w http.ResponseWriter, r *http.Request) {
+	if !h.canMutate(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	svc, err := h.backupService()
+	if err != nil {
+		h.redirectAction(w, r, "/settings/backups?toast="+url.QueryEscape(err.Error())+"&toast-type=error")
+		return
+	}
+	if _, err := svc.TriggerDatabase(r.Context()); err != nil {
+		h.redirectAction(w, r, "/settings/backups?toast="+url.QueryEscape(err.Error())+"&toast-type=error")
+		return
+	}
+	h.redirectAction(w, r, "/settings/backups?toast=database+backup+created&toast-type=success")
+}
+
+func (h *Handler) BackupsRunResources(w http.ResponseWriter, r *http.Request) {
+	if !h.canMutate(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	svc, err := h.backupService()
+	if err != nil {
+		h.redirectAction(w, r, "/settings/backups?toast="+url.QueryEscape(err.Error())+"&toast-type=error")
+		return
+	}
+	if _, err := svc.TriggerResources(r.Context()); err != nil {
+		h.redirectAction(w, r, "/settings/backups?toast="+url.QueryEscape(err.Error())+"&toast-type=error")
+		return
+	}
+	h.redirectAction(w, r, "/settings/backups?toast=resources+backup+created&toast-type=success")
+}
+
+func (h *Handler) BackupsRestore(w http.ResponseWriter, r *http.Request) {
+	if !h.canMutate(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		h.redirectAction(w, r, "/settings/backups?toast=invalid+restore+request&toast-type=error")
+		return
+	}
+	snapshotID := strings.TrimSpace(r.FormValue("snapshotID"))
+	dryRun := r.FormValue("dryRun") == "true"
+	svc, err := h.backupService()
+	if err != nil {
+		h.redirectAction(w, r, "/settings/backups?toast="+url.QueryEscape(err.Error())+"&toast-type=error")
+		return
+	}
+	result, err := svc.Restore(r.Context(), snapshotID, dryRun)
+	if err != nil {
+		h.redirectAction(w, r, "/settings/backups?toast="+url.QueryEscape(err.Error())+"&toast-type=error")
+		return
+	}
+	msg := "restore applied"
+	if dryRun {
+		msg = "restore dry-run: " + strconv.Itoa(result.ResourcesSeen) + " resources"
+	}
+	h.redirectAction(w, r, "/settings/backups?toast="+url.QueryEscape(msg)+"&toast-type=success")
+}
+
+func (h *Handler) BackupsPolicySave(w http.ResponseWriter, r *http.Request) {
+	if !h.canMutate(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		h.redirectAction(w, r, "/settings/backups?toast=invalid+policy+form&toast-type=error")
+		return
+	}
+	retentionStr := strings.TrimSpace(r.FormValue("retention"))
+	retention, err := strconv.Atoi(retentionStr)
+	if err != nil || retention <= 0 {
+		h.redirectAction(w, r, "/settings/backups?toast=retention+must+be+positive&toast-type=error")
+		return
+	}
+	svc, err := h.backupService()
+	if err != nil {
+		h.redirectAction(w, r, "/settings/backups?toast="+url.QueryEscape(err.Error())+"&toast-type=error")
+		return
+	}
+	if err := svc.UpdatePolicy(backup.Policy{Retention: retention}); err != nil {
+		h.redirectAction(w, r, "/settings/backups?toast="+url.QueryEscape(err.Error())+"&toast-type=error")
+		return
+	}
+	h.redirectAction(w, r, "/settings/backups?toast=retention+updated&toast-type=success")
+}
+
+func rpoEstimate(lastSuccess string) string {
+	if lastSuccess == "" || lastSuccess == "never" {
+		return "unknown"
+	}
+	t, err := time.Parse(time.RFC3339, lastSuccess)
+	if err != nil {
+		return "unknown"
+	}
+	d := time.Since(t)
+	if d < time.Minute {
+		return "<1m"
+	}
+	if d < time.Hour {
+		return strconv.Itoa(int(d.Minutes())) + "m"
+	}
+	return strconv.Itoa(int(d.Hours())) + "h"
 }
 
 // credentialDownload is the shared implementation for kubeconfig/talosconfig.

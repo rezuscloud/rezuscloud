@@ -2213,6 +2213,40 @@ func TestClusterPatchEdit_SaveToggleDelete(t *testing.T) {
 	}
 }
 
+func TestBackupsPage(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	req := authedRequestAs(http.MethodGet, "/settings/backups", cookie, "", "admin", auth.RoleAdmin)
+	w := httptest.NewRecorder()
+	h.BackupsPage(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "Snapshot catalog") {
+		t.Fatalf("expected backup page content")
+	}
+}
+
+func TestBackupsRunResources(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	req := authedRequestAs(http.MethodPost, "/settings/backups/resources", cookie, "", "admin", auth.RoleAdmin)
+	w := httptest.NewRecorder()
+	h.BackupsRunResources(w, req)
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("status=%d", w.Code)
+	}
+	if !strings.Contains(w.Header().Get("Location"), "/settings/backups") {
+		t.Fatalf("expected redirect to backups page")
+	}
+}
+
 func TestClusterPatchesPreview(t *testing.T) {
 	store := newTestStore(t)
 	h := newTestHandler(t, store)

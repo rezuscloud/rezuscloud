@@ -4,6 +4,8 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"github.com/rezuscloud/rezuscloud/internal/api/jointoken"
 	"github.com/rezuscloud/rezuscloud/internal/api/logs"
@@ -13,6 +15,7 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/api/patch"
 	"github.com/rezuscloud/rezuscloud/internal/api/provider"
 	"github.com/rezuscloud/rezuscloud/internal/auth"
+	"github.com/rezuscloud/rezuscloud/internal/backup"
 	"github.com/rezuscloud/rezuscloud/internal/state"
 	"github.com/rezuscloud/rezuscloud/internal/upgrade"
 )
@@ -59,6 +62,17 @@ func Router(store *state.Store, jwtManager *auth.JWTManager) http.Handler {
 	// Upgrade endpoints.
 	upgradeAPI := upgrade.NewAPI(store, nil)
 	upgradeAPI.RegisterRoutes(protected)
+
+	// Backup endpoints.
+	backupRoot := os.Getenv("REZUSCLOUD_BACKUP_DIR")
+	if backupRoot == "" {
+		backupRoot = filepath.Join(os.TempDir(), "rezuscloud-backups")
+	}
+	fileStore, err := backup.NewFileStore(backupRoot)
+	if err == nil {
+		backupAPI := backup.NewAPI(backup.NewManager(fileStore, backup.Config{Prefix: "backups"}), store)
+		backupAPI.RegisterRoutes(protected)
+	}
 
 	// User management — admin only.
 	userHandlers := auth.NewUserHandlers(store)

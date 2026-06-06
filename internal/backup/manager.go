@@ -14,6 +14,10 @@ import (
 type Store interface {
 	// Upload writes data to the given key in the backup bucket.
 	Upload(ctx context.Context, key string, data io.Reader) error
+	// Download reads data from the given key.
+	Download(ctx context.Context, key string) (io.ReadCloser, error)
+	// Delete removes the given key.
+	Delete(ctx context.Context, key string) error
 }
 
 // Snapshot represents a backup snapshot.
