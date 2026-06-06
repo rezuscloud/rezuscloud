@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rezuscloud/rezuscloud/internal/auth"
 	"github.com/rezuscloud/rezuscloud/internal/state"
@@ -1235,5 +1236,545 @@ func TestValidClusterName(t *testing.T) {
 				t.Errorf("validClusterName(%q) = %v, want %v", tc.name, got, tc.want)
 			}
 		})
+	}
+}
+
+// --- W4: Machines & Join Tokens tests ---
+
+func setupMachine(t *testing.T, store *state.Store, id string, tenant, role string, stage state.MachineStage, connected bool) {
+	t.Helper()
+	_, err := store.CreateMachine(id, state.MachineSpec{Connected: connected},
+		map[string]string{
+			"rezuscloud.io/tenant":     tenant,
+			"rezuscloud.io/role":       role,
+			"rezuscloud.io/node-group": "workers",
+		},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("create machine %s: %v", id, err)
+	}
+	if _, err := store.UpdateMachineStatus(id, state.MachineStatus{
+		Stage: stage,
+		Role:  role,
+		Ready: stage == state.StageReady,
+	}); err != nil {
+		t.Fatalf("update status %s: %v", id, err)
+	}
+}
+
+func TestMachinesList_Empty(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	req := authedRequestAs(http.MethodGet, "/machines", cookie, "", "admin", auth.RoleAdmin)
+	w := httptest.NewRecorder()
+	h.MachinesList(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "No machines registered") {
+		t.Error("empty state should be shown")
+	}
+}
+
+func TestMachinesList_WithMachines(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	setupTenant(t, store, "alpha")
+	setupMachine(t, store, "11111111-aaaa-bbbb-cccc-dddddddddddd", "alpha", "controlplane", state.StageReady, true)
+	setupMachine(t, store, "22222222-aaaa-bbbb-cccc-dddddddddddd", "alpha", "worker", state.StageInitializing, false)
+
+	req := authedRequestAs(http.MethodGet, "/machines", cookie, "", "admin", auth.RoleAdmin)
+	w := httptest.NewRecorder()
+	h.MachinesList(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	body := w.Body.String()
+	// Strip style block.
+	if i := strings.Index(body, "</style>"); i >= 0 {
+		body = body[i+len("</style>"):]
+	}
+	if !strings.Contains(body, "11111111") {
+		t.Error("machine 11111111 not in list")
+	}
+	if !strings.Contains(body, "22222222") {
+		t.Error("machine 22222222 not in list")
+	}
+	if !strings.Contains(body, "/machines/jointokens") {
+		t.Error("join tokens link should be on machines page")
+	}
+}
+
+func TestMachinesList_FilterByCluster(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	setupTenant(t, store, "alpha")
+	setupTenant(t, store, "beta")
+	setupMachine(t, store, "machine-alpha", "alpha", "worker", state.StageReady, true)
+	setupMachine(t, store, "machine-beta", "beta", "worker", state.StageReady, true)
+
+	req := authedRequestAs(http.MethodGet, "/machines?cluster=alpha", cookie, "", "admin", auth.RoleAdmin)
+	w := httptest.NewRecorder()
+	h.MachinesList(w, req)
+
+	body := w.Body.String()
+	if i := strings.Index(body, "</style>"); i >= 0 {
+		body = body[i+len("</style>"):]
+	}
+	if !strings.Contains(body, "machine-alpha") {
+		t.Error("alpha machine should be present")
+	}
+	if strings.Contains(body, "machine-beta") {
+		t.Error("beta machine should be filtered out")
+	}
+}
+
+func TestMachinesList_FilterByStage(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	setupTenant(t, store, "alpha")
+	setupMachine(t, store, "ready-machine", "alpha", "worker", state.StageReady, true)
+	setupMachine(t, store, "init-machine", "alpha", "worker", state.StageInitializing, false)
+
+	req := authedRequestAs(http.MethodGet, "/machines?stage=ready", cookie, "", "admin", auth.RoleAdmin)
+	w := httptest.NewRecorder()
+	h.MachinesList(w, req)
+
+	body := w.Body.String()
+	if i := strings.Index(body, "</style>"); i >= 0 {
+		body = body[i+len("</style>"):]
+	}
+	if !strings.Contains(body, "ready-machine") {
+		t.Error("ready machine should be present")
+	}
+	if strings.Contains(body, "init-machine") {
+		t.Error("init machine should be filtered out")
+	}
+}
+
+func TestMachinesList_FilterConnectedOnly(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	setupTenant(t, store, "alpha")
+	setupMachine(t, store, "conn-machine", "alpha", "worker", state.StageReady, true)
+	setupMachine(t, store, "disc-machine", "alpha", "worker", state.StageReady, false)
+
+	req := authedRequestAs(http.MethodGet, "/machines?connected=true", cookie, "", "admin", auth.RoleAdmin)
+	w := httptest.NewRecorder()
+	h.MachinesList(w, req)
+
+	body := w.Body.String()
+	if i := strings.Index(body, "</style>"); i >= 0 {
+		body = body[i+len("</style>"):]
+	}
+	if !strings.Contains(body, "conn-machine") {
+		t.Error("connected machine should be present")
+	}
+	if strings.Contains(body, "disc-machine") {
+		t.Error("disconnected machine should be filtered out")
+	}
+}
+
+func TestMachineDetail_Found(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	setupTenant(t, store, "alpha")
+	setupMachine(t, store, "11111111-aaaa-bbbb-cccc-dddddddddddd", "alpha", "controlplane", state.StageReady, true)
+	_, _ = store.UpdateMachineStatus("11111111-aaaa-bbbb-cccc-dddddddddddd", state.MachineStatus{
+		Stage:        state.StageReady,
+		Role:         "controlplane",
+		Ready:        true,
+		TalosVersion: "1.12.0",
+		K8sVersion:   "1.35.0",
+	})
+
+	req := authedRequestAs(http.MethodGet, "/machines/11111111-aaaa-bbbb-cccc-dddddddddddd", cookie, "", "admin", auth.RoleAdmin)
+	req.SetPathValue("id", "11111111-aaaa-bbbb-cccc-dddddddddddd")
+	w := httptest.NewRecorder()
+	h.MachineDetail(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "11111111-aaaa-bbbb-cccc-dddddddddddd") {
+		t.Error("machine ID not on page")
+	}
+	if !strings.Contains(body, "1.12.0") {
+		t.Error("talos version not on page")
+	}
+	if !strings.Contains(body, "1.35.0") {
+		t.Error("k8s version not on page")
+	}
+}
+
+func TestMachineDetail_NotFound(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	req := authedRequestAs(http.MethodGet, "/machines/nonexistent", cookie, "", "admin", auth.RoleAdmin)
+	req.SetPathValue("id", "nonexistent")
+	w := httptest.NewRecorder()
+	h.MachineDetail(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", w.Code)
+	}
+}
+
+func TestMachineDetail_ViewRoleHidesActions(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "viewer", "pass", auth.RoleView)
+	cookie := loginCookie(t, h, "viewer", "pass")
+
+	setupTenant(t, store, "alpha")
+	setupMachine(t, store, "machine-actions", "alpha", "worker", state.StageReady, true)
+
+	req := authedRequestAs(http.MethodGet, "/machines/machine-actions", cookie, "", "viewer", auth.RoleView)
+	req.SetPathValue("id", "machine-actions")
+	w := httptest.NewRecorder()
+	h.MachineDetail(w, req)
+
+	body := w.Body.String()
+	if i := strings.Index(body, "</style>"); i >= 0 {
+		body = body[i+len("</style>"):]
+	}
+	if strings.Contains(body, `data-modal-open="restart-machine"`) {
+		t.Error("view role should not see restart button")
+	}
+}
+
+func TestMachineDetail_AdminShowsActions(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	setupTenant(t, store, "alpha")
+	setupMachine(t, store, "machine-actions", "alpha", "worker", state.StageReady, true)
+
+	req := authedRequestAs(http.MethodGet, "/machines/machine-actions", cookie, "", "admin", auth.RoleAdmin)
+	req.SetPathValue("id", "machine-actions")
+	w := httptest.NewRecorder()
+	h.MachineDetail(w, req)
+
+	body := w.Body.String()
+	if i := strings.Index(body, "</style>"); i >= 0 {
+		body = body[i+len("</style>"):]
+	}
+	if !strings.Contains(body, `data-modal-open="restart-machine"`) {
+		t.Error("admin should see restart button")
+	}
+	if !strings.Contains(body, `data-modal-open="shutdown-machine"`) {
+		t.Error("admin should see shutdown button")
+	}
+}
+
+func TestMachineRestart_Admin(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	setupMachine(t, store, "restart-me", "", "worker", state.StageReady, true)
+
+	req := authedRequestAs(http.MethodPost, "/machines/restart-me/restart", cookie, "", "admin", auth.RoleAdmin)
+	req.SetPathValue("id", "restart-me")
+	w := httptest.NewRecorder()
+	h.MachineRestart(w, req)
+
+	if w.Code != http.StatusSeeOther {
+		t.Errorf("status = %d, want 303", w.Code)
+	}
+	if !strings.Contains(w.Header().Get("Location"), "/machines/restart-me") {
+		t.Errorf("Location = %q", w.Header().Get("Location"))
+	}
+}
+
+func TestMachineRestart_ViewRole_Forbidden(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "viewer", "pass", auth.RoleView)
+	cookie := loginCookie(t, h, "viewer", "pass")
+
+	setupMachine(t, store, "restart-view", "", "worker", state.StageReady, true)
+
+	req := authedRequestAs(http.MethodPost, "/machines/restart-view/restart", cookie, "", "viewer", auth.RoleView)
+	req.SetPathValue("id", "restart-view")
+	w := httptest.NewRecorder()
+	h.MachineRestart(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want 403", w.Code)
+	}
+}
+
+func TestMachineShutdown_Admin(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	setupMachine(t, store, "shutdown-me", "", "worker", state.StageReady, true)
+
+	req := authedRequestAs(http.MethodPost, "/machines/shutdown-me/shutdown", cookie, "", "admin", auth.RoleAdmin)
+	req.SetPathValue("id", "shutdown-me")
+	w := httptest.NewRecorder()
+	h.MachineShutdown(w, req)
+
+	if w.Code != http.StatusSeeOther {
+		t.Errorf("status = %d, want 303", w.Code)
+	}
+}
+
+func TestMachineDelete_Admin(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	setupMachine(t, store, "delete-me", "", "worker", state.StageReady, true)
+
+	req := authedRequestAs(http.MethodDelete, "/machines/delete-me", cookie, "", "admin", auth.RoleAdmin)
+	req.SetPathValue("id", "delete-me")
+	w := httptest.NewRecorder()
+	h.MachineDelete(w, req)
+
+	if w.Code != http.StatusSeeOther {
+		t.Errorf("status = %d, want 303", w.Code)
+	}
+	// Machine should be marked deleted (deletionTimestamp set).
+	m, _ := store.GetMachine("delete-me")
+	if m == nil {
+		t.Error("machine should still exist (graceful deletion sets timestamp)")
+	}
+	if m != nil && m.Metadata.DeletionTimestamp == nil {
+		t.Error("expected deletionTimestamp to be set")
+	}
+}
+
+func TestMachineDelete_ViewRole_Forbidden(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "viewer", "pass", auth.RoleView)
+	cookie := loginCookie(t, h, "viewer", "pass")
+
+	setupMachine(t, store, "view-only", "", "worker", state.StageReady, true)
+
+	req := authedRequestAs(http.MethodDelete, "/machines/view-only", cookie, "", "viewer", auth.RoleView)
+	req.SetPathValue("id", "view-only")
+	w := httptest.NewRecorder()
+	h.MachineDelete(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want 403", w.Code)
+	}
+}
+
+func TestMachinesPending_ShowsNonReadyMachines(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	setupTenant(t, store, "alpha")
+	setupMachine(t, store, "ready-m", "alpha", "worker", state.StageReady, true)
+	setupMachine(t, store, "init-m", "alpha", "worker", state.StageInitializing, false)
+	setupMachine(t, store, "install-m", "alpha", "worker", state.StageInstalling, false)
+
+	req := authedRequestAs(http.MethodGet, "/machines/pending", cookie, "", "admin", auth.RoleAdmin)
+	w := httptest.NewRecorder()
+	h.MachinesPending(w, req)
+
+	body := w.Body.String()
+	if i := strings.Index(body, "</style>"); i >= 0 {
+		body = body[i+len("</style>"):]
+	}
+	if strings.Contains(body, "ready-m") {
+		t.Error("ready machine should NOT appear in pending")
+	}
+	if !strings.Contains(body, "init-m") {
+		t.Error("initializing machine should appear in pending")
+	}
+	if !strings.Contains(body, "install-m") {
+		t.Error("installing machine should appear in pending")
+	}
+}
+
+func TestJoinTokensList_Empty(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	req := authedRequestAs(http.MethodGet, "/machines/jointokens", cookie, "", "admin", auth.RoleAdmin)
+	w := httptest.NewRecorder()
+	h.JoinTokensList(w, req)
+
+	body := w.Body.String()
+	if !strings.Contains(body, "No join tokens") {
+		t.Error("empty state should be shown")
+	}
+	if !strings.Contains(body, `data-modal-open="create-jointoken"`) {
+		t.Error("admin should see create button")
+	}
+}
+
+func TestJoinTokensList_WithTokens(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	setupTenant(t, store, "alpha")
+	_, err := store.CreateJoinToken("aabbccdd11223344", state.JoinTokenSpec{
+		NodeGroup: "workers",
+		ExpiresAt: time.Now().UTC().Add(24 * time.Hour),
+	}, "alpha", "workers")
+	if err != nil {
+		t.Fatalf("create token: %v", err)
+	}
+
+	req := authedRequestAs(http.MethodGet, "/machines/jointokens", cookie, "", "admin", auth.RoleAdmin)
+	w := httptest.NewRecorder()
+	h.JoinTokensList(w, req)
+
+	body := w.Body.String()
+	if !strings.Contains(body, "aabbccdd") {
+		t.Error("token (truncated) not in list")
+	}
+	if !strings.Contains(body, "alpha") {
+		t.Error("cluster label not in list")
+	}
+	if !strings.Contains(body, "workers") {
+		t.Error("nodegroup not in list")
+	}
+}
+
+func TestJoinTokenCreate_Admin(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	setupTenant(t, store, "alpha")
+
+	form := "cluster=alpha&nodegroup=workers&ttl=24h"
+	req := authedRequestAs(http.MethodPost, "/machines/jointokens", cookie, form, "admin", auth.RoleAdmin)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.JoinTokenCreate(w, req)
+
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want 303; body: %s", w.Code, w.Body.String())
+	}
+	loc := w.Header().Get("Location")
+	if !strings.HasPrefix(loc, "/machines/jointokens?new_token=") {
+		t.Errorf("Location = %q", loc)
+	}
+}
+
+func TestJoinTokenCreate_MissingFields(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	form := "cluster=&nodegroup="
+	req := authedRequestAs(http.MethodPost, "/machines/jointokens", cookie, form, "admin", auth.RoleAdmin)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.JoinTokenCreate(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", w.Code)
+	}
+}
+
+func TestJoinTokenCreate_ClusterNotFound(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	form := "cluster=nonexistent&nodegroup=workers"
+	req := authedRequestAs(http.MethodPost, "/machines/jointokens", cookie, form, "admin", auth.RoleAdmin)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.JoinTokenCreate(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", w.Code)
+	}
+}
+
+func TestJoinTokenCreate_ViewRole_Forbidden(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "viewer", "pass", auth.RoleView)
+	cookie := loginCookie(t, h, "viewer", "pass")
+
+	setupTenant(t, store, "alpha")
+	form := "cluster=alpha&nodegroup=workers"
+	req := authedRequestAs(http.MethodPost, "/machines/jointokens", cookie, form, "viewer", auth.RoleView)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.JoinTokenCreate(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want 403", w.Code)
+	}
+}
+
+func TestJoinTokensList_ShowNewToken(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	setupTenant(t, store, "alpha")
+	_, _ = store.CreateJoinToken("my-new-token-value", state.JoinTokenSpec{
+		NodeGroup: "workers",
+		ExpiresAt: time.Now().UTC().Add(24 * time.Hour),
+	}, "alpha", "workers")
+
+	req := authedRequestAs(http.MethodGet, "/machines/jointokens?new_token=my-new-token-value", cookie, "", "admin", auth.RoleAdmin)
+	w := httptest.NewRecorder()
+	h.JoinTokensList(w, req)
+
+	body := w.Body.String()
+	if !strings.Contains(body, "my-new-token-value") {
+		t.Error("new token should be displayed")
+	}
+	if !strings.Contains(body, "Token created") {
+		t.Error("Token created banner should be visible")
+	}
+	if !strings.Contains(body, "siderolink.api") {
+		t.Error("kernel args preview should be shown")
 	}
 }

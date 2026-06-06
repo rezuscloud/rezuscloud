@@ -731,3 +731,135 @@ dialog.ds-modal[open] {
 .ds-link:hover {
   color: var(--accent);
 }
+
+/* --- W4: Machines, Join Tokens, Machine Detail --- */
+
+.ds-page-subtitle {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+.ds-header-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ds-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  margin-bottom: 16px;
+  align-items: flex-end;
+}
+
+.ds-filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 160px;
+}
+
+.ds-filter-group .ds-label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+.ds-filter-group .ds-input {
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.ds-text-muted {
+  color: var(--text-muted);
+}
+
+.ds-text-small {
+  font-size: 12px;
+}
+
+.ds-empty {
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px dashed var(--border);
+}
+
+.ds-empty-hint {
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.ds-empty-hint code {
+  background: var(--paper);
+  padding: 1px 4px;
+}
+
+.ds-code-inline {
+  background: var(--paper);
+  padding: 1px 6px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.92em;
+}
+
+.ds-code-block {
+  display: block;
+  background: var(--paper);
+  padding: 10px 12px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.ds-code-block--pre {
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.ds-copy-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.ds-copy-row .ds-code-block {
+  flex: 1;
+}
+
+.ds-card--highlight {
+  border: 1px solid var(--accent);
+  margin-bottom: 16px;
+}
+
+.ds-def-list {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 6px 12px;
+  margin: 0;
+  font-size: 14px;
+}
+
+.ds-def-list dt {
+  color: var(--text-muted);
+}
+
+.ds-def-list dd {
+  margin: 0;
+  word-break: break-word;
+}
+
+[x-cloak] {
+  display: none !important;
+}
