@@ -38,7 +38,7 @@ func (s *FileStore) Upload(_ context.Context, key string, data io.Reader) error 
 	if err != nil {
 		return fmt.Errorf("create backup file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if _, err := io.Copy(f, data); err != nil {
 		return fmt.Errorf("write backup file: %w", err)
 	}
