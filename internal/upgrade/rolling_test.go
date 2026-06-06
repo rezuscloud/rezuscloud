@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rezuscloud/rezuscloud/internal/state"
 )
@@ -347,6 +349,128 @@ func TestGetStatus_TenantNotFound(t *testing.T) {
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want 404", w.Code)
+	}
+}
+
+func TestStartAndListRuns(t *testing.T) {
+	store := newTestStore(t)
+	setupTenant(t, store, "prod")
+	setupMachine(t, store, "prod", "m1")
+
+	api := NewAPI(store, nil)
+	mux := http.NewServeMux()
+	api.RegisterRoutes(mux)
+
+	startReq := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/prod/upgrades", strings.NewReader(`{"component":"talos","version":"1.13.0"}`))
+	startReq.SetPathValue("name", "prod")
+	startW := httptest.NewRecorder()
+	mux.ServeHTTP(startW, startReq)
+	if startW.Code != http.StatusCreated {
+		t.Fatalf("start status = %d, want 201: %s", startW.Code, startW.Body.String())
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/v1/tenants/prod/upgrades", nil)
+	listReq.SetPathValue("name", "prod")
+	listW := httptest.NewRecorder()
+	mux.ServeHTTP(listW, listReq)
+	if listW.Code != http.StatusOK {
+		t.Fatalf("list status = %d, want 200", listW.Code)
+	}
+	var listed runListResponse
+	_ = parseJSON(listW.Body.String(), &listed)
+	if listed.Total == 0 {
+		t.Fatalf("expected at least one run")
+	}
+}
+
+func TestStartRun_TenantNotFound(t *testing.T) {
+	store := newTestStore(t)
+	api := NewAPI(store, nil)
+	mux := http.NewServeMux()
+	api.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/nope/upgrades", strings.NewReader(`{"component":"talos","version":"1.13.0"}`))
+	req.SetPathValue("name", "nope")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", w.Code)
+	}
+}
+
+func TestCancelRun(t *testing.T) {
+	store := newTestStore(t)
+	setupTenant(t, store, "prod")
+	for i := 0; i < 8; i++ {
+		setupMachine(t, store, "prod", fmt.Sprintf("m%d", i))
+	}
+
+	mgr := GetManager(store)
+	run, err := mgr.StartRun("prod", "talos", "1.13.0", "test")
+	if err != nil {
+		t.Fatalf("start run: %v", err)
+	}
+	if err := mgr.CancelRun(run.Metadata.Name); err != nil {
+		t.Fatalf("cancel run: %v", err)
+	}
+
+	var final *Run
+	for i := 0; i < 30; i++ {
+		final, _ = mgr.GetRun("prod", run.Metadata.Name)
+		if final != nil && (final.Status.Phase == PhaseCanceled || final.Status.Phase == PhaseComplete) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if final == nil {
+		t.Fatalf("run not found after cancel")
+	}
+	if final.Status.Phase != PhaseCanceled && final.Status.Phase != PhaseComplete {
+		t.Fatalf("expected canceled or complete, got %s", final.Status.Phase)
+	}
+}
+
+func TestGetRunAndCancelEndpoints(t *testing.T) {
+	store := newTestStore(t)
+	setupTenant(t, store, "prod")
+	for i := 0; i < 6; i++ {
+		setupMachine(t, store, "prod", fmt.Sprintf("m%d", i))
+	}
+
+	api := NewAPI(store, nil)
+	mux := http.NewServeMux()
+	api.RegisterRoutes(mux)
+
+	startReq := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/prod/upgrades", strings.NewReader(`{"component":"talos","version":"1.13.0"}`))
+	startReq.SetPathValue("name", "prod")
+	startW := httptest.NewRecorder()
+	mux.ServeHTTP(startW, startReq)
+	if startW.Code != http.StatusCreated {
+		t.Fatalf("start status = %d", startW.Code)
+	}
+	var started runResponse
+	_ = parseJSON(startW.Body.String(), &started)
+	if started.Run == nil {
+		t.Fatalf("expected run payload")
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/tenants/prod/upgrades/"+started.Run.Metadata.Name, nil)
+	getReq.SetPathValue("name", "prod")
+	getReq.SetPathValue("id", started.Run.Metadata.Name)
+	getW := httptest.NewRecorder()
+	mux.ServeHTTP(getW, getReq)
+	if getW.Code != http.StatusOK {
+		t.Fatalf("get status = %d", getW.Code)
+	}
+
+	cancelReq := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/prod/upgrades/"+started.Run.Metadata.Name+"/cancel", nil)
+	cancelReq.SetPathValue("name", "prod")
+	cancelReq.SetPathValue("id", started.Run.Metadata.Name)
+	cancelW := httptest.NewRecorder()
+	mux.ServeHTTP(cancelW, cancelReq)
+	if cancelW.Code != http.StatusNoContent && cancelW.Code != http.StatusBadRequest {
+		t.Fatalf("cancel status = %d", cancelW.Code)
 	}
 }
 
