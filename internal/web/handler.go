@@ -283,24 +283,16 @@ func (h *Handler) tenantSummaries() []pages.TenantSummary {
 
 // nodeGroupSummaries loads node groups for a tenant and returns the statemachine summary view.
 func (h *Handler) nodeGroupSummaries(tenantName string) []statemachine.NodeGroupSummary {
-	opts := state.ListOptions{LabelSelector: "rezuscloud.io/tenant=" + tenantName}
-	_, specs, _, _, _ := h.store.ListResources("nodegroup", opts)
-
-	out := make([]statemachine.NodeGroupSummary, 0, len(specs))
-	for _, raw := range specs {
-		var ng struct {
-			Name  string `json:"name"`
-			Count int    `json:"count"`
-		}
-		if err := json.Unmarshal(raw, &ng); err != nil {
-			continue
-		}
-		out = append(out, statemachine.NodeGroupSummary{
-			Name:  ng.Name,
-			Count: ng.Count,
+	items, _, _ := state.ListTypedByTenant(h.store, "nodegroup", tenantName,
+		func(meta state.Metadata, specRaw, _ json.RawMessage) (statemachine.NodeGroupSummary, error) {
+			var ng struct {
+				Name  string `json:"name"`
+				Count int    `json:"count"`
+			}
+			err := json.Unmarshal(specRaw, &ng)
+			return statemachine.NodeGroupSummary{Name: ng.Name, Count: ng.Count}, err
 		})
-	}
-	return out
+	return items
 }
 
 // expectedMachineCount sums node group counts (for forming tenants with no machines yet).
@@ -434,22 +426,16 @@ func (h *Handler) TenantDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Node groups.
-	ngOpts := state.ListOptions{LabelSelector: "rezuscloud.io/tenant=" + name}
-	ngMetas, ngSpecs, _, _, _ := h.store.ListResources("nodegroup", ngOpts)
-	data.NodeGroups = make([]pages.NodeGroupRow, 0, len(ngMetas))
-	for i, m := range ngMetas {
-		var ngSpec struct {
-			Name  string `json:"name"`
-			Role  string `json:"role"`
-			Count int    `json:"count"`
-		}
-		_ = json.Unmarshal(ngSpecs[i], &ngSpec)
-		data.NodeGroups = append(data.NodeGroups, pages.NodeGroupRow{
-			Name:  m.Name,
-			Role:  ngSpec.Role,
-			Count: ngSpec.Count,
+	data.NodeGroups, _, _ = state.ListTypedByTenant(h.store, "nodegroup", name,
+		func(meta state.Metadata, specRaw, _ json.RawMessage) (pages.NodeGroupRow, error) {
+			var ngSpec struct {
+				Name  string `json:"name"`
+				Role  string `json:"role"`
+				Count int    `json:"count"`
+			}
+			_ = json.Unmarshal(specRaw, &ngSpec)
+			return pages.NodeGroupRow{Name: meta.Name, Role: ngSpec.Role, Count: ngSpec.Count}, nil
 		})
-	}
 
 	// Machines — real stage from status.
 	data.Machines = make([]pages.MachineRow, 0, len(machines))
@@ -487,27 +473,26 @@ func (h *Handler) TenantDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Patches.
-	patchMetas, patchSpecs, _, _, _ := h.store.ListResources("configpatch", ngOpts)
-	data.Patches = make([]pages.PatchRow, 0, len(patchMetas))
-	for i, m := range patchMetas {
-		var ps struct {
-			Format     string `json:"format"`
-			TargetRole string `json:"targetRole"`
-			Enabled    bool   `json:"enabled"`
-		}
-		_ = json.Unmarshal(patchSpecs[i], &ps)
-		tr := ps.TargetRole
-		if tr == "" {
-			tr = "all"
-		}
-		data.Patches = append(data.Patches, pages.PatchRow{
-			Name:       m.Name,
-			Format:     ps.Format,
-			TargetRole: tr,
-			Enabled:    ps.Enabled,
-			UpdatedAt:  m.UpdatedAt.Format("2006-01-02 15:04"),
+	data.Patches, _, _ = state.ListTypedByTenant(h.store, "configpatch", name,
+		func(meta state.Metadata, specRaw, _ json.RawMessage) (pages.PatchRow, error) {
+			var ps struct {
+				Format     string `json:"format"`
+				TargetRole string `json:"targetRole"`
+				Enabled    bool   `json:"enabled"`
+			}
+			_ = json.Unmarshal(specRaw, &ps)
+			tr := ps.TargetRole
+			if tr == "" {
+				tr = "all"
+			}
+			return pages.PatchRow{
+				Name:       meta.Name,
+				Format:     ps.Format,
+				TargetRole: tr,
+				Enabled:    ps.Enabled,
+				UpdatedAt:  meta.UpdatedAt.Format("2006-01-02 15:04"),
+			}, nil
 		})
-	}
 
 	// Effective patch preview (for patches tab).
 	previewRole := r.URL.Query().Get("role")
@@ -1816,22 +1801,26 @@ func (h *Handler) generateMachineConfig(tenantName, machineID string, m *state.M
 // findKernelArgsPatch returns the existing kernel-args patch for the cluster,
 // or empty strings if none exists.
 func (h *Handler) findKernelArgsPatch(tenantName string) (string, string) {
-	opts := state.ListOptions{
-		LabelSelector: "rezuscloud.io/tenant=" + tenantName,
-	}
-	metas, specs, _, _, err := h.store.ListResources("configpatch", opts)
-	if err != nil {
-		return "", ""
-	}
-	for i, md := range metas {
-		if md.Labels["rezuscloud.io/kind"] != "kernel-args" {
+	items, _, _ := state.ListTypedByTenant(h.store, "configpatch", tenantName,
+		func(meta state.Metadata, specRaw, _ json.RawMessage) (patchWithMeta, error) {
+			var ps patch.PatchSpec
+			_ = json.Unmarshal(specRaw, &ps)
+			return patchWithMeta{Metadata: meta, Spec: ps}, nil
+		})
+	for _, item := range items {
+		if item.Metadata.Labels["rezuscloud.io/kind"] != "kernel-args" {
 			continue
 		}
-		var ps patch.PatchSpec
-		_ = json.Unmarshal(specs[i], &ps)
-		return ps.Patch, md.Name
+		return item.Spec.Patch, item.Metadata.Name
 	}
 	return "", ""
+}
+
+// patchWithMeta is a small pair used by findKernelArgsPatch to thread
+// metadata + spec through state.ListTypedByTenant without a named struct.
+type patchWithMeta struct {
+	Metadata state.Metadata
+	Spec     patch.PatchSpec
 }
 
 // isValidKernelArg checks if a kernel arg starts with an allowed prefix.

@@ -127,26 +127,17 @@ func (a *API) Create(w http.ResponseWriter, r *http.Request) {
 func (a *API) List(w http.ResponseWriter, r *http.Request) {
 	tenant := r.PathValue("tenant")
 
-	opts := state.ListOptions{
-		LabelSelector: "rezuscloud.io/tenant=" + tenant,
-	}
-	metas, specs, statuses, total, err := a.store.ListResources("jointoken", opts)
+	items, total, err := state.ListTypedByTenant(a.store, "jointoken", tenant,
+		func(meta state.Metadata, specRaw, statusRaw json.RawMessage) (*state.JoinToken, error) {
+			var spec state.JoinTokenSpec
+			var status state.JoinTokenStatus
+			_ = json.Unmarshal(specRaw, &spec)
+			_ = json.Unmarshal(statusRaw, &status)
+			return &state.JoinToken{Metadata: meta, Spec: spec, Status: status}, nil
+		})
 	if err != nil {
 		writeError(w, "list failed", "InternalError", http.StatusInternalServerError)
 		return
-	}
-
-	items := make([]*state.JoinToken, 0, total)
-	for i := range metas {
-		var spec state.JoinTokenSpec
-		var status state.JoinTokenStatus
-		_ = json.Unmarshal(specs[i], &spec)
-		_ = json.Unmarshal(statuses[i], &status)
-		items = append(items, &state.JoinToken{
-			Metadata: metas[i],
-			Spec:     spec,
-			Status:   status,
-		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
