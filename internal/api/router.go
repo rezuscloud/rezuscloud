@@ -22,7 +22,8 @@ import (
 // Router creates and returns a fully configured HTTP handler for the API.
 // auditComponent is required — the API runs audit middleware on every mutation.
 // backupComponent may be nil — if nil, /api/v1/backups/* is not registered.
-func Router(store *state.Store, jwtManager *auth.JWTManager, auditComponent *audit.Component, backupComponent *backup.Component) http.Handler {
+// upgradeManager is required — owns upgrade run lifecycle.
+func Router(store *state.Store, jwtManager *auth.JWTManager, auditComponent *audit.Component, backupComponent *backup.Component, upgradeManager *upgrade.Manager) http.Handler {
 	mux := http.NewServeMux()
 
 	// Public endpoints (no auth required).
@@ -61,7 +62,7 @@ func Router(store *state.Store, jwtManager *auth.JWTManager, auditComponent *aud
 	logHandler.RegisterRoutes(protected)
 
 	// Upgrade endpoints.
-	upgradeAPI := upgrade.NewAPI(store, nil)
+	upgradeAPI := upgrade.NewAPI(store, nil, upgradeManager)
 	upgradeAPI.RegisterRoutes(protected)
 
 	// Backup endpoints (optional — registered only if component is provided).

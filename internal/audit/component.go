@@ -60,3 +60,12 @@ func (c *Component) Close() {
 	}
 	c.Recorder.Close()
 }
+
+// Flush blocks until every audit event submitted so far has been written
+// to the store, or until ctx is canceled. Useful for tests.
+func (c *Component) Flush(ctx context.Context) error {
+	if c.Recorder == nil {
+		return nil
+	}
+	return c.Recorder.Flush(ctx)
+}
