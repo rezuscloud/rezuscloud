@@ -46,6 +46,25 @@ func (m *mockStore) Upload(_ context.Context, key string, data io.Reader) error 
 	return nil
 }
 
+func (m *mockStore) Download(_ context.Context, key string) (io.ReadCloser, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	data, ok := m.uploads[key]
+	if !ok {
+		return nil, errors.New("not found")
+	}
+	return io.NopCloser(strings.NewReader(data)), nil
+}
+
+func (m *mockStore) Delete(_ context.Context, key string) error {
+	if m.err != nil {
+		return m.err
+	}
+	delete(m.uploads, key)
+	return nil
+}
+
 // --- Manager Tests ---
 
 func TestBackupDatabase(t *testing.T) {
@@ -203,5 +222,77 @@ func TestAPI_List(t *testing.T) {
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", w.Code)
+	}
+}
+
+func TestAPI_PolicyCRUD(t *testing.T) {
+	store := newTestStore(t)
+	ms := newMockStore()
+	api := NewAPI(NewManager(ms, Config{Prefix: "backups"}), store)
+	mux := http.NewServeMux()
+	api.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/backups/policy", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("get policy status = %d", w.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodPut, "/api/v1/backups/policy", strings.NewReader(`{"retention":2}`))
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("put policy status = %d", w.Code)
+	}
+}
+
+func TestService_RestoreDryRunAndApply(t *testing.T) {
+	store := newTestStore(t)
+	_, _ = store.CreateResource("tenant", "prod", state.TenantSpec{KubernetesVersion: "1.35.0"}, nil, nil, nil)
+
+	ms := newMockStore()
+	svc := NewService(NewManager(ms, Config{Prefix: "backups"}), store)
+
+	snap, err := svc.TriggerResources(context.Background())
+	if err != nil {
+		t.Fatalf("trigger resources: %v", err)
+	}
+
+	res, err := svc.Restore(context.Background(), snap.ID, true)
+	if err != nil {
+		t.Fatalf("dry-run restore: %v", err)
+	}
+	if !res.DryRun || res.ResourcesSeen == 0 {
+		t.Fatalf("unexpected dry-run result: %+v", res)
+	}
+
+	res, err = svc.Restore(context.Background(), snap.ID, false)
+	if err != nil {
+		t.Fatalf("apply restore: %v", err)
+	}
+	if res.Restored == 0 {
+		t.Fatalf("expected restored resources")
+	}
+}
+
+func TestService_RetentionEnforced(t *testing.T) {
+	store := newTestStore(t)
+	_, _ = store.CreateResource("tenant", "prod", state.TenantSpec{KubernetesVersion: "1.35.0"}, nil, nil, nil)
+
+	ms := newMockStore()
+	svc := NewService(NewManager(ms, Config{Prefix: "backups"}), store)
+	if err := svc.UpdatePolicy(Policy{Retention: 1}); err != nil {
+		t.Fatalf("update policy: %v", err)
+	}
+	_, _ = svc.TriggerResources(context.Background())
+	_, _ = svc.TriggerResources(context.Background())
+
+	items, err := svc.ListSnapshots()
+	if err != nil {
+		t.Fatalf("list snapshots: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("snapshots = %d, want 1", len(items))
 	}
 }
