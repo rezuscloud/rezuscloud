@@ -19,13 +19,13 @@ type MachinesListData struct {
 
 // MachineFleetRow is one row in the fleet table.
 type MachineFleetRow struct {
-	ID         string
-	Cluster    string
-	Role       string
-	Stage      string
-	Connected  bool
-	NodeGroup  string
-	LastSeen   string // human-readable, e.g. "2 minutes ago"
+	ID        string
+	Cluster   string
+	Role      string
+	Stage     string
+	Connected bool
+	NodeGroup string
+	LastSeen  string // human-readable, e.g. "2 minutes ago"
 }
 
 // MachinesList renders /machines.
@@ -34,9 +34,7 @@ templ MachinesList(data MachinesListData) {
 		<h1 class="ds-page-title">Machines</h1>
 		<a href="/machines/jointokens" class="ds-btn ds-btn--secondary">Join Tokens</a>
 	</div>
-
 	@machinesFilters(data)
-
 	if len(data.Machines) == 0 {
 		<div class="ds-empty">
 			<p>No machines registered yet.</p>
@@ -97,7 +95,12 @@ templ machinesFilters(data MachinesListData) {
 			<select id="filter-cluster" name="cluster" class="ds-input">
 				<option value="">All clusters</option>
 				for _, c := range data.ClusterNames {
-					<option value={ c } if c == data.FilterCluster { selected }>{ c }</option>
+					<option
+						value={ c }
+						if c == data.FilterCluster {
+							selected
+						}
+					>{ c }</option>
 				}
 			</select>
 		</div>
@@ -106,13 +109,25 @@ templ machinesFilters(data MachinesListData) {
 			<select id="filter-stage" name="stage" class="ds-input">
 				<option value="">All stages</option>
 				for _, s := range data.Stages {
-					<option value={ s } if s == data.FilterStage { selected }>{ s }</option>
+					<option
+						value={ s }
+						if s == data.FilterStage {
+							selected
+						}
+					>{ s }</option>
 				}
 			</select>
 		</div>
 		<div class="ds-filter-group">
 			<label class="ds-label">
-				<input type="checkbox" name="connected" value="true" if data.FilterConnected { checked }/>
+				<input
+					type="checkbox"
+					name="connected"
+					value="true"
+					if data.FilterConnected {
+						checked
+					}
+				/>
 				Connected only
 			</label>
 		</div>
@@ -205,7 +220,6 @@ templ MachineDetail(data MachineDetailData) {
 			<a href="/machines" class="ds-btn ds-btn--secondary">Back</a>
 		</div>
 	</div>
-
 	<div class="ds-grid ds-grid-2">
 		<div class="ds-card">
 			<h2 class="ds-card-title">Status</h2>
@@ -234,7 +248,6 @@ templ MachineDetail(data MachineDetailData) {
 			</dl>
 		</div>
 	</div>
-
 	if data.Hardware != nil {
 		<div class="ds-card">
 			<h2 class="ds-card-title">Hardware</h2>
@@ -250,7 +263,6 @@ templ MachineDetail(data MachineDetailData) {
 			</dl>
 		</div>
 	}
-
 	if data.Network != nil {
 		<div class="ds-card">
 			<h2 class="ds-card-title">Network</h2>
@@ -269,7 +281,6 @@ templ MachineDetail(data MachineDetailData) {
 			</dl>
 		</div>
 	}
-
 	if data.CanMutate {
 		@machineActionConfirm("restart-machine", "Restart Machine",
 			"Are you sure you want to restart this machine? The machine will reboot gracefully.",

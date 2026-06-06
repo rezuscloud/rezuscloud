@@ -4,25 +4,25 @@ import "time"
 
 // JoinTokensListData drives /machines/jointokens.
 type JoinTokensListData struct {
-	Tokens      []JoinTokenRow
+	Tokens       []JoinTokenRow
 	ClusterNames []string
 	// NewToken is non-empty when the page is shown after creation. The UI shows
 	// the token once with a copy button and the kernel-args preview.
-	NewToken       string
-	NewTokenExp    time.Time
+	NewToken        string
+	NewTokenExp     time.Time
 	NewTokenCluster string
-	NewTokenArgs   string // siderolink kernel args preview
-	CanMutate      bool
+	NewTokenArgs    string // siderolink kernel args preview
+	CanMutate       bool
 }
 
 // JoinTokenRow is one row in the token list.
 type JoinTokenRow struct {
-	Token      string // first 8 chars for display
-	Cluster    string
-	NodeGroup  string
-	Status     string // "active", "used", "expired"
-	ExpiresAt  string // formatted absolute time
-	CreatedAt  string
+	Token     string // first 8 chars for display
+	Cluster   string
+	NodeGroup string
+	Status    string // "active", "used", "expired"
+	ExpiresAt string // formatted absolute time
+	CreatedAt string
 }
 
 // JoinTokensList renders /machines/jointokens.
@@ -33,11 +33,9 @@ templ JoinTokensList(data JoinTokensListData) {
 			<button type="button" class="ds-btn" data-modal-open="create-jointoken">Create Join Token</button>
 		}
 	</div>
-
 	if data.NewToken != "" {
 		@newTokenDisplay(data)
 	}
-
 	if len(data.Tokens) == 0 {
 		<div class="ds-empty">
 			<p>No join tokens yet.</p>
@@ -78,7 +76,6 @@ templ JoinTokensList(data JoinTokensListData) {
 			</table>
 		</div>
 	}
-
 	if data.CanMutate {
 		@createJoinTokenModal(data)
 	}
@@ -89,21 +86,22 @@ templ newTokenDisplay(data JoinTokensListData) {
 	<div class="ds-card ds-card--highlight">
 		<h2 class="ds-card-title">Token created</h2>
 		<p class="ds-text-muted">Copy this token now — you will not be able to see it again.</p>
-
 		<div class="ds-input-group">
 			<label class="ds-label">Token</label>
 			<div class="ds-copy-row">
 				<code class="ds-code-block" id="new-token-value">{ data.NewToken }</code>
-				<button type="button" class="ds-btn ds-btn--sm ds-btn--secondary"
-				        x-data="{ copied: false }"
-				        x-on:click="navigator.clipboard.writeText(document.getElementById('new-token-value').innerText); copied = true"
-				        x-on:mouseleave="setTimeout(() => copied = false, 1500)">
+				<button
+					type="button"
+					class="ds-btn ds-btn--sm ds-btn--secondary"
+					x-data="{ copied: false }"
+					x-on:click="navigator.clipboard.writeText(document.getElementById('new-token-value').innerText); copied = true"
+					x-on:mouseleave="setTimeout(() => copied = false, 1500)"
+				>
 					<span x-show="!copied">Copy</span>
 					<span x-show="copied" x-cloak>Copied!</span>
 				</button>
 			</div>
 		</div>
-
 		if data.NewTokenArgs != "" {
 			<div class="ds-input-group">
 				<label class="ds-label">Kernel args preview</label>
@@ -123,7 +121,6 @@ templ createJoinTokenModal(data JoinTokensListData) {
 	<dialog id="create-jointoken" class="ds-modal">
 		<form method="post" action="/machines/jointokens" class="ds-modal-body">
 			<h2 class="ds-modal-title">Create Join Token</h2>
-
 			<div class="ds-input-group">
 				<label class="ds-label" for="jt-cluster">Cluster</label>
 				<select id="jt-cluster" name="cluster" class="ds-input" required>
@@ -133,14 +130,18 @@ templ createJoinTokenModal(data JoinTokensListData) {
 					}
 				</select>
 			</div>
-
 			<div class="ds-input-group">
 				<label class="ds-label" for="jt-nodegroup">Node Group</label>
-				<input type="text" id="jt-nodegroup" name="nodegroup" class="ds-input"
-				       placeholder="workers" required/>
+				<input
+					type="text"
+					id="jt-nodegroup"
+					name="nodegroup"
+					class="ds-input"
+					placeholder="workers"
+					required
+				/>
 				<div class="ds-input-hint">The name of the node group the joining machine will be assigned to.</div>
 			</div>
-
 			<div class="ds-input-group">
 				<label class="ds-label" for="jt-ttl">TTL</label>
 				<select id="jt-ttl" name="ttl" class="ds-input">
@@ -150,14 +151,12 @@ templ createJoinTokenModal(data JoinTokensListData) {
 					<option value="0">Never expires</option>
 				</select>
 			</div>
-
 			<div class="ds-input-group">
 				<label class="ds-label">
 					<input type="checkbox" name="single_use" value="true"/>
 					Single use (auto-deleted after one machine joins)
 				</label>
 			</div>
-
 			<div class="ds-modal-footer">
 				<button type="button" class="ds-btn ds-btn--secondary" data-modal-close>Cancel</button>
 				<button type="submit" class="ds-btn">Create Token</button>

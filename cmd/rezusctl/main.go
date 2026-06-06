@@ -43,6 +43,7 @@ func main() {
 	root.AddCommand(newTalosconfigCmd())
 	root.AddCommand(newJointokenCmd())
 	root.AddCommand(newUserCmd())
+	root.AddCommand(newAPITokenCmd())
 
 	// Config management.
 	root.AddCommand(newConfigCmd())

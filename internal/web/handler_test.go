@@ -1,8 +1,10 @@
 package web
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -14,6 +16,13 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/state"
 	"github.com/rezuscloud/rezuscloud/internal/watch"
 )
+
+// TestMain lowers the bcrypt cost for the test suite so user creation/login
+// don't dominate the runtime on slow CI runners (ARM64).
+func TestMain(m *testing.M) {
+	_ = os.Setenv("REZUSCLOUD_BCRYPT_COST", "6")
+	os.Exit(m.Run())
+}
 
 func newTestStore(t *testing.T) *state.Store {
 	t.Helper()
@@ -2340,5 +2349,304 @@ func TestTenantDetail_UpgradeTabRendersRuns(t *testing.T) {
 	}
 	if !strings.Contains(body, "1.13.0") {
 		t.Fatalf("expected target version in rendered table")
+	}
+}
+
+// --- W9: Users + API Tokens ---
+
+func TestUsersPage_AdminSeesCreateButton(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	req := authedRequestAs(http.MethodGet, "/settings/users", cookie, "", "admin", auth.RoleAdmin)
+	w := httptest.NewRecorder()
+	h.UsersPage(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "Create User") {
+		t.Error("admin should see create button")
+	}
+	if !strings.Contains(body, `name="name"`) {
+		t.Error("admin should see create form")
+	}
+}
+
+func TestUsersPage_ViewerSeesReadOnly(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "viewer", "pass", auth.RoleView)
+	cookie := loginCookie(t, h, "viewer", "pass")
+
+	req := authedRequestAs(http.MethodGet, "/settings/users", cookie, "", "viewer", auth.RoleView)
+	w := httptest.NewRecorder()
+	h.UsersPage(w, req)
+
+	body := w.Body.String()
+	if strings.Contains(body, "Create User") {
+		t.Error("viewer should NOT see create button")
+	}
+}
+
+func TestUserCreate_Admin(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	form := strings.NewReader("name=alice&role=edit&password=secret123")
+	req := authedRequestAs(http.MethodPost, "/settings/users", cookie, "", "admin", auth.RoleAdmin)
+	req.Body = io.NopCloser(form)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.UserCreate(w, req)
+
+	if w.Code != http.StatusSeeOther && w.Code != http.StatusNoContent && !strings.HasPrefix(w.Header().Get("Location"), "/settings/users") {
+		t.Fatalf("create: status=%d, location=%q", w.Code, w.Header().Get("Location"))
+	}
+
+	u, _ := store.GetUser("alice")
+	if u == nil {
+		t.Fatalf("user alice should exist")
+	}
+	if u.Spec.Role != auth.RoleEdit {
+		t.Errorf("role = %q, want edit", u.Spec.Role)
+	}
+}
+
+func TestUserCreate_NonAdmin_Forbidden(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "viewer", "pass", auth.RoleView)
+	cookie := loginCookie(t, h, "viewer", "pass")
+
+	form := strings.NewReader("name=alice&role=admin&password=secret123")
+	req := authedRequestAs(http.MethodPost, "/settings/users", cookie, "", "viewer", auth.RoleView)
+	req.Body = io.NopCloser(form)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.UserCreate(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("non-admin create should be forbidden, got %d", w.Code)
+	}
+}
+
+func TestUserDelete_CannotDeleteSelf(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	req := authedRequestAs(http.MethodPost, "/settings/users/admin/delete", cookie, "", "admin", auth.RoleAdmin)
+	req.SetPathValue("name", "admin")
+	w := httptest.NewRecorder()
+	h.UserDelete(w, req)
+
+	loc := w.Header().Get("Location")
+	if !strings.Contains(loc, "cannot+delete+current+user") {
+		t.Errorf("expected self-delete refusal, got location=%q", loc)
+	}
+}
+
+func TestAPITokensPage_OwnerSeesOwnTokens(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "alice", "pass", auth.RoleEdit)
+	createUser(t, store, "bob", "pass", auth.RoleView)
+	cookie := loginCookie(t, h, "alice", "pass")
+
+	_, _, hash, _ := auth.GenerateAPIToken()
+	_, _ = store.CreateAPIToken("tok_alice", "alice", hash, nil)
+	_, _, hash2, _ := auth.GenerateAPIToken()
+	_, _ = store.CreateAPIToken("tok_bob", "bob", hash2, nil)
+
+	req := authedRequestAs(http.MethodGet, "/settings/api-tokens", cookie, "", "alice", auth.RoleEdit)
+	w := httptest.NewRecorder()
+	h.APITokensPage(w, req)
+
+	body := w.Body.String()
+	if !strings.Contains(body, "tok_alice") {
+		t.Errorf("alice should see her token, body tail: %s", body[len(body)-min(len(body), 400):])
+	}
+	if strings.Contains(body, "tok_bob") {
+		t.Errorf("alice should NOT see bob's tokens")
+	}
+}
+
+func TestAPITokensPage_AdminSeesAll(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "alice", "pass", auth.RoleEdit)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	_, _, hash, _ := auth.GenerateAPIToken()
+	_, _ = store.CreateAPIToken("tok_alice", "alice", hash, nil)
+
+	req := authedRequestAs(http.MethodGet, "/settings/api-tokens", cookie, "", "admin", auth.RoleAdmin)
+	w := httptest.NewRecorder()
+	h.APITokensPage(w, req)
+
+	body := w.Body.String()
+	if !strings.Contains(body, "tok_alice") {
+		t.Errorf("admin should see all tokens")
+	}
+}
+
+func TestAPITokenCreate_OneTimeReveal(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "alice", "pass", auth.RoleEdit)
+	cookie := loginCookie(t, h, "alice", "pass")
+
+	form := strings.NewReader("expiresInDays=30")
+	req := authedRequestAs(http.MethodPost, "/settings/users/alice/api-tokens", cookie, "", "alice", auth.RoleEdit)
+	req.SetPathValue("name", "alice")
+	req.Body = io.NopCloser(form)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.APITokenCreate(w, req)
+
+	loc := w.Header().Get("Location")
+	if !strings.HasPrefix(loc, "/settings/api-tokens") {
+		t.Fatalf("expected redirect to /settings/api-tokens, got %q", loc)
+	}
+
+	// Confirm reveal cookie set with id|secret|expires format.
+	var reveal *http.Cookie
+	for _, c := range w.Result().Cookies() {
+		if c.Name == "rezuscloud_token_reveal" {
+			reveal = c
+		}
+	}
+	if reveal == nil {
+		t.Fatalf("expected rezuscloud_token_reveal cookie")
+	}
+	parts := strings.SplitN(reveal.Value, "|", 3)
+	if len(parts) < 3 {
+		t.Fatalf("reveal cookie should have 3 parts, got %q", reveal.Value)
+	}
+	if !strings.HasPrefix(parts[0], "tok_") {
+		t.Errorf("id = %q, want tok_ prefix", parts[0])
+	}
+	if !strings.HasPrefix(parts[1], "rez_") {
+		t.Errorf("secret = %q, want rez_ prefix", parts[1])
+	}
+
+	// Confirm token persisted with hash.
+	tok, _ := store.GetAPIToken(parts[0])
+	if tok == nil {
+		t.Fatalf("token should be persisted")
+	}
+	if tok.TokenHash == "" {
+		t.Errorf("token hash should be stored")
+	}
+	if tok.TokenHash == parts[1] {
+		t.Errorf("plaintext must never equal stored hash")
+	}
+}
+
+func TestAPITokenCreate_OtherUser_Forbidden(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "alice", "pass", auth.RoleEdit)
+	createUser(t, store, "bob", "pass", auth.RoleView)
+	cookie := loginCookie(t, h, "bob", "pass")
+
+	form := strings.NewReader("expiresInDays=30")
+	req := authedRequestAs(http.MethodPost, "/settings/users/alice/api-tokens", cookie, "", "bob", auth.RoleView)
+	req.SetPathValue("name", "alice")
+	req.Body = io.NopCloser(form)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.APITokenCreate(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("non-owner, non-admin create should be forbidden, got %d", w.Code)
+	}
+}
+
+func TestAPITokenDelete_Owner(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "alice", "pass", auth.RoleEdit)
+	cookie := loginCookie(t, h, "alice", "pass")
+
+	_, _, hash, _ := auth.GenerateAPIToken()
+	_, _ = store.CreateAPIToken("tok_del", "alice", hash, nil)
+
+	req := authedRequestAs(http.MethodPost, "/settings/api-tokens/tok_del/delete", cookie, "", "alice", auth.RoleEdit)
+	req.SetPathValue("id", "tok_del")
+	w := httptest.NewRecorder()
+	h.APITokenDelete(w, req)
+
+	if w.Code != http.StatusSeeOther && w.Code != http.StatusNoContent && !strings.HasPrefix(w.Header().Get("Location"), "/settings/api-tokens") {
+		t.Fatalf("delete: status=%d, location=%q", w.Code, w.Header().Get("Location"))
+	}
+	tok, _ := store.GetAPIToken("tok_del")
+	if tok != nil {
+		t.Errorf("token should be deleted")
+	}
+}
+
+func TestAPITokenDelete_OtherUser_Forbidden(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "alice", "pass", auth.RoleEdit)
+	createUser(t, store, "bob", "pass", auth.RoleView)
+	cookie := loginCookie(t, h, "bob", "pass")
+
+	_, _, hash, _ := auth.GenerateAPIToken()
+	_, _ = store.CreateAPIToken("tok_alice", "alice", hash, nil)
+
+	req := authedRequestAs(http.MethodPost, "/settings/api-tokens/tok_alice/delete", cookie, "", "bob", auth.RoleView)
+	req.SetPathValue("id", "tok_alice")
+	w := httptest.NewRecorder()
+	h.APITokenDelete(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("non-owner, non-admin delete should be forbidden, got %d", w.Code)
+	}
+}
+
+func TestAPITokensPage_RevealCookieCleared(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "alice", "pass", auth.RoleEdit)
+	cookie := loginCookie(t, h, "alice", "pass")
+
+	// Simulate the cookie set by APITokenCreate.
+	req := authedRequestAs(http.MethodGet, "/settings/api-tokens", cookie, "", "alice", auth.RoleEdit)
+	req.AddCookie(&http.Cookie{Name: "rezuscloud_token_reveal", Value: "tok_reveal|rez_secret|2099-01-01T00:00:00Z"})
+	w := httptest.NewRecorder()
+	h.APITokensPage(w, req)
+
+	body := w.Body.String()
+	if !strings.Contains(body, "rez_secret") {
+		t.Errorf("expected plaintext secret in body, got tail: %s", body[len(body)-min(len(body), 400):])
+	}
+
+	// Confirm cookie cleared on response.
+	var cleared bool
+	for _, c := range w.Result().Cookies() {
+		if c.Name == "rezuscloud_token_reveal" && c.MaxAge < 0 {
+			cleared = true
+		}
+	}
+	if !cleared {
+		t.Errorf("reveal cookie should be cleared after rendering")
+	}
+
+	// Second render without the cookie should NOT show the secret.
+	req2 := authedRequestAs(http.MethodGet, "/settings/api-tokens", cookie, "", "alice", auth.RoleEdit)
+	w2 := httptest.NewRecorder()
+	h.APITokensPage(w2, req2)
+	if strings.Contains(w2.Body.String(), "rez_secret") {
+		t.Errorf("plaintext secret must NOT appear on subsequent render")
 	}
 }

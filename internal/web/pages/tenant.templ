@@ -17,7 +17,7 @@ type TenantDetailData struct {
 	// CurrentTab is "overview", "patches", "backups", "upgrade", or "settings".
 	CurrentTab string
 	// CanMutate is true when the viewer's role is admin or edit (shows delete/scale buttons).
-	CanMutate bool
+	CanMutate        bool
 	UpgradeComponent string
 	UpgradeTarget    string
 	UpgradeRuns      []UpgradeRunRow
@@ -99,7 +99,6 @@ templ TenantDetail(data TenantDetailData) {
 		<h1 class="ds-page-title">{ data.Name }</h1>
 		<span class={ "ds-status-badge ds-status-badge--" + phaseBadgeClass(data.Phase) }>{ data.Phase }</span>
 	</div>
-
 	<div class="ds-grid ds-grid-4" style="margin-bottom: 1.5rem;">
 		<div class="ds-stat-block">
 			<div class="ds-stat-label">Kubernetes</div>
@@ -122,9 +121,7 @@ templ TenantDetail(data TenantDetailData) {
 			</div>
 		</div>
 	</div>
-
 	@clusterTabs(data)
-
 	// Always render the scale + delete modals so their DOM nodes are present
 	// when the user clicks the corresponding triggers. They start hidden
 	// (native <dialog> is closed by default).
@@ -296,7 +293,6 @@ templ clusterUpgradeTab(data TenantDetailData) {
 			</div>
 		</form>
 	</div>
-
 	<div class="ds-section-header">Upgrade Runs</div>
 	if len(data.UpgradeRuns) == 0 {
 		<div class="ds-muted">No upgrade runs yet.</div>
@@ -353,7 +349,6 @@ templ clusterPatchesTab(data TenantDetailData) {
 			<button type="button" class="ds-btn ds-btn--sm" data-modal-open={ "create-patch-" + data.Name }>Create Patch</button>
 		}
 	</div>
-
 	if len(data.Patches) == 0 {
 		<div class="ds-empty-state">
 			<div class="ds-empty-state-title">No config patches</div>
@@ -393,23 +388,36 @@ templ clusterPatchesTab(data TenantDetailData) {
 			</table>
 		</div>
 	}
-
 	<div class="ds-card" style="margin-top: 1rem;">
 		<div class="ds-card-header">Effective patch preview</div>
 		<form method="get" action={ templ.URL("/clusters/" + data.Name + "/patches") } class="ds-form" style="margin-bottom: 0.5rem;">
 			<div class="ds-input-group">
 				<label class="ds-label" for="preview-role">Role</label>
 				<select id="preview-role" name="role" class="ds-input">
-					<option value="controlplane" if data.PreviewRole == "controlplane" { selected }>controlplane</option>
-					<option value="worker" if data.PreviewRole == "worker" { selected }>worker</option>
-					<option value="kernel" if data.PreviewRole == "kernel" { selected }>kernel</option>
+					<option
+						value="controlplane"
+						if data.PreviewRole == "controlplane" {
+							selected
+						}
+					>controlplane</option>
+					<option
+						value="worker"
+						if data.PreviewRole == "worker" {
+							selected
+						}
+					>worker</option>
+					<option
+						value="kernel"
+						if data.PreviewRole == "kernel" {
+							selected
+						}
+					>kernel</option>
 				</select>
 			</div>
 			<div class="ds-form-actions"><button type="submit" class="ds-btn ds-btn--sm">Refresh preview</button></div>
 		</form>
 		<pre class="ds-code-block ds-code-block--pre">{ data.PatchPreview }</pre>
 	</div>
-
 	if data.CanMutate {
 		@createPatchModal(data.Name)
 	}
@@ -463,7 +471,6 @@ templ clusterSettings(data TenantDetailData) {
 		<div class="ds-card-header">Name</div>
 		<div>{ data.Name }</div>
 	</div>
-
 	if data.CanMutate {
 		<div class="ds-section-header ds-section-header--danger">Danger Zone</div>
 		<div class="ds-card ds-card--danger">

@@ -1,12 +1,20 @@
 package auth
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/rezuscloud/rezuscloud/internal/state"
 )
+
+// TestMain lowers the bcrypt cost for the test suite so user creation/login
+// don't dominate the runtime on slow CI runners.
+func TestMain(m *testing.M) {
+	_ = os.Setenv("REZUSCLOUD_BCRYPT_COST", "6")
+	os.Exit(m.Run())
+}
 
 func setupAuthTest(t *testing.T) (*state.Store, *JWTManager) {
 	t.Helper()
