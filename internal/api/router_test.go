@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rezuscloud/rezuscloud/internal/audit"
 	"github.com/rezuscloud/rezuscloud/internal/auth"
 	"github.com/rezuscloud/rezuscloud/internal/state"
 )
@@ -30,7 +31,7 @@ func setupRouter(t *testing.T) (*state.Store, http.Handler, *auth.JWTManager) {
 		PasswordHash: hash,
 	})
 
-	return store, Router(store, jwtManager), jwtManager
+	return store, Router(store, jwtManager, audit.NewComponent(store.DB(), audit.ComponentOptions{})), jwtManager
 }
 
 func stringReader(s string) io.Reader {

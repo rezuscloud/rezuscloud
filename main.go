@@ -76,22 +76,24 @@ func main() {
 	registerHealthHandlers(mux)
 	registerVersionHandler(mux)
 
+	// Audit subsystem: one component owns Store + Recorder + Handlers + Retention.
+	// Passed to both the API router and the WebUI handler.
+	retentionDays := atoiDefault(os.Getenv("REZUSCLOUD_AUDIT_RETENTION_DAYS"), 90)
+	auditComponent := audit.NewComponent(store.DB(), audit.ComponentOptions{RetentionDays: retentionDays})
+	go auditComponent.StartRetention(ctx)
+	defer auditComponent.Close()
+
 	// API router with middleware (recovery, logging, auth).
 	// Registered with explicit methods because the WebUI registers method-scoped
 	// routes ("GET /", "GET /tenants", ...) and Go 1.22+ ServeMux panics when
 	// method-scoped and method-less patterns share a path prefix.
-	apiRouter := api.Router(store, jwtManager)
+	apiRouter := api.Router(store, jwtManager, auditComponent)
 	for _, method := range []string{"GET", "POST", "PUT", "DELETE", "PATCH"} {
 		mux.Handle(method+" /api/", apiRouter)
 	}
 
-	// Audit log: store backed by the same SQLite DB; retention sweeps hourly.
-	auditStore := audit.NewSQLStore(store.DB())
-	retentionDays := atoiDefault(os.Getenv("REZUSCLOUD_AUDIT_RETENTION_DAYS"), 90)
-	go audit.NewRetentionPolicy(auditStore, retentionDays).Run(ctx)
-
 	// WebUI.
-	webHandler := web.NewHandler(store, jwtManager, bus).WithAuditStore(auditStore)
+	webHandler := web.NewHandler(store, jwtManager, bus).WithAuditComponent(auditComponent)
 	webHandler.RegisterRoutes(mux)
 
 	srv := &http.Server{

@@ -49,8 +49,22 @@ func NewHandler(store *state.Store, jwtManager *auth.JWTManager, bus *watch.Bus)
 
 // WithAuditStore injects an audit store so the WebUI can render
 // /settings/audit without going through the REST API.
+//
+// Deprecated: prefer WithAuditComponent, which preserves the same store
+// reference the API uses. Kept for callers that only need the read path.
 func (h *Handler) WithAuditStore(s audit.Store) *Handler {
 	h.auditStore = s
+	return h
+}
+
+// WithAuditComponent injects the audit subsystem component. The WebUI uses
+// only the Store from it (for /settings/audit and the recent-activity strip
+// on the dashboard); the Recorder and Handlers live on the API side.
+func (h *Handler) WithAuditComponent(c *audit.Component) *Handler {
+	if c == nil {
+		return h
+	}
+	h.auditStore = c.Store
 	return h
 }
 
