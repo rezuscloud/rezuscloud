@@ -120,6 +120,9 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	// Settings (W10 audit).
 	mux.HandleFunc("GET /settings/audit", h.AuthRequired(h.AuditPage))
 
+	// Settings index (W13).
+	mux.HandleFunc("GET /settings", h.AuthRequired(h.SettingsIndexPage))
+
 	// Providers + manual join (W11).
 	mux.HandleFunc("GET /providers", h.AuthRequired(h.ProvidersPage))
 
@@ -895,7 +898,7 @@ func (h *Handler) BackupsPage(w http.ResponseWriter, r *http.Request) {
 		Page:    "settings-backups",
 		Content: pages.BackupsPage(data),
 		Breadcrumb: []layout.BreadcrumbItem{
-			{Name: "Settings", URL: "/settings/backups"},
+			{Name: "Settings", URL: "/settings"},
 			{Name: "Backups", Current: true},
 		},
 		Toast: toast,
@@ -2139,7 +2142,7 @@ func (h *Handler) UsersPage(w http.ResponseWriter, r *http.Request) {
 			CanMutate: isAdmin,
 		}),
 		Breadcrumb: []layout.BreadcrumbItem{
-			{Name: "Settings", URL: "/settings/users"},
+			{Name: "Settings", URL: "/settings"},
 			{Name: "Users", Current: true},
 		},
 		Toast: toast,
@@ -2318,7 +2321,7 @@ func (h *Handler) APITokensPage(w http.ResponseWriter, r *http.Request) {
 		Page:    "api-tokens",
 		Content: pages.APITokensPage(data),
 		Breadcrumb: []layout.BreadcrumbItem{
-			{Name: "Settings", URL: "/settings/api-tokens"},
+			{Name: "Settings", URL: "/settings"},
 			{Name: "API Tokens", Current: true},
 		},
 		Toast: toast,
@@ -2507,7 +2510,7 @@ func (h *Handler) AuditPage(w http.ResponseWriter, r *http.Request) {
 		Page:    "audit",
 		Content: pages.AuditPage(data),
 		Breadcrumb: []layout.BreadcrumbItem{
-			{Name: "Settings", URL: "/settings/audit"},
+			{Name: "Settings", URL: "/settings"},
 			{Name: "Audit", Current: true},
 		},
 		Toast: toast,
@@ -2737,4 +2740,46 @@ func (h *Handler) MachineEvents(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+}
+
+// --- Settings index (W13) ---
+
+// SettingsIndexPage renders /settings with section quick-links + a read-only
+// operational config summary. Per ADR 17 this is minimal — no flag matrix.
+func (h *Handler) SettingsIndexPage(w http.ResponseWriter, r *http.Request) {
+	data := pages.SettingsIndexPageData{
+		OperationalConfig: pages.OperationalConfig{
+			JWTSessions:          envDefault("REZUSCLOUD_JWT_SESSIONS", "24h (default)"),
+			BcryptCost:           envDefault("REZUSCLOUD_BCRYPT_COST", "12 (default)"),
+			AuditRetentionDays:   envDefault("REZUSCLOUD_AUDIT_RETENTION_DAYS", "90 (default)"),
+			BackupDirectory:      envDefault("REZUSCLOUD_BACKUP_DIR", "(tmpdir default)"),
+			MachineLinkEndpoint:  envDefault("REZUSCLOUD_MACHINELINK_PUBLIC_ENDPOINT", "machinelink.rezus.cloud:50001"),
+			ProviderGRPCEndpoint: envDefault("REZUSCLOUD_PROVIDER_PUBLIC_ENDPOINT", "provider.rezus.cloud:50190"),
+		},
+		ClusterSummary: pages.ClusterSummary{
+			HTTPAddr:        envDefault("REZUSCLOUD_ADDR", ":8080"),
+			MachineLinkAddr: envDefault("REZUSCLOUD_MACHINELINK_ADDR", ":50180"),
+			ProviderAddr:    envDefault("REZUSCLOUD_PROVIDER_ADDR", ":50190"),
+		},
+		CanMutate: h.canMutate(r),
+	}
+
+	toast := h.popToast(r)
+	h.render(w, r, layout.BaseProps{
+		Title:   "Settings",
+		Page:    "settings",
+		Content: pages.SettingsIndex(data),
+		Breadcrumb: []layout.BreadcrumbItem{
+			{Name: "Settings", Current: true},
+		},
+		Toast: toast,
+	})
+}
+
+// envDefault returns the env value if set + non-empty, else fallback.
+func envDefault(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
 }
