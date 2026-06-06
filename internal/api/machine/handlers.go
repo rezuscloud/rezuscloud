@@ -9,8 +9,8 @@ import (
 	"net/http"
 
 	"github.com/rezuscloud/rezuscloud/internal/api/patch"
+	"github.com/rezuscloud/rezuscloud/internal/configrender"
 	"github.com/rezuscloud/rezuscloud/internal/state"
-	"github.com/rezuscloud/rezuscloud/internal/talosconfig"
 )
 
 // API provides HTTP handlers for Machine CRUD.
@@ -172,64 +172,20 @@ func (a *API) Config(w http.ResponseWriter, r *http.Request) {
 	tenantName := r.PathValue("tenant")
 	id := r.PathValue("id")
 
-	// Look up machine + verify tenant.
-	m, err := a.store.GetMachine(id)
+	result, err := configrender.GenerateMachineConfig(r.Context(), a.store, a.store, patch.ResolvePatches,
+		configrender.MachineConfigRequest{TenantName: tenantName, MachineID: id})
 	if err != nil {
-		writeError(w, "internal error", "InternalError", http.StatusInternalServerError)
+		if errors.Is(err, configrender.ErrNotFound) {
+			writeError(w, err.Error(), "NotFound", http.StatusNotFound)
+			return
+		}
+		writeError(w, err.Error(), "InternalError", http.StatusInternalServerError)
 		return
 	}
-	if m == nil {
-		writeError(w, "machine not found", "NotFound", http.StatusNotFound)
-		return
-	}
-	if m.Metadata.Labels["rezuscloud.io/tenant"] != tenantName {
+
+	// The pipeline resolves the machine; verify it belongs to the requested tenant.
+	if result.Machine.Metadata.Labels["rezuscloud.io/tenant"] != tenantName {
 		writeError(w, "machine not found in tenant", "NotFound", http.StatusNotFound)
-		return
-	}
-
-	// Look up tenant + secrets.
-	tenant, err := a.store.GetTenant(tenantName)
-	if err != nil {
-		writeError(w, "internal error", "InternalError", http.StatusInternalServerError)
-		return
-	}
-	if tenant == nil {
-		writeError(w, "tenant not found", "NotFound", http.StatusNotFound)
-		return
-	}
-
-	bundleJSON, err := a.store.LoadTenantSecrets(tenantName)
-	if err != nil {
-		writeError(w, fmt.Sprintf("load secrets: %v", err), "InternalError", http.StatusInternalServerError)
-		return
-	}
-	if bundleJSON == nil {
-		writeError(w, "no secrets bundle found for tenant — create the tenant or generate credentials", "NotFound", http.StatusNotFound)
-		return
-	}
-
-	// Determine machine type from role.
-	machineType := talosconfig.DetermineMachineType(m.Status.Role, false)
-
-	// Collect config patches for this role.
-	patches, err := patch.ResolvePatches(a.store, tenantName, m.Status.Role)
-	if err != nil {
-		writeError(w, fmt.Sprintf("resolve patches: %v", err), "InternalError", http.StatusInternalServerError)
-		return
-	}
-
-	result, err := talosconfig.GenerateConfig(talosconfig.ConfigRequest{
-		ClusterName:       tenantName,
-		ClusterEndpoint:   tenant.Spec.ControlPlaneEndpoint,
-		KubernetesVersion: tenant.Spec.KubernetesVersion,
-		TalosVersion:      tenant.Spec.TalosVersion,
-		MachineType:       machineType,
-		SecretsBundle:     bundleJSON,
-		ConfigPatches:     patches,
-		MachineID:         id,
-	})
-	if err != nil {
-		writeError(w, fmt.Sprintf("generate config: %v", err), "InternalError", http.StatusInternalServerError)
 		return
 	}
 
@@ -238,7 +194,7 @@ func (a *API) Config(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", id+"-config.yaml"))
 	}
 	w.Header().Set("Content-Type", "application/yaml")
-	_, _ = w.Write([]byte(result.MachineConfig))
+	_, _ = w.Write([]byte(result.YAML))
 }
 
 // Delete handles DELETE /api/v1/tenants/{tenant}/machines/{id}.
