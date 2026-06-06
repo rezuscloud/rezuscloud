@@ -1,16 +1,15 @@
 package pages
 
 // ClusterCreateData holds form state for the /clusters/create page.
-//
 // All fields are pre-filled when the form re-renders after validation errors.
 // On success, the handler sends an HX-Redirect response header and the form
 // is not re-rendered.
 type ClusterCreateData struct {
-	Name           string // submitted name (echoed back on error)
-	K8sVersion     string // submitted kubernetes version
-	TalosVersion   string // submitted talos version
-	NameError      string // validation error for name field (empty if valid)
-	FormError      string // top-of-form error message (e.g. "tenant already exists")
+	Name         string // submitted name (echoed back on error)
+	K8sVersion   string // submitted kubernetes version
+	TalosVersion string // submitted talos version
+	NameError    string // validation error for name field (empty if valid)
+	FormError    string // top-of-form error message (e.g. "tenant already exists")
 }
 
 // k8sVersionOptions returns the hardcoded dropdown options for v1.
@@ -101,7 +100,6 @@ templ ClusterCreate(data ClusterCreateData) {
 				<div class="ds-input-hint">Lowercase letters, digits, hyphens. Must start with a letter. 2–63 chars.</div>
 			}
 		</div>
-
 		<div class="ds-input-group">
 			<label class="ds-label" for="kubernetesVersion">Kubernetes version</label>
 			<select id="kubernetesVersion" name="kubernetesVersion" class="ds-input">
@@ -114,7 +112,6 @@ templ ClusterCreate(data ClusterCreateData) {
 				}
 			</select>
 		</div>
-
 		<div class="ds-input-group">
 			<label class="ds-label" for="talosVersion">Talos version</label>
 			<select id="talosVersion" name="talosVersion" class="ds-input">
@@ -127,7 +124,6 @@ templ ClusterCreate(data ClusterCreateData) {
 				}
 			</select>
 		</div>
-
 		<div class="ds-form-actions">
 			<a href="/clusters" class="ds-btn ds-btn--secondary">Cancel</a>
 			<button type="submit" class="ds-btn">Create Cluster</button>

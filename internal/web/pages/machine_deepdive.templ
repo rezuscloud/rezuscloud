@@ -46,19 +46,20 @@ templ MachineLogs(data MachineLogsData) {
 			<a href={ templ.URL("/machines/" + data.MachineID) } class="ds-btn ds-btn--secondary">Back</a>
 		</div>
 	</div>
-
 	if len(data.Lines) == 0 {
 		<div class="ds-empty">
 			<p>No log lines yet.</p>
 			<p class="ds-empty-hint">
 				Logs will appear here when the machine is connected and streaming.
 				if data.PollInterval != "" {
-					<br/>Auto-refreshing every { data.PollInterval }.
+					<br/>
+					Auto-refreshing every { data.PollInterval }.
 				}
 			</p>
 		</div>
 	} else {
-		<div class="ds-logs"
+		<div
+			class="ds-logs"
 			if data.PollInterval != "" {
 				hx-get={ data.PollURL }
 				hx-trigger={ fmt.Sprintf("every %s", data.PollInterval) }
@@ -126,14 +127,16 @@ templ MachineConfig(data MachineConfigData) {
 			<a href={ templ.URL("/machines/" + data.MachineID) } class="ds-btn ds-btn--secondary">Back</a>
 		</div>
 	</div>
-
 	<div class="ds-card">
 		<div class="ds-card-title-row">
 			<h2 class="ds-card-title">Talos machine config</h2>
-			<button type="button" class="ds-btn ds-btn--sm ds-btn--secondary"
-			        x-data="{ copied: false }"
-			        x-on:click="navigator.clipboard.writeText(document.getElementById('config-yaml').innerText); copied = true"
-			        x-on:mouseleave="setTimeout(() => copied = false, 1500)">
+			<button
+				type="button"
+				class="ds-btn ds-btn--sm ds-btn--secondary"
+				x-data="{ copied: false }"
+				x-on:click="navigator.clipboard.writeText(document.getElementById('config-yaml').innerText); copied = true"
+				x-on:mouseleave="setTimeout(() => copied = false, 1500)"
+			>
 				<span x-show="!copied">Copy</span>
 				<span x-show="copied" x-cloak>Copied!</span>
 			</button>
@@ -173,24 +176,26 @@ templ KernelArgs(data KernelArgsData) {
 			<a href={ templ.URL("/machines/" + data.MachineID) } class="ds-btn ds-btn--secondary">Back</a>
 		</div>
 	</div>
-
 	<div class="ds-card">
 		<h2 class="ds-card-title">Kernel args editor</h2>
 		<p class="ds-text-muted">
 			These arguments are appended to the kernel command line when Talos
 			boots. They're stored as a ConfigPatch scoped to this cluster.
 		</p>
-
 		if data.FormError != "" {
 			<div class="ds-alert" role="alert">{ data.FormError }</div>
 		}
-
 		if data.CanMutate {
 			<form method="post" action={ templ.URL("/machines/" + data.MachineID + "/kernel-args") } class="ds-form">
 				<div class="ds-input-group">
 					<label class="ds-label" for="kernel-args">Args (one per line)</label>
-					<textarea id="kernel-args" name="args" class="ds-input ds-input--textarea" rows="10"
-					          placeholder="console=ttyS0&#10;reboot=k">{ data.FormValue }</textarea>
+					<textarea
+						id="kernel-args"
+						name="args"
+						class="ds-input ds-input--textarea"
+						rows="10"
+						placeholder="console=ttyS0&#10;reboot=k"
+					>{ data.FormValue }</textarea>
 					<div class="ds-input-hint">
 						Allowed prefixes:
 						<code>talos.</code>,

@@ -81,6 +81,10 @@ func Router(store *state.Store, jwtManager *auth.JWTManager) http.Handler {
 	protected.Handle("/api/v1/users/", auth.RequireRole(auth.RoleAdmin)(userMux))
 	protected.Handle("/api/v1/users", auth.RequireRole(auth.RoleAdmin)(userMux))
 
+	// API tokens — per-user ownership enforced inside handlers.
+	apiTokenHandlers := auth.NewAPITokenHandlers(store)
+	apiTokenHandlers.RegisterRoutes(protected)
+
 	// Whoami — any authenticated user.
 	whoamiHandlers := auth.NewAuthHandlers(store, jwtManager)
 	protected.HandleFunc("GET /api/v1/auth/whoami", whoamiHandlers.Whoami)
@@ -88,8 +92,8 @@ func Router(store *state.Store, jwtManager *auth.JWTManager) http.Handler {
 	// System endpoints.
 	RegisterSystemRoutes(protected, store)
 
-	// Apply auth middleware to protected routes.
-	mux.Handle("/api/v1/", auth.Authenticate(jwtManager, protected))
+	// Apply auth middleware to protected routes (JWT + API tokens).
+	mux.Handle("/api/v1/", auth.AuthenticateWithTokens(jwtManager, auth.StoreTokenVerifier{Store: store}, protected))
 
 	return middleware.Chain(mux,
 		middleware.Recovery,
