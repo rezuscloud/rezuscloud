@@ -14,7 +14,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rezuscloud/rezuscloud/internal/api/patch"
 	"github.com/rezuscloud/rezuscloud/internal/auth"
+	"github.com/rezuscloud/rezuscloud/internal/credentials"
 	"github.com/rezuscloud/rezuscloud/internal/state"
 	"github.com/rezuscloud/rezuscloud/internal/watch"
 	"github.com/rezuscloud/rezuscloud/internal/watchbus"
@@ -929,5 +931,145 @@ func TestW4_MachineDelete_Admin(t *testing.T) {
 	}
 	if m.Metadata.DeletionTimestamp == nil {
 		t.Error("expected deletionTimestamp to be set")
+	}
+}
+
+// --- W5 integration tests ---
+
+func TestW5_MachineLogs(t *testing.T) {
+	s := newWebUIServer(t)
+	s.createUser(t, "admin", "secret", auth.RoleAdmin)
+	cookie := s.login(t, "admin", "secret")
+
+	_, _ = s.store.CreateMachine("log-machine", state.MachineSpec{Connected: true}, map[string]string{}, nil)
+	_, _ = s.store.UpdateMachineStatus("log-machine", state.MachineStatus{Stage: state.StageReady})
+
+	status, body, _ := s.getWithCookieHeaders(t, "/machines/log-machine/logs", cookie)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d", status)
+	}
+	if !strings.Contains(body, "Logs —") {
+		t.Error("logs page title missing")
+	}
+}
+
+func TestW5_MachineConfig(t *testing.T) {
+	s := newWebUIServer(t)
+	s.createUser(t, "admin", "secret", auth.RoleAdmin)
+	cookie := s.login(t, "admin", "secret")
+
+	// Create tenant with secrets.
+	_, _ = s.store.CreateTenant("config-cluster", state.TenantSpec{
+		KubernetesVersion: "1.35.0",
+		TalosVersion:      "1.12.0",
+	}, nil, nil)
+	bundle, err := credentials.GenerateSecretsBundle("1.12.0")
+	if err != nil {
+		t.Fatalf("bundle: %v", err)
+	}
+	bundleJSON, err := credentials.SecretsBundleJSON(bundle)
+	if err != nil {
+		t.Fatalf("bundle json: %v", err)
+	}
+	if err := s.store.SaveTenantSecrets("config-cluster", bundleJSON); err != nil {
+		t.Fatalf("save secrets: %v", err)
+	}
+
+	_, _ = s.store.CreateMachine("config-machine", state.MachineSpec{},
+		map[string]string{"rezuscloud.io/tenant": "config-cluster", "rezuscloud.io/role": "worker"}, nil)
+	_, _ = s.store.UpdateMachineStatus("config-machine", state.MachineStatus{
+		Stage: state.StageReady,
+		Role:  "worker",
+	})
+
+	status, body, _ := s.getWithCookieHeaders(t, "/machines/config-machine/config", cookie)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", status, body)
+	}
+	if !strings.Contains(body, "version:") {
+		t.Error("config YAML not rendered")
+	}
+}
+
+func TestW5_KernelArgs_EditFlow(t *testing.T) {
+	s := newWebUIServer(t)
+	s.createUser(t, "admin", "secret", auth.RoleAdmin)
+	cookie := s.login(t, "admin", "secret")
+
+	_, _ = s.store.CreateTenant("ka-cluster", state.TenantSpec{KubernetesVersion: "1.35.0"}, nil, nil)
+	_, _ = s.store.CreateMachine("ka-machine", state.MachineSpec{},
+		map[string]string{"rezuscloud.io/tenant": "ka-cluster"}, nil)
+	_, _ = s.store.UpdateMachineStatus("ka-machine", state.MachineStatus{Stage: state.StageReady})
+
+	// GET editor.
+	status, body, _ := s.getWithCookieHeaders(t, "/machines/ka-machine/kernel-args", cookie)
+	if status != http.StatusOK {
+		t.Fatalf("GET status = %d", status)
+	}
+	if !strings.Contains(body, "Kernel args editor") {
+		t.Error("editor card missing")
+	}
+
+	// POST valid args.
+	form := "args=console=ttyS0%0Areboot=k"
+	status, body, _ = s.postFormWithCookie(t, "/machines/ka-machine/kernel-args", form, cookie)
+	if status != http.StatusSeeOther {
+		t.Fatalf("POST status = %d, want 303; body: %s", status, body)
+	}
+
+	// Verify patch was created.
+	md, err := s.store.GetResource("configpatch", "kernel-args-ka-cluster", nil, nil)
+	if err != nil {
+		t.Fatalf("get patch: %v", err)
+	}
+	if md.Name == "" {
+		t.Error("kernel-args-ka-cluster patch not created")
+	}
+
+	// Re-fetch the editor — should now show the existing args.
+	status, body, _ = s.getWithCookieHeaders(t, "/machines/ka-machine/kernel-args", cookie)
+	if status != http.StatusOK {
+		t.Fatalf("re-GET status = %d", status)
+	}
+	if !strings.Contains(body, "console=ttyS0") {
+		t.Error("existing args should appear in textarea")
+	}
+
+	// POST update (existing patch gets updated).
+	form = "args=console=ttyS0%0Areboot=k%0Amitigations=auto"
+	status, body, _ = s.postFormWithCookie(t, "/machines/ka-machine/kernel-args", form, cookie)
+	if status != http.StatusSeeOther {
+		t.Fatalf("update POST status = %d, want 303; body: %s", status, body)
+	}
+
+	// Verify the patch was updated.
+	var ps patch.PatchSpec
+	_, err = s.store.GetResource("configpatch", "kernel-args-ka-cluster", &ps, nil)
+	if err != nil {
+		t.Fatalf("get updated patch: %v", err)
+	}
+	if !strings.Contains(ps.Patch, "mitigations=auto") {
+		t.Errorf("patch not updated; got:\n%s", ps.Patch)
+	}
+}
+
+func TestW5_KernelArgs_InvalidArg(t *testing.T) {
+	s := newWebUIServer(t)
+	s.createUser(t, "admin", "secret", auth.RoleAdmin)
+	cookie := s.login(t, "admin", "secret")
+
+	_, _ = s.store.CreateTenant("bad-ka", state.TenantSpec{KubernetesVersion: "1.35.0"}, nil, nil)
+	_, _ = s.store.CreateMachine("bad-ka", state.MachineSpec{},
+		map[string]string{"rezuscloud.io/tenant": "bad-ka"}, nil)
+	_, _ = s.store.UpdateMachineStatus("bad-ka", state.MachineStatus{Stage: state.StageReady})
+
+	// "foo=bar" doesn't have an allowed prefix.
+	form := "args=foo=bar"
+	status, _, hdr := s.postFormWithCookie(t, "/machines/bad-ka/kernel-args", form, cookie)
+	if status != http.StatusSeeOther {
+		t.Fatalf("status = %d, want 303", status)
+	}
+	if !strings.Contains(hdr.Get("Location"), "error") {
+		t.Errorf("Location should have error toast: %q", hdr.Get("Location"))
 	}
 }

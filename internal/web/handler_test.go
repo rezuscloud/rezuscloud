@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/rezuscloud/rezuscloud/internal/auth"
+	"github.com/rezuscloud/rezuscloud/internal/credentials"
 	"github.com/rezuscloud/rezuscloud/internal/state"
 	"github.com/rezuscloud/rezuscloud/internal/watch"
 )
@@ -1776,5 +1777,320 @@ func TestJoinTokensList_ShowNewToken(t *testing.T) {
 	}
 	if !strings.Contains(body, "siderolink.api") {
 		t.Error("kernel args preview should be shown")
+	}
+}
+
+// --- W5: Machine deep dive tests ---
+
+func setupTenantWithSecrets(t *testing.T, store *state.Store, name string) {
+	t.Helper()
+	_, err := store.CreateTenant(name, state.TenantSpec{
+		KubernetesVersion: "1.35.0",
+		TalosVersion:      "1.12.0",
+	}, nil, nil)
+	if err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+	bundle, err := credentials.GenerateSecretsBundle("1.12.0")
+	if err != nil {
+		t.Fatalf("generate bundle: %v", err)
+	}
+	bundleJSON, err := credentials.SecretsBundleJSON(bundle)
+	if err != nil {
+		t.Fatalf("serialize bundle: %v", err)
+	}
+	if err := store.SaveTenantSecrets(name, bundleJSON); err != nil {
+		t.Fatalf("save secrets: %v", err)
+	}
+}
+
+func TestMachineLogs_Empty(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	setupMachine(t, store, "logs-machine", "", "worker", state.StageReady, true)
+
+	req := authedRequestAs(http.MethodGet, "/machines/logs-machine/logs", cookie, "", "admin", auth.RoleAdmin)
+	req.SetPathValue("id", "logs-machine")
+	w := httptest.NewRecorder()
+	h.MachineLogs(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	// Page renders even with no logs.
+	if !strings.Contains(body, "Logs —") {
+		t.Error("missing logs title")
+	}
+}
+
+func TestMachineLogs_NotFound(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	req := authedRequestAs(http.MethodGet, "/machines/nonexistent/logs", cookie, "", "admin", auth.RoleAdmin)
+	req.SetPathValue("id", "nonexistent")
+	w := httptest.NewRecorder()
+	h.MachineLogs(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", w.Code)
+	}
+}
+
+func TestMachineConfig_Found(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	setupTenantWithSecrets(t, store, "alpha")
+	setupMachine(t, store, "config-machine", "alpha", "worker", state.StageReady, true)
+
+	req := authedRequestAs(http.MethodGet, "/machines/config-machine/config", cookie, "", "admin", auth.RoleAdmin)
+	req.SetPathValue("id", "config-machine")
+	w := httptest.NewRecorder()
+	h.MachineConfig(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "version:") {
+		t.Error("config page should show generated YAML")
+	}
+	if !strings.Contains(body, "machine:") {
+		t.Error("config page should show machine section")
+	}
+}
+
+func TestMachineConfig_MissingSecrets(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	// Tenant without secrets.
+	setupTenant(t, store, "nosec")
+	setupMachine(t, store, "no-bundle", "nosec", "worker", state.StageReady, true)
+
+	req := authedRequestAs(http.MethodGet, "/machines/no-bundle/config", cookie, "", "admin", auth.RoleAdmin)
+	req.SetPathValue("id", "no-bundle")
+	w := httptest.NewRecorder()
+	h.MachineConfig(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500 (no secrets)", w.Code)
+	}
+}
+
+func TestMachineConfig_NotFound(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	req := authedRequestAs(http.MethodGet, "/machines/nonexistent/config", cookie, "", "admin", auth.RoleAdmin)
+	req.SetPathValue("id", "nonexistent")
+	w := httptest.NewRecorder()
+	h.MachineConfig(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", w.Code)
+	}
+}
+
+func TestMachineKernelArgs_NoExisting(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	setupTenant(t, store, "alpha")
+	setupMachine(t, store, "ka-machine", "alpha", "worker", state.StageReady, true)
+
+	req := authedRequestAs(http.MethodGet, "/machines/ka-machine/kernel-args", cookie, "", "admin", auth.RoleAdmin)
+	req.SetPathValue("id", "ka-machine")
+	w := httptest.NewRecorder()
+	h.MachineKernelArgs(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "Kernel args editor") {
+		t.Error("editor card should render")
+	}
+	if !strings.Contains(body, `<textarea`) {
+		t.Error("textarea should be present for admin")
+	}
+}
+
+func TestMachineKernelArgs_ViewRole(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "viewer", "pass", auth.RoleView)
+	cookie := loginCookie(t, h, "viewer", "pass")
+
+	setupTenant(t, store, "alpha")
+	setupMachine(t, store, "ka-view", "alpha", "worker", state.StageReady, true)
+
+	req := authedRequestAs(http.MethodGet, "/machines/ka-view/kernel-args", cookie, "", "viewer", auth.RoleView)
+	req.SetPathValue("id", "ka-view")
+	w := httptest.NewRecorder()
+	h.MachineKernelArgs(w, req)
+
+	body := w.Body.String()
+	if strings.Contains(body, `<textarea`) {
+		t.Error("view role should not see textarea")
+	}
+	if !strings.Contains(body, "edit") || !strings.Contains(body, "role") {
+		t.Error("view role should see permission message")
+	}
+}
+
+func TestMachineKernelArgsSave_CreateNew(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	setupTenant(t, store, "alpha")
+	setupMachine(t, store, "ka-save", "alpha", "worker", state.StageReady, true)
+
+	form := "args=console=ttyS0%0Areboot=k" // URL-encoded: console=ttyS0 + newline + reboot=k
+	req := authedRequestAs(http.MethodPost, "/machines/ka-save/kernel-args", cookie, form, "admin", auth.RoleAdmin)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetPathValue("id", "ka-save")
+	w := httptest.NewRecorder()
+	h.MachineKernelArgsSave(w, req)
+
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want 303; body: %s", w.Code, w.Body.String())
+	}
+	loc := w.Header().Get("Location")
+	if !strings.Contains(loc, "kernel+args+saved") {
+		t.Errorf("Location = %q", loc)
+	}
+
+	// Verify a ConfigPatch was created.
+	patch, _ := store.GetResource("configpatch", "kernel-args-alpha", nil, nil)
+	if patch.Name == "" {
+		t.Error("expected kernel-args-alpha patch to exist")
+	}
+}
+
+func TestMachineKernelArgsSave_InvalidArg(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	setupTenant(t, store, "alpha")
+	setupMachine(t, store, "ka-bad", "alpha", "worker", state.StageReady, true)
+
+	// "foo=bar" doesn't start with an allowed prefix.
+	form := "args=foo=bar"
+	req := authedRequestAs(http.MethodPost, "/machines/ka-bad/kernel-args", cookie, form, "admin", auth.RoleAdmin)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetPathValue("id", "ka-bad")
+	w := httptest.NewRecorder()
+	h.MachineKernelArgsSave(w, req)
+
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want 303 (redirect with error toast)", w.Code)
+	}
+	if !strings.Contains(w.Header().Get("Location"), "error") {
+		t.Errorf("Location should indicate error: %q", w.Header().Get("Location"))
+	}
+}
+
+func TestMachineKernelArgsSave_WhitespaceInArg(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	setupTenant(t, store, "alpha")
+	setupMachine(t, store, "ka-ws", "alpha", "worker", state.StageReady, true)
+
+	// "console ttyS0" has whitespace.
+	form := "args=console+ttyS0"
+	req := authedRequestAs(http.MethodPost, "/machines/ka-ws/kernel-args", cookie, form, "admin", auth.RoleAdmin)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetPathValue("id", "ka-ws")
+	w := httptest.NewRecorder()
+	h.MachineKernelArgsSave(w, req)
+
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want 303 (redirect with error toast)", w.Code)
+	}
+	if !strings.Contains(w.Header().Get("Location"), "error") {
+		t.Errorf("Location should indicate error: %q", w.Header().Get("Location"))
+	}
+}
+
+func TestMachineKernelArgsSave_ViewRole_Forbidden(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store)
+	createUser(t, store, "viewer", "pass", auth.RoleView)
+	cookie := loginCookie(t, h, "viewer", "pass")
+
+	setupMachine(t, store, "ka-view", "", "worker", state.StageReady, true)
+
+	req := authedRequestAs(http.MethodPost, "/machines/ka-view/kernel-args", cookie, "args=console=ttyS0", "viewer", auth.RoleView)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetPathValue("id", "ka-view")
+	w := httptest.NewRecorder()
+	h.MachineKernelArgsSave(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Errorf("status = %d, want 403", w.Code)
+	}
+}
+
+func TestIsValidKernelArg(t *testing.T) {
+	cases := []struct {
+		arg  string
+		want bool
+	}{
+		{"talos.platform=metal", true},
+		{"siderolink.api=tcp://...", true},
+		{"console=ttyS0", true},
+		{"reboot=k", true},
+		{"mitigations=auto", true},
+		{"ip=dhcp", true},
+		{"foo=bar", false},
+		{"random-string", false},
+		{"", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.arg, func(t *testing.T) {
+			if got := isValidKernelArg(tc.arg); got != tc.want {
+				t.Errorf("isValidKernelArg(%q) = %v, want %v", tc.arg, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestBuildKernelArgsPatch(t *testing.T) {
+	args := []string{"console=ttyS0", "reboot=k"}
+	got := buildKernelArgsPatch(args)
+	if !strings.Contains(got, "machine:") {
+		t.Error("patch should contain 'machine:'")
+	}
+	if !strings.Contains(got, "extraKernelArgs:") {
+		t.Error("patch should contain 'extraKernelArgs:'")
+	}
+	if !strings.Contains(got, "- console=ttyS0") {
+		t.Error("patch should contain first arg")
+	}
+	if !strings.Contains(got, "- reboot=k") {
+		t.Error("patch should contain second arg")
 	}
 }

@@ -14,10 +14,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rezuscloud/rezuscloud/internal/api/patch"
 	"github.com/rezuscloud/rezuscloud/internal/auth"
 	"github.com/rezuscloud/rezuscloud/internal/credentials"
 	"github.com/rezuscloud/rezuscloud/internal/state"
 	"github.com/rezuscloud/rezuscloud/internal/statemachine"
+	"github.com/rezuscloud/rezuscloud/internal/talosconfig"
 	"github.com/rezuscloud/rezuscloud/internal/watch"
 	"github.com/rezuscloud/rezuscloud/internal/web/layout"
 	"github.com/rezuscloud/rezuscloud/internal/web/pages"
@@ -63,6 +65,11 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /machines/jointokens", h.AuthRequired(h.JoinTokenCreate))
 	mux.HandleFunc("GET /machines/pending", h.AuthRequired(h.MachinesPending))
 	mux.HandleFunc("GET /machines/{id}", h.AuthRequired(h.MachineDetail))
+	mux.HandleFunc("GET /machines/{id}/logs", h.AuthRequired(h.MachineLogs))
+	mux.HandleFunc("GET /machines/{id}/logs/poll", h.AuthRequired(h.MachineLogsPoll))
+	mux.HandleFunc("GET /machines/{id}/config", h.AuthRequired(h.MachineConfig))
+	mux.HandleFunc("GET /machines/{id}/kernel-args", h.AuthRequired(h.MachineKernelArgs))
+	mux.HandleFunc("POST /machines/{id}/kernel-args", h.AuthRequired(h.MachineKernelArgsSave))
 	mux.HandleFunc("POST /machines/{id}/restart", h.AuthRequired(h.MachineRestart))
 	mux.HandleFunc("POST /machines/{id}/shutdown", h.AuthRequired(h.MachineShutdown))
 	mux.HandleFunc("POST /machines/{id}/approve", h.AuthRequired(h.MachineApprove))
@@ -899,6 +906,362 @@ func (h *Handler) MachineDetail(w http.ResponseWriter, r *http.Request) {
 			{Name: shortDisplayID(id), Current: true},
 		},
 	})
+}
+
+// MachineLogs handles GET /machines/{id}/logs.
+func (h *Handler) MachineLogs(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	m, err := h.store.GetMachine(id)
+	if err != nil {
+		http.Error(w, "Failed to load machine: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if m == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	cluster := m.Metadata.Labels["rezuscloud.io/tenant"]
+
+	data := pages.MachineLogsData{
+		MachineID:    id,
+		Cluster:      cluster,
+		Lines:        h.recentLogs(id),
+		DownloadURL:  "/api/v1/tenants/" + cluster + "/machines/" + id + "/logs?tail=1000",
+		PollURL:      "/machines/" + id + "/logs/poll",
+		PollInterval: "5s",
+	}
+
+	// If requested via HTMX (polling), return just the inner lines.
+	if r.Header.Get("HX-Request") == "true" && r.URL.Query().Get("partial") == "1" {
+		logPartial(w, data.Lines)
+		return
+	}
+
+	h.render(w, r, layout.BaseProps{
+		Title:   "Logs — " + shortDisplayID(id),
+		Page:    "machine",
+		Content: pages.MachineLogs(data),
+		Breadcrumb: []layout.BreadcrumbItem{
+			{Name: "Machines", URL: "/machines"},
+			{Name: shortDisplayID(id), URL: "/machines/" + id},
+			{Name: "Logs", Current: true},
+		},
+	})
+}
+
+// MachineLogsPoll handles GET /machines/{id}/logs/poll (HTMX partial).
+func (h *Handler) MachineLogsPoll(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		http.NotFound(w, r)
+		return
+	}
+	logPartial(w, h.recentLogs(id))
+}
+
+// logPartial writes just the log lines div (no layout) for HTMX swaps.
+func logPartial(w http.ResponseWriter, lines []pages.LogLine) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	for _, line := range lines {
+		fmt.Fprintf(w, `<div class="ds-logs-line">`+
+			`<span class="ds-logs-time">%s</span>`,
+			line.Timestamp)
+		if line.Level != "" {
+			fmt.Fprintf(w, `<span class="ds-logs-level ds-logs-level--%s">[%s]</span>`, line.Level, line.Level)
+		}
+		if line.Source != "" {
+			fmt.Fprintf(w, `<span class="ds-logs-source">%s</span>`, line.Source)
+		}
+		fmt.Fprintf(w, `<span class="ds-logs-msg">%s</span></div>`+"\n", line.Message)
+	}
+}
+
+// recentLogs returns the most recent log lines for a machine.
+// For v1: returns synthetic log entries when the store has no real logs.
+// TODO(W7+): wire to the real log provider (machine link).
+func (h *Handler) recentLogs(machineID string) []pages.LogLine {
+	return []pages.LogLine{
+		{
+			Timestamp: time.Now().UTC().Format("15:04:05"),
+			Message:   fmt.Sprintf("Log streaming is stubbed for machine %s. Real implementation in W7+.", machineID),
+			Level:     "info",
+			Source:    "rezuscloud",
+		},
+	}
+}
+
+// MachineConfig handles GET /machines/{id}/config.
+func (h *Handler) MachineConfig(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	m, err := h.store.GetMachine(id)
+	if err != nil {
+		http.Error(w, "Failed to load machine: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if m == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	cluster := m.Metadata.Labels["rezuscloud.io/tenant"]
+
+	// Generate the config by calling the API endpoint logic directly.
+	config, err := h.generateMachineConfig(cluster, id, m)
+	if err != nil {
+		http.Error(w, "Failed to generate config: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	h.render(w, r, layout.BaseProps{
+		Title: "Config — " + shortDisplayID(id),
+		Page:  "machine",
+		Content: pages.MachineConfig(pages.MachineConfigData{
+			MachineID:   id,
+			Cluster:     cluster,
+			ConfigYAML:  config,
+			DownloadURL: "/api/v1/tenants/" + cluster + "/machines/" + id + "/config?download=true",
+		}),
+		Breadcrumb: []layout.BreadcrumbItem{
+			{Name: "Machines", URL: "/machines"},
+			{Name: shortDisplayID(id), URL: "/machines/" + id},
+			{Name: "Config", Current: true},
+		},
+	})
+}
+
+// MachineKernelArgs handles GET /machines/{id}/kernel-args.
+func (h *Handler) MachineKernelArgs(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	m, err := h.store.GetMachine(id)
+	if err != nil {
+		http.Error(w, "Failed to load machine: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if m == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	cluster := m.Metadata.Labels["rezuscloud.io/tenant"]
+
+	// Look up an existing kernel-args patch for this cluster.
+	existing, existingName := h.findKernelArgsPatch(cluster)
+
+	h.render(w, r, layout.BaseProps{
+		Title: "Kernel args — " + shortDisplayID(id),
+		Page:  "machine",
+		Content: pages.KernelArgs(pages.KernelArgsData{
+			MachineID:         id,
+			Cluster:           cluster,
+			Existing:          existing,
+			ExistingPatchName: existingName,
+			FormValue:         existing,
+			CanMutate:         h.canMutate(r),
+		}),
+		Breadcrumb: []layout.BreadcrumbItem{
+			{Name: "Machines", URL: "/machines"},
+			{Name: shortDisplayID(id), URL: "/machines/" + id},
+			{Name: "Kernel args", Current: true},
+		},
+	})
+}
+
+// MachineKernelArgsSave handles POST /machines/{id}/kernel-args.
+func (h *Handler) MachineKernelArgsSave(w http.ResponseWriter, r *http.Request) {
+	if !h.canMutate(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	id := r.PathValue("id")
+	if id == "" {
+		http.NotFound(w, r)
+		return
+	}
+	m, _ := h.store.GetMachine(id)
+	if m == nil {
+		http.NotFound(w, r)
+		return
+	}
+	cluster := m.Metadata.Labels["rezuscloud.io/tenant"]
+	if cluster == "" {
+		http.Error(w, "machine has no cluster assignment", http.StatusBadRequest)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form", http.StatusBadRequest)
+		return
+	}
+
+	raw := strings.TrimSpace(r.FormValue("args"))
+	if raw == "" {
+		http.Redirect(w, r, "/machines/"+id+"/kernel-args?toast=no+args+provided&toast-type=error", http.StatusSeeOther)
+		return
+	}
+
+	// Validate: split on newlines, each line must be non-empty, no whitespace,
+	// and start with one of the allowed prefixes.
+	lines := strings.Split(raw, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if strings.ContainsAny(line, " \t") {
+			http.Redirect(w, r, "/machines/"+id+"/kernel-args?toast=whitespace+not+allowed+in+args&toast-type=error", http.StatusSeeOther)
+			return
+		}
+		if !isValidKernelArg(line) {
+			http.Redirect(w, r, "/machines/"+id+"/kernel-args?toast=disallowed+kernel+arg+prefix:+"+url.QueryEscape(line)+"&toast-type=error", http.StatusSeeOther)
+			return
+		}
+	}
+
+	// Build the patch YAML: each arg becomes a YAML list item.
+	patchYAML := buildKernelArgsPatch(lines)
+
+	// Check if a kernel-args patch already exists for this cluster.
+	existing, existingName := h.findKernelArgsPatch(cluster)
+	_ = existing
+
+	if existingName != "" {
+		// Update the existing patch.
+		var ps patch.PatchSpec
+		md, err := h.store.GetResource("configpatch", existingName, &ps, nil)
+		if err != nil {
+			http.Error(w, "load existing patch: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		ps.Patch = patchYAML
+		if _, err := h.store.UpdateResource("configpatch", existingName, md.ResourceVersion, ps, nil, nil); err != nil {
+			http.Error(w, "update patch: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+	} else {
+		// Create a new patch.
+		name := "kernel-args-" + cluster
+		ps := patch.PatchSpec{
+			Patch:      patchYAML,
+			Format:     "strategic",
+			TargetRole: "",
+			Enabled:    true,
+		}
+		labels := map[string]string{
+			"rezuscloud.io/tenant": cluster,
+			"rezuscloud.io/kind":   "kernel-args",
+		}
+		if _, err := h.store.CreateResource("configpatch", name, ps, nil, labels, nil); err != nil {
+			http.Error(w, "create patch: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	http.Redirect(w, r, "/machines/"+id+"/kernel-args?toast=kernel+args+saved&toast-type=success", http.StatusSeeOther)
+}
+
+// generateMachineConfig produces the Talos machine config YAML for display.
+func (h *Handler) generateMachineConfig(tenantName, machineID string, m *state.Machine) (string, error) {
+	tenant, err := h.store.GetTenant(tenantName)
+	if err != nil {
+		return "", err
+	}
+	if tenant == nil {
+		return "", fmt.Errorf("tenant %q not found", tenantName)
+	}
+
+	bundleJSON, err := h.store.LoadTenantSecrets(tenantName)
+	if err != nil {
+		return "", err
+	}
+	if bundleJSON == nil {
+		return "", fmt.Errorf("no secrets bundle for tenant")
+	}
+
+	machineType := talosconfig.DetermineMachineType(m.Status.Role, false)
+	patches, err := patch.ResolvePatches(h.store, tenantName, m.Status.Role)
+	if err != nil {
+		return "", err
+	}
+
+	result, err := talosconfig.GenerateConfig(talosconfig.ConfigRequest{
+		ClusterName:       tenantName,
+		ClusterEndpoint:   tenant.Spec.ControlPlaneEndpoint,
+		KubernetesVersion: tenant.Spec.KubernetesVersion,
+		TalosVersion:      tenant.Spec.TalosVersion,
+		MachineType:       machineType,
+		SecretsBundle:     bundleJSON,
+		ConfigPatches:     patches,
+		MachineID:         machineID,
+	})
+	if err != nil {
+		return "", err
+	}
+	return result.MachineConfig, nil
+}
+
+// findKernelArgsPatch returns the existing kernel-args patch for the cluster,
+// or empty strings if none exists.
+func (h *Handler) findKernelArgsPatch(tenantName string) (string, string) {
+	opts := state.ListOptions{
+		LabelSelector: "rezuscloud.io/tenant=" + tenantName,
+	}
+	metas, specs, _, _, err := h.store.ListResources("configpatch", opts)
+	if err != nil {
+		return "", ""
+	}
+	for i, md := range metas {
+		if md.Labels["rezuscloud.io/kind"] != "kernel-args" {
+			continue
+		}
+		var ps patch.PatchSpec
+		_ = json.Unmarshal(specs[i], &ps)
+		return ps.Patch, md.Name
+	}
+	return "", ""
+}
+
+// isValidKernelArg checks if a kernel arg starts with an allowed prefix.
+func isValidKernelArg(arg string) bool {
+	allowed := []string{"talos.", "siderolink.", "console=", "reboot=", "mitigations=", "ip="}
+	for _, p := range allowed {
+		if strings.HasPrefix(arg, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// buildKernelArgsPatch produces the strategic-merge YAML that injects the
+// given kernel args into the Talos machine.install.extraKernelArgs field.
+func buildKernelArgsPatch(args []string) string {
+	var b strings.Builder
+	b.WriteString("machine:\n  install:\n    extraKernelArgs:\n")
+	for _, a := range args {
+		a = strings.TrimSpace(a)
+		if a == "" {
+			continue
+		}
+		b.WriteString("      - ")
+		b.WriteString(a)
+		b.WriteString("\n")
+	}
+	return b.String()
 }
 
 // MachineRestart handles POST /machines/{id}/restart.

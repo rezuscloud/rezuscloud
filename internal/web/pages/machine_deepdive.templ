@@ -1,0 +1,216 @@
+package pages
+
+import "fmt"
+
+// MachineLogsData drives /machines/{id}/logs.
+// For v1 we render the most recent N log entries server-side and rely on HTMX
+// polling for live updates. A future revision may use SSE via the existing
+// /api/v1/tenants/{tenant}/machines/{id}/logs?watch=true&sse=true endpoint.
+type MachineLogsData struct {
+	MachineID   string
+	Cluster     string
+	Lines       []LogLine
+	DownloadURL string
+	// PollURL is the URL HTMX polls to refresh the log lines (returns just the <pre> body).
+	PollURL string
+	// PollInterval is the HTMX polling interval (e.g. "5s"). Empty disables polling.
+	PollInterval string
+}
+
+// LogLine is one entry in the logs view.
+type LogLine struct {
+	Timestamp string // formatted
+	Message   string
+	Level     string
+	Source    string
+}
+
+// MachineLogs renders the logs viewer.
+templ MachineLogs(data MachineLogsData) {
+	<div class="ds-page-header-row">
+		<div>
+			<h1 class="ds-page-title">
+				Logs —
+				<code class="ds-code-inline">{ data.MachineID }</code>
+			</h1>
+			<div class="ds-page-subtitle">
+				if data.Cluster != "" {
+					<a href={ templ.URL("/clusters/" + data.Cluster) }>{ data.Cluster }</a>
+					<span class="ds-text-muted">·</span>
+				}
+				<a href={ templ.URL("/machines/" + data.MachineID) }>Machine</a>
+			</div>
+		</div>
+		<div class="ds-header-actions">
+			<a href={ data.DownloadURL } class="ds-btn ds-btn--secondary">Download .log</a>
+			<a href={ templ.URL("/machines/" + data.MachineID) } class="ds-btn ds-btn--secondary">Back</a>
+		</div>
+	</div>
+
+	if len(data.Lines) == 0 {
+		<div class="ds-empty">
+			<p>No log lines yet.</p>
+			<p class="ds-empty-hint">
+				Logs will appear here when the machine is connected and streaming.
+				if data.PollInterval != "" {
+					<br/>Auto-refreshing every { data.PollInterval }.
+				}
+			</p>
+		</div>
+	} else {
+		<div class="ds-logs"
+			if data.PollInterval != "" {
+				hx-get={ data.PollURL }
+				hx-trigger={ fmt.Sprintf("every %s", data.PollInterval) }
+				hx-swap="innerHTML"
+			}
+		>
+			for _, line := range data.Lines {
+				<div class="ds-logs-line">
+					<span class="ds-logs-time">{ line.Timestamp }</span>
+					if line.Level != "" {
+						<span class={ "ds-logs-level ds-logs-level--" + logLevelClass(line.Level) }>[{ line.Level }]</span>
+					}
+					if line.Source != "" {
+						<span class="ds-logs-source">{ line.Source }</span>
+					}
+					<span class="ds-logs-msg">{ line.Message }</span>
+				</div>
+			}
+		</div>
+	}
+}
+
+// logLevelClass returns a CSS variant suffix for a log level.
+func logLevelClass(level string) string {
+	switch level {
+	case "error", "fatal":
+		return "error"
+	case "warn", "warning":
+		return "warn"
+	case "info":
+		return "info"
+	case "debug":
+		return "debug"
+	default:
+		return "info"
+	}
+}
+
+// MachineConfigData drives /machines/{id}/config.
+type MachineConfigData struct {
+	MachineID   string
+	Cluster     string
+	ConfigYAML  string
+	DownloadURL string
+}
+
+// MachineConfig renders the Talos config viewer (read-only).
+templ MachineConfig(data MachineConfigData) {
+	<div class="ds-page-header-row">
+		<div>
+			<h1 class="ds-page-title">
+				Config —
+				<code class="ds-code-inline">{ data.MachineID }</code>
+			</h1>
+			<div class="ds-page-subtitle">
+				if data.Cluster != "" {
+					<a href={ templ.URL("/clusters/" + data.Cluster) }>{ data.Cluster }</a>
+					<span class="ds-text-muted">·</span>
+				}
+				<a href={ templ.URL("/machines/" + data.MachineID) }>Machine</a>
+			</div>
+		</div>
+		<div class="ds-header-actions">
+			<a href={ data.DownloadURL } class="ds-btn ds-btn--secondary">Download .yaml</a>
+			<a href={ templ.URL("/machines/" + data.MachineID) } class="ds-btn ds-btn--secondary">Back</a>
+		</div>
+	</div>
+
+	<div class="ds-card">
+		<div class="ds-card-title-row">
+			<h2 class="ds-card-title">Talos machine config</h2>
+			<button type="button" class="ds-btn ds-btn--sm ds-btn--secondary"
+			        x-data="{ copied: false }"
+			        x-on:click="navigator.clipboard.writeText(document.getElementById('config-yaml').innerText); copied = true"
+			        x-on:mouseleave="setTimeout(() => copied = false, 1500)">
+				<span x-show="!copied">Copy</span>
+				<span x-show="copied" x-cloak>Copied!</span>
+			</button>
+		</div>
+		<pre class="ds-code-block ds-code-block--pre" id="config-yaml">{ data.ConfigYAML }</pre>
+	</div>
+}
+
+// KernelArgsData drives /machines/{id}/kernel-args.
+type KernelArgsData struct {
+	MachineID         string
+	Cluster           string
+	Existing          string // current args (one per line), from any existing patch
+	ExistingPatchName string // name of the existing kernel-args patch, if any
+	FormError         string
+	FormValue         string
+	CanMutate         bool
+}
+
+// KernelArgs renders the kernel args editor.
+templ KernelArgs(data KernelArgsData) {
+	<div class="ds-page-header-row">
+		<div>
+			<h1 class="ds-page-title">
+				Kernel args —
+				<code class="ds-code-inline">{ data.MachineID }</code>
+			</h1>
+			<div class="ds-page-subtitle">
+				if data.Cluster != "" {
+					<a href={ templ.URL("/clusters/" + data.Cluster) }>{ data.Cluster }</a>
+					<span class="ds-text-muted">·</span>
+				}
+				<a href={ templ.URL("/machines/" + data.MachineID) }>Machine</a>
+			</div>
+		</div>
+		<div class="ds-header-actions">
+			<a href={ templ.URL("/machines/" + data.MachineID) } class="ds-btn ds-btn--secondary">Back</a>
+		</div>
+	</div>
+
+	<div class="ds-card">
+		<h2 class="ds-card-title">Kernel args editor</h2>
+		<p class="ds-text-muted">
+			These arguments are appended to the kernel command line when Talos
+			boots. They're stored as a ConfigPatch scoped to this cluster.
+		</p>
+
+		if data.FormError != "" {
+			<div class="ds-alert" role="alert">{ data.FormError }</div>
+		}
+
+		if data.CanMutate {
+			<form method="post" action={ templ.URL("/machines/" + data.MachineID + "/kernel-args") } class="ds-form">
+				<div class="ds-input-group">
+					<label class="ds-label" for="kernel-args">Args (one per line)</label>
+					<textarea id="kernel-args" name="args" class="ds-input ds-input--textarea" rows="10"
+					          placeholder="console=ttyS0&#10;reboot=k">{ data.FormValue }</textarea>
+					<div class="ds-input-hint">
+						Allowed prefixes:
+						<code>talos.</code>,
+						<code>siderolink.</code>,
+						<code>console=</code>,
+						<code>reboot=</code>,
+						<code>mitigations=</code>,
+						<code>ip=</code>.
+						No whitespace inside individual args.
+					</div>
+				</div>
+				<div class="ds-form-actions">
+					<button type="submit" class="ds-btn">Save</button>
+				</div>
+			</form>
+		} else {
+			<p class="ds-text-muted">You need <code>edit</code> role to modify kernel args.</p>
+			if data.Existing != "" {
+				<pre class="ds-code-block ds-code-block--pre">{ data.Existing }</pre>
+			}
+		}
+	</div>
+}
