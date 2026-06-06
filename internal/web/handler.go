@@ -35,9 +35,10 @@ import (
 type Handler struct {
 	store      *state.Store
 	jwtManager *auth.JWTManager
-	bus        *watch.Bus      // optional — enables /events/stream
-	auditStore audit.Store     // optional — enables /settings/audit page
-	backupSvc  *backup.Service // optional — enables /settings/backups page
+	bus        *watch.Bus       // optional — enables /events/stream
+	auditStore audit.Store      // optional — enables /settings/audit page
+	backupSvc  *backup.Service  // optional — enables /settings/backups page
+	upgradeMgr *upgrade.Manager // optional — enables cluster upgrade endpoints
 }
 
 // NewHandler creates a WebUI handler.
@@ -45,6 +46,13 @@ type Handler struct {
 // bus is optional — pass nil to disable the /events/stream endpoint.
 func NewHandler(store *state.Store, jwtManager *auth.JWTManager, bus *watch.Bus) *Handler {
 	return &Handler{store: store, jwtManager: jwtManager, bus: bus}
+}
+
+// WithUpgradeManager injects an upgrade manager so the WebUI can start,
+// cancel, and list upgrade runs without reconstructing a hidden singleton.
+func (h *Handler) WithUpgradeManager(m *upgrade.Manager) *Handler {
+	h.upgradeMgr = m
+	return h
 }
 
 // WithBackupService injects a backup service so the WebUI can render
@@ -430,19 +438,22 @@ func (h *Handler) TenantDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Upgrade runs.
-	runs, _ := upgrade.GetManager(h.store).ListRuns(name)
-	data.UpgradeRuns = make([]pages.UpgradeRunRow, 0, len(runs))
-	for _, run := range runs {
-		data.UpgradeRuns = append(data.UpgradeRuns, pages.UpgradeRunRow{
-			ID:            run.Metadata.Name,
-			Component:     run.Spec.Component,
-			Target:        run.Spec.Target,
-			Phase:         string(run.Status.Phase),
-			Completed:     run.Status.Completed,
-			TotalMachines: run.Status.TotalMachines,
-			StartedAt:     run.Status.StartedAt.Format("2006-01-02 15:04"),
-			Error:         run.Status.Error,
-		})
+	data.UpgradeRuns = []pages.UpgradeRunRow{}
+	if h.upgradeMgr != nil {
+		runs, _ := h.upgradeMgr.ListRuns(name)
+		data.UpgradeRuns = make([]pages.UpgradeRunRow, 0, len(runs))
+		for _, run := range runs {
+			data.UpgradeRuns = append(data.UpgradeRuns, pages.UpgradeRunRow{
+				ID:            run.Metadata.Name,
+				Component:     run.Spec.Component,
+				Target:        run.Spec.Target,
+				Phase:         string(run.Status.Phase),
+				Completed:     run.Status.Completed,
+				TotalMachines: run.Status.TotalMachines,
+				StartedAt:     run.Status.StartedAt.Format("2006-01-02 15:04"),
+				Error:         run.Status.Error,
+			})
+		}
 	}
 
 	// Patches.
@@ -865,7 +876,11 @@ func (h *Handler) ClusterUpgradeStart(w http.ResponseWriter, r *http.Request) {
 	if user == "" {
 		user = "web"
 	}
-	_, err := upgrade.GetManager(h.store).StartRun(name, component, version, user)
+	if h.upgradeMgr == nil {
+		h.redirectAction(w, r, "/clusters/"+name+"/upgrade?component="+url.QueryEscape(component)+"&version="+url.QueryEscape(version)+"&toast="+url.QueryEscape("upgrade manager not configured")+"&toast-type=error")
+		return
+	}
+	_, err := h.upgradeMgr.StartRun(name, component, version, user)
 	if err != nil {
 		h.redirectAction(w, r, "/clusters/"+name+"/upgrade?component="+url.QueryEscape(component)+"&version="+url.QueryEscape(version)+"&toast="+url.QueryEscape(err.Error())+"&toast-type=error")
 		return
@@ -880,7 +895,11 @@ func (h *Handler) ClusterUpgradeCancel(w http.ResponseWriter, r *http.Request) {
 	}
 	name := r.PathValue("name")
 	runID := r.PathValue("id")
-	if err := upgrade.GetManager(h.store).CancelRun(runID); err != nil {
+	if h.upgradeMgr == nil {
+		h.redirectAction(w, r, "/clusters/"+name+"/upgrade?toast="+url.QueryEscape("upgrade manager not configured")+"&toast-type=error")
+		return
+	}
+	if err := h.upgradeMgr.CancelRun(runID); err != nil {
 		h.redirectAction(w, r, "/clusters/"+name+"/upgrade?toast="+url.QueryEscape(err.Error())+"&toast-type=error")
 		return
 	}
@@ -2944,8 +2963,10 @@ func (h *Handler) upgradePostureSnapshot() pages.UpgradePosture {
 	latestPhase := ""
 	var latestTS time.Time
 	for _, t := range tenants {
-		mgr := upgrade.GetManager(h.store)
-		runs, err := mgr.ListRuns(t.Metadata.Name)
+		if h.upgradeMgr == nil {
+			continue
+		}
+		runs, err := h.upgradeMgr.ListRuns(t.Metadata.Name)
 		if err != nil || len(runs) == 0 {
 			continue
 		}

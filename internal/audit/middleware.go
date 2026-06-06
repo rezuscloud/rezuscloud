@@ -22,6 +22,11 @@ import (
 )
 
 // Event is one audit row.
+//
+// The internal flushCh field is used by Recorder.Flush to round-trip a marker
+// event through the queue without writing it to the store. It is never
+// serialized; the JSON tags ignore it because it is not exported via the
+// encoding/json field name.
 type Event struct {
 	ID         int64   `json:"id,omitempty"`
 	Timestamp  string  `json:"timestamp"`
@@ -37,6 +42,9 @@ type Event struct {
 	SourceIP   string  `json:"sourceIP,omitempty"`
 	Error      string  `json:"error,omitempty"`
 	Metadata   *string `json:"metadata,omitempty"` // raw JSON string
+
+	internal bool            `json:"-"`
+	flushCh  chan<- struct{} `json:"-"`
 }
 
 // ListResponse is the paginated query response shape.
@@ -94,6 +102,10 @@ func NewRecorder(store Store) *Recorder {
 func (r *recorder) drain() {
 	defer r.wg.Done()
 	for ev := range r.queue {
+		if ev.internal && ev.flushCh != nil {
+			close(ev.flushCh)
+			continue
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		if err := r.store.InsertEvent(ctx, ev); err != nil {
 			// Audit failures must not block traffic — log + drop.
@@ -133,6 +145,42 @@ func (r *Recorder) Close() {
 	close(r.queue)
 	r.mu.Unlock()
 	r.wg.Wait()
+}
+
+// Flush blocks until every event submitted so far has been written to the store,
+// or until ctx is canceled. Useful for tests that need to observe audit rows
+// without waiting for the async queue's natural drain time.
+//
+// Safe to call on a closed recorder — returns nil immediately.
+func (r *Recorder) Flush(ctx context.Context) error {
+	if r == nil || r.recorder == nil {
+		return nil
+	}
+	r.mu.Lock()
+	if r.stopped {
+		r.mu.Unlock()
+		return nil
+	}
+	r.mu.Unlock()
+
+	done := make(chan struct{})
+	defer func() {
+		// recover in case the queue was closed between the lock check and the send
+		if rec := recover(); rec != nil {
+			close(done)
+		}
+	}()
+	select {
+	case r.queue <- Event{internal: true, flushCh: done}:
+	default:
+		return nil // queue is full; can't flush marker
+	}
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // Middleware returns an http.Handler that records an audit event for each

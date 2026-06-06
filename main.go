@@ -20,6 +20,7 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/backup"
 	"github.com/rezuscloud/rezuscloud/internal/ingress"
 	"github.com/rezuscloud/rezuscloud/internal/state"
+	"github.com/rezuscloud/rezuscloud/internal/upgrade"
 	"github.com/rezuscloud/rezuscloud/internal/watch"
 	"github.com/rezuscloud/rezuscloud/internal/watchbus"
 	"github.com/rezuscloud/rezuscloud/internal/web"
@@ -91,11 +92,14 @@ func main() {
 		log.Printf("backup subsystem disabled: %v", backupErr)
 	}
 
+	// Upgrade subsystem: one Manager owns run lifecycle.
+	upgradeMgr := upgrade.NewManager(store)
+
 	// API router with middleware (recovery, logging, auth).
 	// Registered with explicit methods because the WebUI registers method-scoped
 	// routes ("GET /", "GET /tenants", ...) and Go 1.22+ ServeMux panics when
 	// method-scoped and method-less patterns share a path prefix.
-	apiRouter := api.Router(store, jwtManager, auditComponent, backupComponent)
+	apiRouter := api.Router(store, jwtManager, auditComponent, backupComponent, upgradeMgr)
 	for _, method := range []string{"GET", "POST", "PUT", "DELETE", "PATCH"} {
 		mux.Handle(method+" /api/", apiRouter)
 	}
@@ -103,7 +107,8 @@ func main() {
 	// WebUI.
 	webHandler := web.NewHandler(store, jwtManager, bus).
 		WithAuditComponent(auditComponent).
-		WithBackupComponent(backupComponent)
+		WithBackupComponent(backupComponent).
+		WithUpgradeManager(upgradeMgr)
 	webHandler.RegisterRoutes(mux)
 
 	srv := &http.Server{

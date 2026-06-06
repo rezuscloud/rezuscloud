@@ -42,21 +42,10 @@ type Manager struct {
 	running map[string]context.CancelFunc
 }
 
-var (
-	managersMu sync.Mutex
-	managers   = map[*state.Store]*Manager{}
-)
-
-// GetManager returns a singleton upgrade manager for a store.
-func GetManager(store *state.Store) *Manager {
-	managersMu.Lock()
-	defer managersMu.Unlock()
-	if m, ok := managers[store]; ok {
-		return m
-	}
-	m := &Manager{store: store, running: map[string]context.CancelFunc{}}
-	managers[store] = m
-	return m
+// NewManager creates an upgrade Manager bound to the given store.
+// Construct one per process in main.go and pass it to whoever needs it.
+func NewManager(store *state.Store) *Manager {
+	return &Manager{store: store, running: map[string]context.CancelFunc{}}
 }
 
 // StartRun creates and starts an upgrade run asynchronously.
