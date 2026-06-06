@@ -36,6 +36,7 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/watch"
 	"github.com/rezuscloud/rezuscloud/internal/web/handlers/authn"
 	dashhandler "github.com/rezuscloud/rezuscloud/internal/web/handlers/dashboard"
+	"github.com/rezuscloud/rezuscloud/internal/web/handlers/settings"
 	"github.com/rezuscloud/rezuscloud/internal/web/layout"
 	"github.com/rezuscloud/rezuscloud/internal/web/pages"
 	staticFiles "github.com/rezuscloud/rezuscloud/internal/web/static"
@@ -140,7 +141,6 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /machines", h.AuthRequired(h.MachinesList))
 	mux.HandleFunc("GET /machines/jointokens", h.AuthRequired(h.JoinTokensList))
 	mux.HandleFunc("POST /machines/jointokens", h.AuthRequired(h.JoinTokenCreate))
-	mux.HandleFunc("GET /machines/join-manual", h.AuthRequired(h.ManualJoinPage))
 	mux.HandleFunc("GET /machines/pending", h.AuthRequired(h.MachinesPending))
 	mux.HandleFunc("GET /machines/{id}", h.AuthRequired(h.MachineDetail))
 	mux.HandleFunc("GET /machines/{id}/logs", h.AuthRequired(h.MachineLogs))
@@ -155,30 +155,10 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /machines/{id}/approve", h.AuthRequired(h.MachineApprove))
 	mux.HandleFunc("DELETE /machines/{id}", h.AuthRequired(h.MachineDelete))
 
-	// Settings (W8 backups).
-	mux.HandleFunc("GET /settings/backups", h.AuthRequired(h.BackupsPage))
-	mux.HandleFunc("POST /settings/backups/database", h.AuthRequired(h.BackupsRunDatabase))
-	mux.HandleFunc("POST /settings/backups/resources", h.AuthRequired(h.BackupsRunResources))
-	mux.HandleFunc("POST /settings/backups/restore", h.AuthRequired(h.BackupsRestore))
-	mux.HandleFunc("POST /settings/backups/policy", h.AuthRequired(h.BackupsPolicySave))
-
-	// Settings (W9 users + API tokens).
-	mux.HandleFunc("GET /settings/users", h.AuthRequired(h.UsersPage))
-	mux.HandleFunc("POST /settings/users", h.AuthRequired(h.UserCreate))
-	mux.HandleFunc("POST /settings/users/{name}", h.AuthRequired(h.UserUpdate))
-	mux.HandleFunc("POST /settings/users/{name}/delete", h.AuthRequired(h.UserDelete))
-	mux.HandleFunc("GET /settings/api-tokens", h.AuthRequired(h.APITokensPage))
-	mux.HandleFunc("POST /settings/users/{name}/api-tokens", h.AuthRequired(h.APITokenCreate))
-	mux.HandleFunc("POST /settings/api-tokens/{id}/delete", h.AuthRequired(h.APITokenDelete))
-
-	// Settings (W10 audit).
-	mux.HandleFunc("GET /settings/audit", h.AuthRequired(h.AuditPage))
-
-	// Settings index (W13).
-	mux.HandleFunc("GET /settings", h.AuthRequired(h.SettingsIndexPage))
-
-	// Providers + manual join (W11).
-	mux.HandleFunc("GET /providers", h.AuthRequired(h.ProvidersPage))
+	// Settings (backups, users, API tokens, audit, index) + providers + manual
+	// join — served by the settings sub-package.
+	settingsHandler := settings.New(h.store, h.backupSvc, h.auditStore, h)
+	settingsHandler.RegisterRoutes(mux)
 
 	// Legacy /tenants aliases (kept for backward compatibility; /clusters is the
 	// user-facing name per W2). New code should use /clusters/*.
@@ -277,9 +257,15 @@ func currentTab(r *http.Request) string {
 
 // canMutate reports whether the current user has a role that permits
 // mutating the resource (admin or edit). View-only users see read-only UIs.
+// Exported as CanMutate so sub-packages (web/handlers/*) can reuse it.
 func (h *Handler) canMutate(r *http.Request) bool {
 	role := auth.RoleFromContext(r.Context())
 	return role == string(auth.RoleAdmin) || role == string(auth.RoleEdit)
+}
+
+// CanMutate satisfies the web/handlers/* Host interface (canMutate alias).
+func (h *Handler) CanMutate(r *http.Request) bool {
+	return h.canMutate(r)
 }
 
 // tenantSummaries loads tenants with computed phase and machine counts.
@@ -962,6 +948,11 @@ func (h *Handler) redirectAction(w http.ResponseWriter, r *http.Request, target 
 		return
 	}
 	http.Redirect(w, r, target, http.StatusSeeOther)
+}
+
+// RedirectAction satisfies the web/handlers/* Host interface (redirectAction alias).
+func (h *Handler) RedirectAction(w http.ResponseWriter, r *http.Request, target string) {
+	h.redirectAction(w, r, target)
 }
 
 func (h *Handler) backupService() (*backup.Service, error) {
@@ -2051,6 +2042,11 @@ func (h *Handler) machineLinkEndpoint() string {
 	return "machinelink.rezus.cloud:50001"
 }
 
+// MachineLinkEndpoint satisfies the web/handlers/* Host interface (machineLinkEndpoint alias).
+func (h *Handler) MachineLinkEndpoint() string {
+	return h.machineLinkEndpoint()
+}
+
 // machineFleetRow converts a Machine to a fleet-table row.
 func machineFleetRow(m *state.Machine) pages.MachineFleetRow {
 	return pages.MachineFleetRow{
@@ -2491,8 +2487,14 @@ func (h *Handler) APITokenDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 // isAdmin reports whether the current user is an admin.
+// Exported as IsAdmin so sub-packages (web/handlers/*) can reuse it.
 func (h *Handler) isAdmin(r *http.Request) bool {
 	return auth.RoleFromContext(r.Context()) == string(auth.RoleAdmin)
+}
+
+// IsAdmin satisfies the web/handlers/* Host interface (isAdmin alias).
+func (h *Handler) IsAdmin(r *http.Request) bool {
+	return h.isAdmin(r)
 }
 
 // --- Audit (W10) ---
@@ -2711,6 +2713,7 @@ func (h *Handler) ManualJoinPage(w http.ResponseWriter, r *http.Request) {
 }
 
 // tenantNames returns the list of existing tenant names.
+// Exported as TenantNames so sub-packages (web/handlers/*) can reuse it.
 func (h *Handler) tenantNames() []string {
 	tenants, _, _ := h.store.ListTenants()
 	out := make([]string, 0, len(tenants))
@@ -2718,6 +2721,11 @@ func (h *Handler) tenantNames() []string {
 		out = append(out, t.Metadata.Name)
 	}
 	return out
+}
+
+// TenantNames satisfies the web/handlers/* Host interface (tenantNames alias).
+func (h *Handler) TenantNames() []string {
+	return h.tenantNames()
 }
 
 // --- W12: Machine monitor + events ---
