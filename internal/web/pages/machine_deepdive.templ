@@ -1,20 +1,18 @@
 package pages
 
-import "fmt"
-
 // MachineLogsData drives /machines/{id}/logs.
-// For v1 we render the most recent N log entries server-side and rely on HTMX
-// polling for live updates. A future revision may use SSE via the existing
-// /api/v1/tenants/{tenant}/machines/{id}/logs?watch=true&sse=true endpoint.
+// The page opens an EventSource on the SSE endpoint and streams log lines in
+// real time. Pause/filter/auto-scroll are client-side controls (vanilla JS in static/logs-stream.js).
 type MachineLogsData struct {
 	MachineID   string
 	Cluster     string
-	Lines       []LogLine
+	Lines       []LogLine // initial render (page load); further updates via SSE
 	DownloadURL string
-	// PollURL is the URL HTMX polls to refresh the log lines (returns just the <pre> body).
-	PollURL string
-	// PollInterval is the HTMX polling interval (e.g. "5s"). Empty disables polling.
-	PollInterval string
+	// SSEURL is the EventSource URL for live log streaming.
+	SSEURL string
+	// FallbackPollURL is used when SSE fails or is disabled.
+	FallbackPollURL string
+	PollInterval    string
 }
 
 // LogLine is one entry in the logs view.
@@ -43,43 +41,48 @@ templ MachineLogs(data MachineLogsData) {
 		</div>
 		<div class="ds-header-actions">
 			<a href={ data.DownloadURL } class="ds-btn ds-btn--secondary">Download .log</a>
+			<a href={ templ.URL("/machines/" + data.MachineID + "/monitor") } class="ds-btn ds-btn--secondary">Monitor</a>
 			<a href={ templ.URL("/machines/" + data.MachineID) } class="ds-btn ds-btn--secondary">Back</a>
 		</div>
 	</div>
-	if len(data.Lines) == 0 {
-		<div class="ds-empty">
-			<p>No log lines yet.</p>
-			<p class="ds-empty-hint">
-				Logs will appear here when the machine is connected and streaming.
-				if data.PollInterval != "" {
-					<br/>
-					Auto-refreshing every { data.PollInterval }.
+	@logsControls()
+	<div class="ds-logs" id="logs-stream" data-sse-url={ data.SSEURL } data-fallback-url={ data.FallbackPollURL }>
+		for _, line := range data.Lines {
+			<div class="ds-logs-line">
+				<span class="ds-logs-time">{ line.Timestamp }</span>
+				if line.Level != "" {
+					<span class={ "ds-logs-level ds-logs-level--" + logLevelClass(line.Level) }>[{ line.Level }]</span>
 				}
-			</p>
-		</div>
-	} else {
-		<div
-			class="ds-logs"
-			if data.PollInterval != "" {
-				hx-get={ data.PollURL }
-				hx-trigger={ fmt.Sprintf("every %s", data.PollInterval) }
-				hx-swap="innerHTML"
-			}
-		>
-			for _, line := range data.Lines {
-				<div class="ds-logs-line">
-					<span class="ds-logs-time">{ line.Timestamp }</span>
-					if line.Level != "" {
-						<span class={ "ds-logs-level ds-logs-level--" + logLevelClass(line.Level) }>[{ line.Level }]</span>
-					}
-					if line.Source != "" {
-						<span class="ds-logs-source">{ line.Source }</span>
-					}
-					<span class="ds-logs-msg">{ line.Message }</span>
-				</div>
-			}
-		</div>
-	}
+				if line.Source != "" {
+					<span class="ds-logs-source">{ line.Source }</span>
+				}
+				<span class="ds-logs-msg">{ line.Message }</span>
+			</div>
+		}
+		<p class="ds-text-muted ds-text-small" id="logs-status">Connecting to live stream…</p>
+	</div>
+	<script src="/static/logs-stream.js" defer></script>
+}
+
+// logsControls renders pause / level-filter / auto-scroll toggle.
+templ logsControls() {
+	<div class="ds-form-actions" style="margin-bottom: 0.75rem;">
+		<button type="button" id="logs-pause" class="ds-btn ds-btn--sm ds-btn--secondary">Pause</button>
+		<label class="ds-form-field" style="flex: 0 0 auto;">
+			<span class="ds-label">Level</span>
+			<select class="ds-input" id="logs-level">
+				<option value="all">all</option>
+				<option value="info">info</option>
+				<option value="warn">warn</option>
+				<option value="error">error</option>
+			</select>
+		</label>
+		<label class="ds-form-field" style="flex: 0 0 auto;">
+			<input type="checkbox" id="logs-autoscroll" checked/>
+			<span>Auto-scroll</span>
+		</label>
+		<span class="ds-text-muted ds-text-small">lines: <span id="logs-count">0</span></span>
+	</div>
 }
 
 // logLevelClass returns a CSS variant suffix for a log level.
