@@ -78,7 +78,7 @@ func PatchEdit(data PatchEditData) templ.Component {
 			var templ_7745c5c3_Var4 string
 			templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(data.FormError)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/patch_edit.templ`, Line: 23, Col: 53}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/patch_edit.templ`, Line: 22, Col: 53}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 			if templ_7745c5c3_Err != nil {
@@ -96,7 +96,7 @@ func PatchEdit(data PatchEditData) templ.Component {
 		var templ_7745c5c3_Var5 templ.SafeURL
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinURLErrs(templ.URL("/clusters/" + data.Cluster + "/patches/" + data.Name + "/save"))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/patch_edit.templ`, Line: 26, Col: 104}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/patch_edit.templ`, Line: 24, Col: 104}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 		if templ_7745c5c3_Err != nil {
@@ -225,7 +225,7 @@ func PatchEdit(data PatchEditData) templ.Component {
 		var templ_7745c5c3_Var6 string
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(data.Patch)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/patch_edit.templ`, Line: 49, Col: 132}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/patch_edit.templ`, Line: 114, Col: 16}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {
@@ -243,7 +243,7 @@ func PatchEdit(data PatchEditData) templ.Component {
 			var templ_7745c5c3_Var7 string
 			templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.URL("/clusters/" + data.Cluster + "/patches/" + data.Name + "/toggle"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/patch_edit.templ`, Line: 54, Col: 115}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/patch_edit.templ`, Line: 119, Col: 115}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var7)
 			if templ_7745c5c3_Err != nil {
@@ -256,7 +256,7 @@ func PatchEdit(data PatchEditData) templ.Component {
 			var templ_7745c5c3_Var8 string
 			templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.URL("/clusters/" + data.Cluster + "/patches/" + data.Name + "/delete"))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/patch_edit.templ`, Line: 55, Col: 115}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/patch_edit.templ`, Line: 120, Col: 115}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var8)
 			if templ_7745c5c3_Err != nil {

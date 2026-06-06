@@ -387,6 +387,27 @@ func (s *Store) migrate() error {
 	);
 
 	CREATE INDEX IF NOT EXISTS idx_api_tokens_user ON api_tokens(user_name);
+
+	CREATE TABLE IF NOT EXISTS audit_events (
+		id          INTEGER PRIMARY KEY AUTOINCREMENT,
+		timestamp   TEXT NOT NULL,
+		user_name   TEXT,
+		role        TEXT,
+		method      TEXT NOT NULL,
+		path        TEXT NOT NULL,
+		resource    TEXT,
+		resource_id TEXT,
+		verb        TEXT,
+		status      INTEGER NOT NULL,
+		request_id  TEXT,
+		source_ip   TEXT,
+		error       TEXT,
+		metadata    TEXT
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_events(timestamp);
+	CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_events(user_name);
+	CREATE INDEX IF NOT EXISTS idx_audit_resource ON audit_events(resource);
 	`
 
 	_, err := s.db.Exec(schema)

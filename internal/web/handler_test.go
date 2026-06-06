@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/rezuscloud/rezuscloud/internal/api/patch"
+	"github.com/rezuscloud/rezuscloud/internal/audit"
 	"github.com/rezuscloud/rezuscloud/internal/auth"
 	"github.com/rezuscloud/rezuscloud/internal/credentials"
 	"github.com/rezuscloud/rezuscloud/internal/state"
@@ -47,12 +49,22 @@ func newTestHandler(t *testing.T, store *state.Store, opts ...func(*handlerCfg))
 	for _, opt := range opts {
 		opt(&cfg)
 	}
-	return NewHandler(store, cfg.jwt, cfg.bus)
+	h := NewHandler(store, cfg.jwt, cfg.bus)
+	if cfg.auditStore != nil {
+		h = h.WithAuditStore(cfg.auditStore)
+	}
+	return h
+}
+
+// withAuditStore opts into the audit page (Handler defaults to nil audit store).
+func withAuditStore(s audit.Store) func(*handlerCfg) {
+	return func(c *handlerCfg) { c.auditStore = s }
 }
 
 type handlerCfg struct {
-	jwt *auth.JWTManager
-	bus *watch.Bus
+	jwt        *auth.JWTManager
+	bus        *watch.Bus
+	auditStore audit.Store
 }
 
 // createUser adds a user with a known bcrypt-hashed password.
@@ -2648,5 +2660,89 @@ func TestAPITokensPage_RevealCookieCleared(t *testing.T) {
 	h.APITokensPage(w2, req2)
 	if strings.Contains(w2.Body.String(), "rez_secret") {
 		t.Errorf("plaintext secret must NOT appear on subsequent render")
+	}
+}
+
+// --- W10: Audit page ---
+
+func TestAuditPage_Renders(t *testing.T) {
+	store := newTestStore(t)
+	auditStore := audit.NewSQLStore(store.DB())
+	h := newTestHandler(t, store, withAuditStore(auditStore))
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	// Seed one event.
+	_ = auditStore.InsertEvent(context.Background(), audit.Event{
+		Method: "POST", Path: "/api/v1/tenants", UserName: "admin",
+		Role: "admin", Verb: "create", Resource: "tenants", Status: 201,
+		Timestamp: "2026-06-06T12:00:00Z", SourceIP: "127.0.0.1",
+	})
+
+	req := authedRequestAs(http.MethodGet, "/settings/audit", cookie, "", "admin", auth.RoleAdmin)
+	w := httptest.NewRecorder()
+	h.AuditPage(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, "Audit Log") {
+		t.Error("expected page title")
+	}
+	if !strings.Contains(body, "/api/v1/tenants") {
+		t.Error("expected audit row path in body")
+	}
+	if !strings.Contains(body, "admin") {
+		t.Error("expected user in body")
+	}
+}
+
+func TestAuditPage_Filters(t *testing.T) {
+	store := newTestStore(t)
+	auditStore := audit.NewSQLStore(store.DB())
+	h := newTestHandler(t, store, withAuditStore(auditStore))
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	// Seed two events with different verbs.
+	_ = auditStore.InsertEvent(context.Background(), audit.Event{
+		Method: "POST", Path: "/api/v1/tenants", UserName: "admin",
+		Verb: "create", Resource: "tenants", Status: 201,
+		Timestamp: "2026-06-06T12:00:00Z",
+	})
+	_ = auditStore.InsertEvent(context.Background(), audit.Event{
+		Method: "DELETE", Path: "/api/v1/tenants/prod", UserName: "admin",
+		Verb: "delete", Resource: "tenants", Status: 204,
+		Timestamp: "2026-06-06T12:01:00Z",
+	})
+
+	req := authedRequestAs(http.MethodGet, "/settings/audit?verb=delete", cookie, "", "admin", auth.RoleAdmin)
+	w := httptest.NewRecorder()
+	h.AuditPage(w, req)
+	body := w.Body.String()
+
+	if !strings.Contains(body, "DELETE") {
+		t.Errorf("expected DELETE in body")
+	}
+	if strings.Contains(body, "/api/v1/tenants</td>") || strings.Contains(body, "/api/v1/tenants</") {
+		// The "POST /api/v1/tenants" row should be filtered out.
+		// (Loose check; the rendered path includes method.)
+	}
+	if strings.Count(body, "<tr class=\"ds-table-row\">") != 1 {
+		t.Errorf("filter should produce 1 row, body had %d", strings.Count(body, "<tr class=\"ds-table-row\">"))
+	}
+}
+
+func TestAuditPage_NoStoreReturnsUnavailable(t *testing.T) {
+	store := newTestStore(t)
+	h := newTestHandler(t, store) // no audit store injected
+	createUser(t, store, "admin", "pass", auth.RoleAdmin)
+	cookie := loginCookie(t, h, "admin", "pass")
+
+	req := authedRequestAs(http.MethodGet, "/settings/audit", cookie, "", "admin", auth.RoleAdmin)
+	w := httptest.NewRecorder()
+	h.AuditPage(w, req)
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503", w.Code)
 	}
 }
