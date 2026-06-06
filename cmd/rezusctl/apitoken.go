@@ -22,11 +22,6 @@ type apiTokenResponse struct {
 	LastUsed  *int64 `json:"lastUsed,omitempty"`
 }
 
-type apiTokenListResponse struct {
-	Items []apiTokenResponse `json:"items"`
-	Total int                `json:"total"`
-}
-
 type apiTokenCreateResponse struct {
 	apiTokenResponse
 	Secret string `json:"secret"`

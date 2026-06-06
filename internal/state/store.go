@@ -1345,7 +1345,7 @@ func (s *Store) ListAPITokens(userName string) ([]*APIToken, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list api tokens: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []*APIToken
 	for rows.Next() {
