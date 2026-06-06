@@ -18,14 +18,12 @@ type BackupsPageData struct {
 
 templ BackupsPage(data BackupsPageData) {
 	<h1 class="ds-page-title">Backups</h1>
-
 	<div class="ds-grid ds-grid-4" style="margin-bottom: 1rem;">
 		<div class="ds-stat-block"><div class="ds-stat-label">Snapshots</div><div class="ds-stat-value">{ fmt.Sprintf("%d", len(data.Snapshots)) }</div></div>
 		<div class="ds-stat-block"><div class="ds-stat-label">Last Success</div><div class="ds-stat-value" style="font-size:0.875rem;">{ data.LastSuccess }</div></div>
 		<div class="ds-stat-block"><div class="ds-stat-label">Failures</div><div class="ds-stat-value">{ fmt.Sprintf("%d", data.Failures) }</div></div>
 		<div class="ds-stat-block"><div class="ds-stat-label">RPO Estimate</div><div class="ds-stat-value">{ data.RPOEstimate }</div></div>
 	</div>
-
 	<div class="ds-grid ds-grid-2" style="margin-bottom: 1rem;">
 		<div class="ds-section-card">
 			<div class="ds-section-title">Run backup now</div>
@@ -42,7 +40,6 @@ templ BackupsPage(data BackupsPageData) {
 			</form>
 		</div>
 	</div>
-
 	<div class="ds-section-header">Restore</div>
 	<div class="ds-section-card" style="margin-bottom: 1rem;">
 		<form method="post" action="/settings/backups/restore" class="ds-form-grid ds-grid-4">
@@ -51,7 +48,6 @@ templ BackupsPage(data BackupsPageData) {
 			<div class="ds-form-actions" style="align-self:end;"><button type="submit" class="ds-btn ds-btn--danger" disabled?={ !data.CanMutate }>Run restore</button></div>
 		</form>
 	</div>
-
 	<div class="ds-section-header">Snapshot catalog</div>
 	if len(data.Snapshots) == 0 {
 		<div class="ds-muted">No snapshots found.</div>

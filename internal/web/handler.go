@@ -95,6 +95,15 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /settings/backups/restore", h.AuthRequired(h.BackupsRestore))
 	mux.HandleFunc("POST /settings/backups/policy", h.AuthRequired(h.BackupsPolicySave))
 
+	// Settings (W9 users + API tokens).
+	mux.HandleFunc("GET /settings/users", h.AuthRequired(h.UsersPage))
+	mux.HandleFunc("POST /settings/users", h.AuthRequired(h.UserCreate))
+	mux.HandleFunc("POST /settings/users/{name}", h.AuthRequired(h.UserUpdate))
+	mux.HandleFunc("POST /settings/users/{name}/delete", h.AuthRequired(h.UserDelete))
+	mux.HandleFunc("GET /settings/api-tokens", h.AuthRequired(h.APITokensPage))
+	mux.HandleFunc("POST /settings/users/{name}/api-tokens", h.AuthRequired(h.APITokenCreate))
+	mux.HandleFunc("POST /settings/api-tokens/{id}/delete", h.AuthRequired(h.APITokenDelete))
+
 	// Legacy /tenants aliases (kept for backward compatibility; /clusters is the
 	// user-facing name per W2). New code should use /clusters/*.
 	mux.HandleFunc("GET /tenants", h.AuthRequired(h.TenantsList))
@@ -2063,4 +2072,312 @@ var machineStages = []string{
 	string(state.StageOff),
 	string(state.StageUpdating),
 	string(state.StageRemoving),
+}
+
+// --- Users (W9) ---
+
+// UsersPage renders /settings/users. Admins see create/edit/delete UI; non-admins
+// see a read-only table.
+func (h *Handler) UsersPage(w http.ResponseWriter, r *http.Request) {
+	role := auth.RoleFromContext(r.Context())
+	isAdmin := role == string(auth.RoleAdmin)
+
+	users, err := h.store.ListUsers()
+	if err != nil {
+		http.Error(w, "list users failed", http.StatusInternalServerError)
+		return
+	}
+
+	rows := make([]pages.UserRow, 0, len(users))
+	for _, u := range users {
+		row := pages.UserRow{
+			Name: u.Metadata.Name,
+			Role: u.Spec.Role,
+		}
+		if u.Status.LastLogin != nil {
+			row.LastLogin = u.Status.LastLogin.Format(time.RFC3339)
+		} else {
+			row.LastLogin = "—"
+		}
+		rows = append(rows, row)
+	}
+
+	toast := h.popToast(r)
+	h.render(w, r, layout.BaseProps{
+		Title: "Users",
+		Page:  "users",
+		Content: pages.UsersPage(pages.UsersPageData{
+			Users:     rows,
+			CanMutate: isAdmin,
+		}),
+		Breadcrumb: []layout.BreadcrumbItem{
+			{Name: "Settings", URL: "/settings/users"},
+			{Name: "Users", Current: true},
+		},
+		Toast: toast,
+	})
+}
+
+// UserCreate handles POST /settings/users. Admin-only; enforced by store + role.
+func (h *Handler) UserCreate(w http.ResponseWriter, r *http.Request) {
+	if !h.isAdmin(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		h.redirectAction(w, r, "/settings/users?toast=invalid+form&toast-type=error")
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("name"))
+	role := strings.TrimSpace(r.FormValue("role"))
+	password := r.FormValue("password")
+
+	if name == "" || !auth.ValidRoles[role] || password == "" {
+		h.redirectAction(w, r, "/settings/users?toast=name,+role,+password+required&toast-type=error")
+		return
+	}
+
+	if existing, _ := h.store.GetUser(name); existing != nil {
+		h.redirectAction(w, r, "/settings/users?toast=user+already+exists&toast-type=error")
+		return
+	}
+
+	hash, err := auth.HashPassword(password)
+	if err != nil {
+		h.redirectAction(w, r, "/settings/users?toast="+url.QueryEscape(err.Error())+"&toast-type=error")
+		return
+	}
+	if _, err := h.store.CreateUser(name, state.UserSpec{Role: role, PasswordHash: hash}); err != nil {
+		h.redirectAction(w, r, "/settings/users?toast="+url.QueryEscape(err.Error())+"&toast-type=error")
+		return
+	}
+	h.redirectAction(w, r, "/settings/users?toast=user+created&toast-type=success")
+}
+
+// UserUpdate handles POST /settings/users/{name} (PUT-tunneled via _method).
+func (h *Handler) UserUpdate(w http.ResponseWriter, r *http.Request) {
+	if !h.isAdmin(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	name := r.PathValue("name")
+	if err := r.ParseForm(); err != nil {
+		h.redirectAction(w, r, "/settings/users?toast=invalid+form&toast-type=error")
+		return
+	}
+	role := strings.TrimSpace(r.FormValue("role"))
+	password := r.FormValue("password")
+	if !auth.ValidRoles[role] {
+		h.redirectAction(w, r, "/settings/users?toast=invalid+role&toast-type=error")
+		return
+	}
+
+	existing, err := h.store.GetUser(name)
+	if err != nil || existing == nil {
+		h.redirectAction(w, r, "/settings/users?toast=user+not+found&toast-type=error")
+		return
+	}
+
+	hash := existing.Spec.PasswordHash
+	if password != "" {
+		hash, err = auth.HashPassword(password)
+		if err != nil {
+			h.redirectAction(w, r, "/settings/users?toast="+url.QueryEscape(err.Error())+"&toast-type=error")
+			return
+		}
+	}
+	if _, err := h.store.UpdateUser(name, existing.Metadata.ResourceVersion, state.UserSpec{Role: role, PasswordHash: hash}); err != nil {
+		h.redirectAction(w, r, "/settings/users?toast="+url.QueryEscape(err.Error())+"&toast-type=error")
+		return
+	}
+	h.redirectAction(w, r, "/settings/users?toast=user+updated&toast-type=success")
+}
+
+// UserDelete handles POST /settings/users/{name}/delete.
+func (h *Handler) UserDelete(w http.ResponseWriter, r *http.Request) {
+	if !h.isAdmin(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	name := r.PathValue("name")
+	if name == auth.UserFromContext(r.Context()) {
+		h.redirectAction(w, r, "/settings/users?toast=cannot+delete+current+user&toast-type=error")
+		return
+	}
+	if err := h.store.DeleteUser(name); err != nil {
+		h.redirectAction(w, r, "/settings/users?toast="+url.QueryEscape(err.Error())+"&toast-type=error")
+		return
+	}
+	h.redirectAction(w, r, "/settings/users?toast=user+deleted&toast-type=success")
+}
+
+// --- API Tokens (W9) ---
+
+// APITokensPage renders /settings/api-tokens. Admins see all tokens; everyone
+// else sees only their own. On ?new=<id>, the page shows the one-time reveal
+// card from a query-param flash (cleared client-side after copy).
+func (h *Handler) APITokensPage(w http.ResponseWriter, r *http.Request) {
+	caller := auth.UserFromContext(r.Context())
+	role := auth.RoleFromContext(r.Context())
+	isAdmin := role == string(auth.RoleAdmin)
+
+	userName := ""
+	if !isAdmin {
+		userName = caller
+	}
+
+	tokens, err := h.store.ListAPITokens(userName)
+	if err != nil {
+		http.Error(w, "list tokens failed", http.StatusInternalServerError)
+		return
+	}
+
+	rows := make([]pages.APITokenRow, 0, len(tokens))
+	now := time.Now().UTC()
+	for _, t := range tokens {
+		row := pages.APITokenRow{
+			ID:        t.ID,
+			UserName:  t.UserName,
+			CreatedAt: t.CreatedAt.Format(time.RFC3339),
+			LastUsed:  "—",
+			ExpiresAt: "never",
+			Status:    "active",
+		}
+		// Resolve current role for display.
+		if u, _ := h.store.GetUser(t.UserName); u != nil {
+			row.Role = u.Spec.Role
+		}
+		if t.LastUsed != nil {
+			row.LastUsed = t.LastUsed.Format(time.RFC3339)
+		}
+		if t.ExpiresAt != nil {
+			row.ExpiresAt = t.ExpiresAt.Format(time.RFC3339)
+			if now.After(*t.ExpiresAt) {
+				row.Status = "expired"
+			}
+		}
+		rows = append(rows, row)
+	}
+
+	data := pages.APITokensPageData{
+		Tokens:      rows,
+		CanMutate:   h.canMutate(r),
+		CurrentUser: caller,
+	}
+
+	// One-time reveal: token id and secret come from a short-lived flash cookie
+	// set by APITokenCreate. The cookie is cleared after this render.
+	if revealCookie, _ := r.Cookie("rezuscloud_token_reveal"); revealCookie != nil {
+		// Cookie value is "<id>|<secret>[|<expires>]" URL-encoded.
+		parts := strings.SplitN(revealCookie.Value, "|", 3)
+		if len(parts) >= 2 {
+			data.NewTokenID = parts[0]
+			data.NewSecret = parts[1]
+			if len(parts) == 3 {
+				data.NewExpiresAt = parts[2]
+			}
+		}
+		// Clear the cookie so it cannot be revealed again on refresh.
+		http.SetCookie(w, &http.Cookie{
+			Name: "rezuscloud_token_reveal", Value: "", Path: "/", HttpOnly: true,
+			SameSite: http.SameSiteLaxMode, MaxAge: -1,
+		})
+	}
+
+	toast := h.popToast(r)
+	h.render(w, r, layout.BaseProps{
+		Title: "API Tokens",
+		Page:  "api-tokens",
+		Content: pages.APITokensPage(data),
+		Breadcrumb: []layout.BreadcrumbItem{
+			{Name: "Settings", URL: "/settings/api-tokens"},
+			{Name: "API Tokens", Current: true},
+		},
+		Toast: toast,
+	})
+}
+
+// APITokenCreate handles POST /settings/users/{name}/api-tokens. Issues a token
+// for {name} (caller must be {name} or admin) and sets a one-time flash cookie
+// so the next GET /settings/api-tokens shows the plaintext secret exactly once.
+func (h *Handler) APITokenCreate(w http.ResponseWriter, r *http.Request) {
+	if !h.canMutate(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	target := r.PathValue("name")
+	caller := auth.UserFromContext(r.Context())
+	role := auth.RoleFromContext(r.Context())
+	if role != string(auth.RoleAdmin) && caller != target {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	user, err := h.store.GetUser(target)
+	if err != nil || user == nil {
+		h.redirectAction(w, r, "/settings/api-tokens?toast=user+not+found&toast-type=error")
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		h.redirectAction(w, r, "/settings/api-tokens?toast=invalid+form&toast-type=error")
+		return
+	}
+	days, _ := strconv.Atoi(r.FormValue("expiresInDays"))
+
+	var expiresAt *time.Time
+	if days > 0 {
+		t := time.Now().UTC().Add(time.Duration(days) * 24 * time.Hour)
+		expiresAt = &t
+	}
+
+	plaintext, id, hash, err := auth.GenerateAPIToken()
+	if err != nil {
+		h.redirectAction(w, r, "/settings/api-tokens?toast="+url.QueryEscape(err.Error())+"&toast-type=error")
+		return
+	}
+	if _, err := h.store.CreateAPIToken(id, target, hash, expiresAt); err != nil {
+		h.redirectAction(w, r, "/settings/api-tokens?toast="+url.QueryEscape(err.Error())+"&toast-type=error")
+		return
+	}
+
+	expires := ""
+	if expiresAt != nil {
+		expires = expiresAt.Format(time.RFC3339)
+	}
+	// Flash cookie carries the plaintext once. MaxAge=300s is enough for the
+	// redirect → GET round trip.
+	http.SetCookie(w, &http.Cookie{
+		Name: "rezuscloud_token_reveal", Value: id + "|" + plaintext + "|" + expires,
+		Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: 300,
+	})
+	h.redirectAction(w, r, "/settings/api-tokens?toast=token+created&toast-type=success")
+}
+
+// APITokenDelete handles POST /settings/api-tokens/{id}/delete.
+func (h *Handler) APITokenDelete(w http.ResponseWriter, r *http.Request) {
+	if !h.canMutate(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	id := r.PathValue("id")
+	tok, err := h.store.GetAPIToken(id)
+	if err != nil || tok == nil {
+		h.redirectAction(w, r, "/settings/api-tokens?toast=token+not+found&toast-type=error")
+		return
+	}
+	caller := auth.UserFromContext(r.Context())
+	role := auth.RoleFromContext(r.Context())
+	if role != string(auth.RoleAdmin) && caller != tok.UserName {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	if err := h.store.DeleteAPIToken(id); err != nil {
+		h.redirectAction(w, r, "/settings/api-tokens?toast="+url.QueryEscape(err.Error())+"&toast-type=error")
+		return
+	}
+	h.redirectAction(w, r, "/settings/api-tokens?toast=token+revoked&toast-type=success")
+}
+
+// isAdmin reports whether the current user is an admin.
+func (h *Handler) isAdmin(r *http.Request) bool {
+	return auth.RoleFromContext(r.Context()) == string(auth.RoleAdmin)
 }

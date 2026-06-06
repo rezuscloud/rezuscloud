@@ -691,3 +691,114 @@ func TestToken_WorksWithAllEndpoints(t *testing.T) {
 var _ = fmt.Sprintf
 var _ = os.ReadFile
 var _ = filepath.Join
+
+// --- W9: Users + API Tokens ---
+
+func TestAPI_APITokenLifecycle(t *testing.T) {
+	ts := newTestServer(t)
+
+	// Create an admin user.
+	token := ts.createUser(t, "alice", "admin", "pw123456")
+
+	// POST /api/v1/users/alice/api-tokens — should mint and return the secret.
+	resp, result := ts.doRequest(http.MethodPost, "/api/v1/users/alice/api-tokens", map[string]any{}, token)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create token: status=%d body=%v", resp.StatusCode, result)
+	}
+	secret, _ := result["secret"].(string)
+	if secret == "" {
+		t.Fatalf("expected secret in response, got: %v", result)
+	}
+	tokID, _ := result["id"].(string)
+	if tokID == "" {
+		t.Fatalf("expected id in response")
+	}
+	// Plaintext must never be present in any subsequent endpoint.
+	if _, hasSecret := result["secret"]; !hasSecret {
+		t.Fatalf("secret missing from create response")
+	}
+
+	// GET /api/v1/api-tokens/{id} — no secret in response.
+	resp, result = ts.doRequest(http.MethodGet, "/api/v1/api-tokens/"+tokID, nil, token)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("get token: status=%d", resp.StatusCode)
+	}
+	if _, present := result["secret"]; present {
+		t.Errorf("GET must not return plaintext secret: %v", result)
+	}
+
+	// GET /api/v1/api-tokens — list (admin).
+	resp, result = ts.doRequest(http.MethodGet, "/api/v1/api-tokens", nil, token)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("list tokens: %d", resp.StatusCode)
+	}
+	items, _ := result["items"].([]any)
+	if len(items) != 1 {
+		t.Errorf("list: %d items, want 1", len(items))
+	}
+
+	// DELETE /api/v1/api-tokens/{id}.
+	resp, _ = ts.doRequest(http.MethodDelete, "/api/v1/api-tokens/"+tokID, nil, token)
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("revoke: %d", resp.StatusCode)
+	}
+
+	resp, _ = ts.doRequest(http.MethodGet, "/api/v1/api-tokens/"+tokID, nil, token)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("after revoke: %d, want 404", resp.StatusCode)
+	}
+}
+
+func TestAPI_APITokenAuthenticates(t *testing.T) {
+	ts := newTestServer(t)
+
+	// Create alice (admin) and mint an API token.
+	token := ts.createUser(t, "alice", "admin", "pw123456")
+	resp, result := ts.doRequest(http.MethodPost, "/api/v1/users/alice/api-tokens", map[string]any{}, token)
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create token: %d", resp.StatusCode)
+	}
+	secret, _ := result["secret"].(string)
+
+	// Use the API token to call a protected endpoint (/api/v1/auth/whoami).
+	resp, result = ts.doRequest(http.MethodGet, "/api/v1/auth/whoami", nil, secret)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("whoami with API token: status=%d body=%v", resp.StatusCode, result)
+	}
+	username, _ := result["username"].(string)
+	if username != "alice" {
+		t.Errorf("username = %q, want alice", username)
+	}
+	role, _ := result["role"].(string)
+	if role != "admin" {
+		t.Errorf("role = %q, want admin (denormalized)", role)
+	}
+}
+
+func TestAPI_APITokenRejectsInvalid(t *testing.T) {
+	ts := newTestServer(t)
+	resp, _ := ts.doRequest(http.MethodGet, "/api/v1/auth/whoami", nil, "rez_does_not_exist")
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Errorf("invalid token: status=%d, want 401", resp.StatusCode)
+	}
+}
+
+func TestAPI_APITokenNonAdminCannotListAll(t *testing.T) {
+	ts := newTestServer(t)
+	viewerToken := ts.createUser(t, "viewer", "view", "pw123456")
+	resp, _ := ts.doRequest(http.MethodGet, "/api/v1/api-tokens", nil, viewerToken)
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("viewer list-all: status=%d, want 403", resp.StatusCode)
+	}
+}
+
+func TestAPI_APITokenCrossUserCreateForbidden(t *testing.T) {
+	ts := newTestServer(t)
+	aliceToken := ts.createUser(t, "alice", "edit", "pw123456")
+	_ = ts.createUser(t, "bob", "view", "pw123456")
+	// alice tries to mint a token for bob — forbidden.
+	resp, _ := ts.doRequest(http.MethodPost, "/api/v1/users/bob/api-tokens", map[string]any{}, aliceToken)
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("cross-user create: status=%d, want 403", resp.StatusCode)
+	}
+}

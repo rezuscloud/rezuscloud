@@ -1,0 +1,149 @@
+package pages
+
+// APITokensPageData drives /settings/api-tokens.
+type APITokensPageData struct {
+	Tokens []APITokenRow
+	// NewSecret is the just-created token's plaintext secret, shown once.
+	NewSecret    string
+	NewTokenID   string
+	NewExpiresAt string
+	CanMutate    bool
+	// CurrentUser is the username of the viewer (used to scope the create form).
+	CurrentUser string
+}
+
+// APITokenRow is one row in the tokens table.
+type APITokenRow struct {
+	ID        string
+	UserName  string
+	Role      string
+	CreatedAt string
+	LastUsed  string
+	ExpiresAt string
+	Status    string // "active", "expired"
+}
+
+// APITokensPage renders /settings/api-tokens.
+templ APITokensPage(data APITokensPageData) {
+	<div class="ds-page-header-row">
+		<h1 class="ds-page-title">API Tokens</h1>
+		if data.CanMutate {
+			<button type="button" class="ds-btn" data-modal-open="create-api-token">Create Token</button>
+		}
+	</div>
+	if data.NewSecret != "" {
+		@apiTokenReveal(data)
+	}
+	if len(data.Tokens) == 0 {
+		<div class="ds-empty"><p>No API tokens yet.</p></div>
+	} else {
+		<div class="ds-table-wrapper">
+			<table class="ds-table">
+				<thead>
+					<tr>
+						<th class="ds-table-th">ID</th>
+						<th class="ds-table-th">Owner</th>
+						<th class="ds-table-th">Role</th>
+						<th class="ds-table-th">Status</th>
+						<th class="ds-table-th">Created</th>
+						<th class="ds-table-th">Last Used</th>
+						<th class="ds-table-th">Expires</th>
+						<th class="ds-table-th"></th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, t := range data.Tokens {
+						<tr class="ds-table-row">
+							<td class="ds-table-td ds-table-mono">{ t.ID }</td>
+							<td class="ds-table-td">{ t.UserName }</td>
+							<td class="ds-table-td">
+								<span class={ "ds-status-badge ds-status-badge--" + userRoleBadgeClass(t.Role) }>{ t.Role }</span>
+							</td>
+							<td class="ds-table-td">
+								<span class={ "ds-status-badge ds-status-badge--" + tokenRowBadgeClass(t.Status) }>{ t.Status }</span>
+							</td>
+							<td class="ds-table-td ds-text-muted">{ t.CreatedAt }</td>
+							<td class="ds-table-td ds-text-muted">{ t.LastUsed }</td>
+							<td class="ds-table-td ds-text-muted">{ t.ExpiresAt }</td>
+							<td class="ds-table-td">
+								@revokeAPITokenForm(t.ID)
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	}
+	if data.CanMutate {
+		@createAPITokenModal(data)
+	}
+}
+
+// apiTokenReveal shows the freshly-created token once with copy UX.
+templ apiTokenReveal(data APITokensPageData) {
+	<div class="ds-card ds-card--highlight">
+		<h2 class="ds-card-title">Token created</h2>
+		<p class="ds-text-muted">Copy this token now — it cannot be retrieved again.</p>
+		<div class="ds-copy-row">
+			<code class="ds-code-block" id="new-api-token-value">{ data.NewSecret }</code>
+			<button
+				type="button"
+				class="ds-btn ds-btn--sm ds-btn--secondary"
+				x-data="{ copied: false }"
+				x-on:click="navigator.clipboard.writeText(document.getElementById('new-api-token-value').innerText); copied = true"
+				x-on:mouseleave="setTimeout(() => copied = false, 1500)"
+			>
+				<span x-show="!copied">Copy</span>
+				<span x-show="copied" x-cloak>Copied!</span>
+			</button>
+		</div>
+		if data.NewExpiresAt != "" {
+			<p class="ds-text-muted ds-text-small">Expires { data.NewExpiresAt }</p>
+		}
+	</div>
+}
+
+// createAPITokenModal renders the modal with the create form.
+templ createAPITokenModal(data APITokensPageData) {
+	<dialog id="create-api-token" class="ds-modal">
+		<form method="post" action={ "/settings/users/" + data.CurrentUser + "/api-tokens" } class="ds-modal-body">
+			<h2 class="ds-modal-title">Create API Token</h2>
+			<div class="ds-input-group">
+				<label class="ds-label" for="cat-owner">Owner</label>
+				<input type="text" id="cat-owner" name="userName" class="ds-input" value={ data.CurrentUser } readonly/>
+				<div class="ds-input-hint">Tokens are issued for the current user.</div>
+			</div>
+			<div class="ds-input-group">
+				<label class="ds-label" for="cat-ttl">Expires in</label>
+				<select id="cat-ttl" name="expiresInDays" class="ds-input">
+					<option value="0">Never</option>
+					<option value="7">7 days</option>
+					<option value="30" selected>30 days</option>
+					<option value="90">90 days</option>
+				</select>
+			</div>
+			<div class="ds-modal-footer">
+				<button type="button" class="ds-btn ds-btn--secondary" data-modal-close>Cancel</button>
+				<button type="submit" class="ds-btn">Create</button>
+			</div>
+		</form>
+	</dialog>
+}
+
+// revokeAPITokenForm renders the inline delete form.
+templ revokeAPITokenForm(id string) {
+	<form method="post" action={ "/settings/api-tokens/" + id + "/delete" } style="display:inline;">
+		<button type="submit" class="ds-btn ds-btn--sm ds-btn--danger">Revoke</button>
+	</form>
+}
+
+func tokenRowBadgeClass(status string) string {
+	switch status {
+	case "active":
+		return "positive"
+	case "expired":
+		return "negative"
+	default:
+		return "neutral"
+	}
+}

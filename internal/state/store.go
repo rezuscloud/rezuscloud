@@ -1265,6 +1265,158 @@ func (s *Store) UpdateUserLastLogin(name string) error {
 	return err
 }
 
+// --- API Token Operations ---
+
+// APIToken represents a long-lived API token that authenticates as a user.
+//
+// The token value is never stored in plaintext: only the SHA-256 hash is
+// persisted (token_hash column). The plaintext is returned to the caller
+// exactly once at creation time.
+type APIToken struct {
+	ID        string     `json:"id"`
+	UserName  string     `json:"userName"`
+	Role      string     `json:"role"` // denormalized from user at lookup time
+	TokenHash string     `json:"-"`     // never serialized to clients
+	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
+	CreatedAt time.Time  `json:"createdAt"`
+	LastUsed  *time.Time `json:"lastUsed,omitempty"`
+}
+
+// CreateAPIToken persists a new API token row.
+// `id` is the public identifier (used in URLs / DELETE), `tokenHash` is the
+// SHA-256 hex digest of the secret. The plaintext secret is NEVER stored.
+func (s *Store) CreateAPIToken(id, userName, tokenHash string, expiresAt *time.Time) (*APIToken, error) {
+	if _, err := s.db.Exec(
+		`INSERT INTO api_tokens (id, user_name, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)`,
+		id, userName, tokenHash, expiresAt, time.Now().UTC(),
+	); err != nil {
+		return nil, fmt.Errorf("insert api token: %w", err)
+	}
+	tok, err := s.GetAPIToken(id)
+	if err != nil {
+		return nil, err
+	}
+	return tok, nil
+}
+
+// GetAPIToken returns a single API token by id (without hash on response path).
+func (s *Store) GetAPIToken(id string) (*APIToken, error) {
+	row := s.db.QueryRow(
+		`SELECT id, user_name, token_hash, expires_at, created_at, last_used FROM api_tokens WHERE id = ?`,
+		id,
+	)
+	var tok APIToken
+	var hash string
+	var expires, last sql.NullTime
+	if err := row.Scan(&tok.ID, &tok.UserName, &hash, &expires, &tok.CreatedAt, &last); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get api token: %w", err)
+	}
+	tok.TokenHash = hash
+	if expires.Valid {
+		t := expires.Time
+		tok.ExpiresAt = &t
+	}
+	if last.Valid {
+		t := last.Time
+		tok.LastUsed = &t
+	}
+	return &tok, nil
+}
+
+// ListAPITokens returns API tokens, optionally filtered by owner.
+func (s *Store) ListAPITokens(userName string) ([]*APIToken, error) {
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	if userName == "" {
+		rows, err = s.db.Query(
+			`SELECT id, user_name, token_hash, expires_at, created_at, last_used FROM api_tokens ORDER BY created_at DESC`,
+		)
+	} else {
+		rows, err = s.db.Query(
+			`SELECT id, user_name, token_hash, expires_at, created_at, last_used FROM api_tokens WHERE user_name = ? ORDER BY created_at DESC`,
+			userName,
+		)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("list api tokens: %w", err)
+	}
+	defer rows.Close()
+
+	var out []*APIToken
+	for rows.Next() {
+		var tok APIToken
+		var hash string
+		var expires, last sql.NullTime
+		if err := rows.Scan(&tok.ID, &tok.UserName, &hash, &expires, &tok.CreatedAt, &last); err != nil {
+			return nil, fmt.Errorf("scan api token: %w", err)
+		}
+		tok.TokenHash = hash
+		if expires.Valid {
+			t := expires.Time
+			tok.ExpiresAt = &t
+		}
+		if last.Valid {
+			t := last.Time
+			tok.LastUsed = &t
+		}
+		out = append(out, &tok)
+	}
+	return out, rows.Err()
+}
+
+// LookupAPITokenByHash returns the token (including hash for verification) by
+// matching the supplied hash digest. Used by the auth middleware during Bearer
+// validation. The returned record includes the user_name so the middleware can
+// re-resolve the user's role without an extra round-trip.
+func (s *Store) LookupAPITokenByHash(tokenHash string) (*APIToken, error) {
+	row := s.db.QueryRow(
+		`SELECT id, user_name, token_hash, expires_at, created_at, last_used FROM api_tokens WHERE token_hash = ?`,
+		tokenHash,
+	)
+	var tok APIToken
+	var expires, last sql.NullTime
+	if err := row.Scan(&tok.ID, &tok.UserName, &tok.TokenHash, &expires, &tok.CreatedAt, &last); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("lookup api token: %w", err)
+	}
+	if expires.Valid {
+		t := expires.Time
+		tok.ExpiresAt = &t
+	}
+	if last.Valid {
+		t := last.Time
+		tok.LastUsed = &t
+	}
+	return &tok, nil
+}
+
+// TouchAPIToken records the last_used timestamp for a token.
+func (s *Store) TouchAPIToken(id string) error {
+	_, err := s.db.Exec(`UPDATE api_tokens SET last_used = ? WHERE id = ?`, time.Now().UTC(), id)
+	return err
+}
+
+// DeleteAPIToken removes a token by id. Caller should validate ownership
+// (only the owner or an admin may revoke).
+func (s *Store) DeleteAPIToken(id string) error {
+	res, err := s.db.Exec(`DELETE FROM api_tokens WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete api token: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // --- Helpers ---
 
 // newUID generates a new unique identifier.

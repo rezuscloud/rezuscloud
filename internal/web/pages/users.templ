@@ -1,0 +1,141 @@
+package pages
+
+// UsersPageData drives /settings/users.
+type UsersPageData struct {
+	Users     []UserRow
+	CanMutate bool // admin only — controls create/update/delete UI
+}
+
+// UserRow is one row in the users table.
+type UserRow struct {
+	Name      string
+	Role      string
+	LastLogin string
+}
+
+// UsersPage renders /settings/users.
+templ UsersPage(data UsersPageData) {
+	<div class="ds-page-header-row">
+		<h1 class="ds-page-title">Users</h1>
+		if data.CanMutate {
+			<button type="button" class="ds-btn" data-modal-open="create-user">Create User</button>
+		}
+	</div>
+	if len(data.Users) == 0 {
+		<div class="ds-empty"><p>No users yet.</p></div>
+	} else {
+		<div class="ds-table-wrapper">
+			<table class="ds-table">
+				<thead>
+					<tr>
+						<th class="ds-table-th">Name</th>
+						<th class="ds-table-th">Role</th>
+						<th class="ds-table-th">Last Login</th>
+						if data.CanMutate {
+							<th class="ds-table-th"></th>
+						}
+					</tr>
+				</thead>
+				<tbody>
+					for _, u := range data.Users {
+						<tr class="ds-table-row">
+							<td class="ds-table-td">{ u.Name }</td>
+							<td class="ds-table-td">
+								<span class={ "ds-status-badge ds-status-badge--" + userRoleBadgeClass(u.Role) }>{ u.Role }</span>
+							</td>
+							<td class="ds-table-td ds-text-muted">{ u.LastLogin }</td>
+							if data.CanMutate {
+								<td class="ds-table-td">
+									<button type="button" class="ds-btn ds-btn--sm ds-btn--secondary" data-modal-open={ "edit-user-" + u.Name }>Edit</button>
+									@deleteUserForm(u.Name)
+								</td>
+							}
+						</tr>
+						if data.CanMutate {
+							@editUserModal(u)
+						}
+					}
+				</tbody>
+			</table>
+		</div>
+	}
+	if data.CanMutate {
+		@createUserModal()
+	}
+}
+
+// createUserModal renders the modal with the create form.
+templ createUserModal() {
+	<dialog id="create-user" class="ds-modal">
+		<form method="post" action="/settings/users" class="ds-modal-body">
+			<h2 class="ds-modal-title">Create User</h2>
+			<div class="ds-input-group">
+				<label class="ds-label" for="cu-name">Username</label>
+				<input type="text" id="cu-name" name="name" class="ds-input" required autocomplete="username"/>
+			</div>
+			<div class="ds-input-group">
+				<label class="ds-label" for="cu-role">Role</label>
+				<select id="cu-role" name="role" class="ds-input" required>
+					<option value="view">view</option>
+					<option value="edit">edit</option>
+					<option value="admin">admin</option>
+				</select>
+			</div>
+			<div class="ds-input-group">
+				<label class="ds-label" for="cu-password">Password</label>
+				<input type="password" id="cu-password" name="password" class="ds-input" required autocomplete="new-password"/>
+			</div>
+			<div class="ds-modal-footer">
+				<button type="button" class="ds-btn ds-btn--secondary" data-modal-close>Cancel</button>
+				<button type="submit" class="ds-btn">Create</button>
+			</div>
+		</form>
+	</dialog>
+}
+
+// editUserModal renders a per-user edit modal.
+templ editUserModal(u UserRow) {
+	<dialog id={ "edit-user-" + u.Name } class="ds-modal">
+		<form method="post" action={ "/settings/users/" + u.Name } class="ds-modal-body">
+			<input type="hidden" name="_method" value="PUT"/>
+			<h2 class="ds-modal-title">Edit { u.Name }</h2>
+			<div class="ds-input-group">
+				<label class="ds-label" for={ "eu-role-" + u.Name }>Role</label>
+				<select id={ "eu-role-" + u.Name } name="role" class="ds-input" required>
+					<option value="view" selected?={ u.Role == "view" }>view</option>
+					<option value="edit" selected?={ u.Role == "edit" }>edit</option>
+					<option value="admin" selected?={ u.Role == "admin" }>admin</option>
+				</select>
+			</div>
+			<div class="ds-input-group">
+				<label class="ds-label" for={ "eu-password-" + u.Name }>New password (optional)</label>
+				<input type="password" id={ "eu-password-" + u.Name } name="password" class="ds-input" autocomplete="new-password"/>
+				<div class="ds-input-hint">Leave blank to keep the existing password.</div>
+			</div>
+			<div class="ds-modal-footer">
+				<button type="button" class="ds-btn ds-btn--secondary" data-modal-close>Cancel</button>
+				<button type="submit" class="ds-btn">Save</button>
+			</div>
+		</form>
+	</dialog>
+}
+
+// deleteUserForm renders an inline delete form (POST to /settings/users/<name>/delete).
+templ deleteUserForm(name string) {
+	<form method="post" action={ "/settings/users/" + name + "/delete" } style="display:inline;">
+		<button type="submit" class="ds-btn ds-btn--sm ds-btn--danger">Delete</button>
+	</form>
+}
+
+func userRoleBadgeClass(role string) string {
+	switch role {
+	case "admin":
+		return "negative"
+	case "edit":
+		return "positive"
+	case "view":
+		return "neutral"
+	default:
+		return "neutral"
+	}
+}

@@ -6,6 +6,8 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+
+	"github.com/rezuscloud/rezuscloud/internal/state"
 )
 
 // contextKey is the key type for auth values in request context.
@@ -36,7 +38,29 @@ func RoleFromContext(ctx context.Context) string {
 }
 
 // Authenticate validates the Bearer token and adds user info to context.
+//
+// Two token forms are accepted:
+//   - JWT signed by this manager (preferred path; contains username + role)
+//   - Long-lived API token (rez_<...>) — verified by SHA-256 lookup against
+//     the store, with the user's current role resolved on each request
+//
+type APITokenVerifier interface {
+	VerifyAPIToken(plaintext string) (*state.User, bool)
+}
+
+// Authenticate validates the Bearer token and adds user info to context.
 func Authenticate(jwtManager *JWTManager, next http.Handler) http.Handler {
+	return authenticateWith(jwtManager, nil, next)
+}
+
+// AuthenticateWithTokens returns an Authenticate middleware that also accepts
+// API tokens via the supplied verifier (typically *state.Store wrapped in an
+// adapter implementing VerifyAPIToken).
+func AuthenticateWithTokens(jwtManager *JWTManager, verifier APITokenVerifier, next http.Handler) http.Handler {
+	return authenticateWith(jwtManager, verifier, next)
+}
+
+func authenticateWith(jwtManager *JWTManager, verifier APITokenVerifier, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		token := extractBearerToken(r)
 		if token == "" {
@@ -44,19 +68,35 @@ func Authenticate(jwtManager *JWTManager, next http.Handler) http.Handler {
 			return
 		}
 
-		claims, err := jwtManager.ValidateToken(token)
-		if err != nil {
-			if errors.Is(err, ErrExpiredToken) {
-				writeAuthError(w, "token expired", http.StatusUnauthorized)
+		// JWT path first (signed tokens never start with rez_).
+		if !strings.HasPrefix(token, "rez_") {
+			claims, err := jwtManager.ValidateToken(token)
+			if err != nil {
+				if errors.Is(err, ErrExpiredToken) {
+					writeAuthError(w, "token expired", http.StatusUnauthorized)
+					return
+				}
+				writeAuthError(w, "invalid token", http.StatusUnauthorized)
 				return
 			}
-			writeAuthError(w, "invalid token", http.StatusUnauthorized)
+			ctx := context.WithValue(r.Context(), userKey, claims.Username)
+			ctx = context.WithValue(ctx, roleKey, claims.Role)
+			next.ServeHTTP(w, r.WithContext(ctx))
 			return
 		}
 
-		ctx := context.WithValue(r.Context(), userKey, claims.Username)
-		ctx = context.WithValue(ctx, roleKey, claims.Role)
-
+		// API token path.
+		if verifier == nil {
+			writeAuthError(w, "api tokens not enabled", http.StatusUnauthorized)
+			return
+		}
+		user, ok := verifier.VerifyAPIToken(token)
+		if !ok || user == nil {
+			writeAuthError(w, "invalid token", http.StatusUnauthorized)
+			return
+		}
+		ctx := context.WithValue(r.Context(), userKey, user.Metadata.Name)
+		ctx = context.WithValue(ctx, roleKey, user.Spec.Role)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
