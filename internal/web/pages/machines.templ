@@ -1,0 +1,307 @@
+package pages
+
+import "fmt"
+
+// MachinesListData drives the /machines fleet list page.
+type MachinesListData struct {
+	Machines []MachineFleetRow
+	// Filters currently in effect (so the form reflects URL state).
+	FilterCluster   string
+	FilterStage     string
+	FilterConnected bool
+	// ClusterNames is the list of clusters for the filter dropdown.
+	ClusterNames []string
+	// Stages is the list of known machine stages for the filter dropdown.
+	Stages []string
+	// LiveStream indicates /events/stream is available.
+	LiveStream bool
+}
+
+// MachineFleetRow is one row in the fleet table.
+type MachineFleetRow struct {
+	ID         string
+	Cluster    string
+	Role       string
+	Stage      string
+	Connected  bool
+	NodeGroup  string
+	LastSeen   string // human-readable, e.g. "2 minutes ago"
+}
+
+// MachinesList renders /machines.
+templ MachinesList(data MachinesListData) {
+	<div class="ds-page-header-row">
+		<h1 class="ds-page-title">Machines</h1>
+		<a href="/machines/jointokens" class="ds-btn ds-btn--secondary">Join Tokens</a>
+	</div>
+
+	@machinesFilters(data)
+
+	if len(data.Machines) == 0 {
+		<div class="ds-empty">
+			<p>No machines registered yet.</p>
+			<p class="ds-empty-hint">
+				Create a join token, then boot a Talos machine with the
+				<code>siderolink.api</code> kernel arg pointing here.
+			</p>
+		</div>
+	} else {
+		<div class="ds-table-wrapper">
+			<table class="ds-table">
+				<thead>
+					<tr>
+						<th class="ds-table-th">ID</th>
+						<th class="ds-table-th">Cluster</th>
+						<th class="ds-table-th">Role</th>
+						<th class="ds-table-th">Stage</th>
+						<th class="ds-table-th">Connected</th>
+						<th class="ds-table-th">Node Group</th>
+						<th class="ds-table-th">Last Seen</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, m := range data.Machines {
+						<tr class="ds-table-row">
+							<td class="ds-table-td">
+								<a href={ templ.URL("/machines/" + m.ID) }>
+									<code class="ds-code-inline">{ shortID(m.ID) }</code>
+								</a>
+							</td>
+							<td class="ds-table-td">
+								if m.Cluster != "" {
+									<a href={ templ.URL("/clusters/" + m.Cluster) }>{ m.Cluster }</a>
+								} else {
+									<span class="ds-text-muted">unassigned</span>
+								}
+							</td>
+							<td class="ds-table-td">{ machineRoleLabel(m.Role) }</td>
+							<td class="ds-table-td">
+								<span class={ "ds-status-badge ds-status-badge--" + stageBadgeClass(m.Stage) }>{ m.Stage }</span>
+							</td>
+							<td class="ds-table-td">{ connectedMark(m.Connected) }</td>
+							<td class="ds-table-td">{ m.NodeGroup }</td>
+							<td class="ds-table-td ds-text-muted">{ m.LastSeen }</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	}
+}
+
+// machinesFilters renders the filter form.
+templ machinesFilters(data MachinesListData) {
+	<form method="get" action="/machines" class="ds-filters">
+		<div class="ds-filter-group">
+			<label class="ds-label" for="filter-cluster">Cluster</label>
+			<select id="filter-cluster" name="cluster" class="ds-input">
+				<option value="">All clusters</option>
+				for _, c := range data.ClusterNames {
+					<option value={ c } if c == data.FilterCluster { selected }>{ c }</option>
+				}
+			</select>
+		</div>
+		<div class="ds-filter-group">
+			<label class="ds-label" for="filter-stage">Stage</label>
+			<select id="filter-stage" name="stage" class="ds-input">
+				<option value="">All stages</option>
+				for _, s := range data.Stages {
+					<option value={ s } if s == data.FilterStage { selected }>{ s }</option>
+				}
+			</select>
+		</div>
+		<div class="ds-filter-group">
+			<label class="ds-label">
+				<input type="checkbox" name="connected" value="true" if data.FilterConnected { checked }/>
+				Connected only
+			</label>
+		</div>
+		<div class="ds-filter-group">
+			<button type="submit" class="ds-btn">Apply</button>
+			<a href="/machines" class="ds-btn ds-btn--secondary">Clear</a>
+		</div>
+	</form>
+}
+
+// shortID returns the first 8 chars of a machine UUID for compact display.
+func shortID(id string) string {
+	if len(id) <= 8 {
+		return id
+	}
+	return id[:8]
+}
+
+// machineRoleLabel formats a machine role for display.
+func machineRoleLabel(role string) string {
+	if role == "" {
+		return "—"
+	}
+	return role
+}
+
+// connectedMark returns a checkmark or dash for the connected column.
+func connectedMark(connected bool) string {
+	if connected {
+		return "✓"
+	}
+	return "—"
+}
+
+// MachineDetailData drives /machines/{id}.
+type MachineDetailData struct {
+	ID         string
+	Cluster    string
+	Role       string
+	Stage      string
+	Connected  bool
+	NodeGroup  string
+	LastSeen   string
+	Talos      string
+	Kubernetes string
+	Schematic  string
+	Hardware   *HardwareView
+	Network    *NetworkView
+	CanMutate  bool
+}
+
+type HardwareView struct {
+	Arch      string
+	CPU       string
+	MemoryMB  int
+	DiskCount int
+	DiskTotal int64
+}
+
+type NetworkView struct {
+	Hostname  string
+	Addresses []string
+}
+
+// MachineDetail renders /machines/{id}.
+templ MachineDetail(data MachineDetailData) {
+	<div class="ds-page-header-row">
+		<div>
+			<h1 class="ds-page-title"><code class="ds-code-inline">{ data.ID }</code></h1>
+			<div class="ds-page-subtitle">
+				if data.Cluster != "" {
+					<a href={ templ.URL("/clusters/" + data.Cluster) }>{ data.Cluster }</a>
+				} else {
+					<span class="ds-text-muted">unassigned</span>
+				}
+				<span class="ds-text-muted">·</span>
+				<span class={ "ds-status-badge ds-status-badge--" + roleBadgeClass(data.Role) }>{ machineRoleLabel(data.Role) }</span>
+				<span class="ds-text-muted">·</span>
+				<span class={ "ds-status-badge ds-status-badge--" + stageBadgeClass(data.Stage) }>{ data.Stage }</span>
+				if data.Connected {
+					<span class="ds-status-badge ds-status-badge--positive">connected</span>
+				}
+			</div>
+		</div>
+		<div class="ds-header-actions">
+			if data.CanMutate {
+				<button type="button" class="ds-btn ds-btn--secondary" data-modal-open="restart-machine">Restart</button>
+				<button type="button" class="ds-btn ds-btn--secondary" data-modal-open="shutdown-machine">Shutdown</button>
+			}
+			<a href="/machines" class="ds-btn ds-btn--secondary">Back</a>
+		</div>
+	</div>
+
+	<div class="ds-grid ds-grid-2">
+		<div class="ds-card">
+			<h2 class="ds-card-title">Status</h2>
+			<dl class="ds-def-list">
+				<dt>Stage</dt>
+				<dd>{ data.Stage }</dd>
+				<dt>Connected</dt>
+				<dd>{ connectedMark(data.Connected) }</dd>
+				<dt>Node Group</dt>
+				<dd>{ data.NodeGroup }</dd>
+				<dt>Last Seen</dt>
+				<dd>{ data.LastSeen }</dd>
+			</dl>
+		</div>
+		<div class="ds-card">
+			<h2 class="ds-card-title">Versions</h2>
+			<dl class="ds-def-list">
+				<dt>Talos</dt>
+				<dd>{ data.Talos }</dd>
+				<dt>Kubernetes</dt>
+				<dd>{ data.Kubernetes }</dd>
+				if data.Schematic != "" {
+					<dt>Schematic</dt>
+					<dd><code class="ds-code-inline">{ data.Schematic }</code></dd>
+				}
+			</dl>
+		</div>
+	</div>
+
+	if data.Hardware != nil {
+		<div class="ds-card">
+			<h2 class="ds-card-title">Hardware</h2>
+			<dl class="ds-def-list">
+				<dt>Architecture</dt>
+				<dd>{ data.Hardware.Arch }</dd>
+				<dt>CPU</dt>
+				<dd>{ data.Hardware.CPU }</dd>
+				<dt>Memory</dt>
+				<dd>{ fmt.Sprintf("%d MB", data.Hardware.MemoryMB) }</dd>
+				<dt>Disks</dt>
+				<dd>{ fmt.Sprintf("%d disks, %d bytes total", data.Hardware.DiskCount, data.Hardware.DiskTotal) }</dd>
+			</dl>
+		</div>
+	}
+
+	if data.Network != nil {
+		<div class="ds-card">
+			<h2 class="ds-card-title">Network</h2>
+			<dl class="ds-def-list">
+				<dt>Hostname</dt>
+				<dd>{ data.Network.Hostname }</dd>
+				<dt>Addresses</dt>
+				<dd>
+					for i, addr := range data.Network.Addresses {
+						if i > 0 {
+							<br/>
+						}
+						<code class="ds-code-inline">{ addr }</code>
+					}
+				</dd>
+			</dl>
+		</div>
+	}
+
+	if data.CanMutate {
+		@machineActionConfirm("restart-machine", "Restart Machine",
+			"Are you sure you want to restart this machine? The machine will reboot gracefully.",
+			"/machines/"+data.ID+"/restart", "Restart")
+		@machineActionConfirm("shutdown-machine", "Shutdown Machine",
+			"Are you sure you want to shut down this machine? The machine will power off.",
+			"/machines/"+data.ID+"/shutdown", "Shutdown")
+	}
+}
+
+// machineActionConfirm renders a confirmation dialog for a machine action.
+templ machineActionConfirm(id, title, message, actionURL, confirmLabel string) {
+	<dialog id={ id } class="ds-modal ds-modal--sm">
+		<form method="post" action={ templ.URL(actionURL) } class="ds-modal-body">
+			<h2 class="ds-modal-title">{ title }</h2>
+			<p>{ message }</p>
+			<div class="ds-modal-footer">
+				<button type="button" class="ds-btn ds-btn--secondary" data-modal-close>Cancel</button>
+				<button type="submit" class="ds-btn">{ confirmLabel }</button>
+			</div>
+		</form>
+	</dialog>
+}
+
+// roleBadgeClass maps a machine role to a status badge variant.
+func roleBadgeClass(role string) string {
+	switch role {
+	case "controlplane":
+		return "neutral"
+	case "worker":
+		return "positive"
+	default:
+		return "neutral"
+	}
+}

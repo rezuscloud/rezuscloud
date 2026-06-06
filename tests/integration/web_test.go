@@ -726,3 +726,208 @@ func TestW3_NodeGroupScale(t *testing.T) {
 		t.Errorf("count = %d, want 5", spec.Count)
 	}
 }
+
+// --- W4 integration tests ---
+
+func TestW4_MachinesFleet_Empty(t *testing.T) {
+	s := newWebUIServer(t)
+	s.createUser(t, "admin", "secret", auth.RoleAdmin)
+	cookie := s.login(t, "admin", "secret")
+
+	status, body, _ := s.getWithCookieHeaders(t, "/machines", cookie)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d", status)
+	}
+	if !strings.Contains(body, "No machines registered") {
+		t.Error("empty state should render")
+	}
+}
+
+func TestW4_MachinesFleet_WithMachines(t *testing.T) {
+	s := newWebUIServer(t)
+	s.createUser(t, "admin", "secret", auth.RoleAdmin)
+	cookie := s.login(t, "admin", "secret")
+
+	// Create tenant + 2 machines.
+	_, err := s.store.CreateTenant("alpha", state.TenantSpec{KubernetesVersion: "1.35.0"}, nil, nil)
+	if err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+	_, _ = s.store.CreateMachine("11111111-aaaa-bbbb-cccc-dddddddddddd", state.MachineSpec{Connected: true},
+		map[string]string{"rezuscloud.io/tenant": "alpha", "rezuscloud.io/role": "controlplane"}, nil)
+	_, _ = s.store.UpdateMachineStatus("11111111-aaaa-bbbb-cccc-dddddddddddd", state.MachineStatus{
+		Stage: state.StageReady,
+		Role:  "controlplane",
+	})
+	_, _ = s.store.CreateMachine("22222222-aaaa-bbbb-cccc-dddddddddddd", state.MachineSpec{Connected: false},
+		map[string]string{"rezuscloud.io/tenant": "alpha", "rezuscloud.io/role": "worker"}, nil)
+	_, _ = s.store.UpdateMachineStatus("22222222-aaaa-bbbb-cccc-dddddddddddd", state.MachineStatus{
+		Stage: state.StageInitializing,
+		Role:  "worker",
+	})
+
+	status, body, _ := s.getWithCookieHeaders(t, "/machines", cookie)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d", status)
+	}
+	if i := strings.Index(body, "</style>"); i >= 0 {
+		body = body[i+len("</style>"):]
+	}
+	if !strings.Contains(body, "11111111") {
+		t.Error("machine 11111111 missing")
+	}
+	if !strings.Contains(body, "22222222") {
+		t.Error("machine 22222222 missing")
+	}
+}
+
+func TestW4_MachineDetail(t *testing.T) {
+	s := newWebUIServer(t)
+	s.createUser(t, "admin", "secret", auth.RoleAdmin)
+	cookie := s.login(t, "admin", "secret")
+
+	_, _ = s.store.CreateMachine("detail-machine", state.MachineSpec{Connected: true},
+		map[string]string{"rezuscloud.io/tenant": "alpha"}, nil)
+	_, _ = s.store.UpdateMachineStatus("detail-machine", state.MachineStatus{
+		Stage:        state.StageReady,
+		Role:         "worker",
+		TalosVersion: "1.12.0",
+		K8sVersion:   "1.35.0",
+	})
+
+	status, body, _ := s.getWithCookieHeaders(t, "/machines/detail-machine", cookie)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d", status)
+	}
+	if !strings.Contains(body, "detail-machine") {
+		t.Error("ID missing")
+	}
+	if !strings.Contains(body, "1.12.0") {
+		t.Error("talos version missing")
+	}
+}
+
+func TestW4_JoinTokenCreate_FullFlow(t *testing.T) {
+	s := newWebUIServer(t)
+	s.createUser(t, "admin", "secret", auth.RoleAdmin)
+	cookie := s.login(t, "admin", "secret")
+
+	// Create tenant.
+	_, _ = s.store.CreateTenant("gamma", state.TenantSpec{KubernetesVersion: "1.35.0"}, nil, nil)
+
+	// GET — empty state.
+	status, body, _ := s.getWithCookieHeaders(t, "/machines/jointokens", cookie)
+	if status != http.StatusOK {
+		t.Fatalf("GET list status = %d", status)
+	}
+	if !strings.Contains(body, "No join tokens") {
+		t.Error("empty state should render")
+	}
+
+	// POST create.
+	form := "cluster=gamma&nodegroup=workers&ttl=24h"
+	status, _, hdr := s.postFormWithCookie(t, "/machines/jointokens", form, cookie)
+	if status != http.StatusSeeOther {
+		t.Fatalf("POST status = %d, want 303", status)
+	}
+	loc := hdr.Get("Location")
+	if !strings.HasPrefix(loc, "/machines/jointokens?new_token=") {
+		t.Fatalf("Location = %q", loc)
+	}
+
+	// GET with new_token — show-once display.
+	status, body, _ = s.getWithCookieHeaders(t, loc, cookie)
+	if status != http.StatusOK {
+		t.Fatalf("GET with token status = %d", status)
+	}
+	if !strings.Contains(body, "Token created") {
+		t.Error("Token created banner missing")
+	}
+	if !strings.Contains(body, "siderolink.api") {
+		t.Error("kernel args preview missing")
+	}
+}
+
+func TestW4_PendingMachines(t *testing.T) {
+	s := newWebUIServer(t)
+	s.createUser(t, "admin", "secret", auth.RoleAdmin)
+	cookie := s.login(t, "admin", "secret")
+
+	// ready + initializing + installing.
+	_, _ = s.store.CreateMachine("m-ready", state.MachineSpec{}, map[string]string{}, nil)
+	_, _ = s.store.UpdateMachineStatus("m-ready", state.MachineStatus{Stage: state.StageReady})
+	_, _ = s.store.CreateMachine("m-init", state.MachineSpec{}, map[string]string{}, nil)
+	_, _ = s.store.UpdateMachineStatus("m-init", state.MachineStatus{Stage: state.StageInitializing})
+	_, _ = s.store.CreateMachine("m-install", state.MachineSpec{}, map[string]string{}, nil)
+	_, _ = s.store.UpdateMachineStatus("m-install", state.MachineStatus{Stage: state.StageInstalling})
+
+	status, body, _ := s.getWithCookieHeaders(t, "/machines/pending", cookie)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d", status)
+	}
+	if i := strings.Index(body, "</style>"); i >= 0 {
+		body = body[i+len("</style>"):]
+	}
+	if strings.Contains(body, "m-ready") {
+		t.Error("ready machine should not appear in pending")
+	}
+	if !strings.Contains(body, "m-init") {
+		t.Error("initializing machine missing")
+	}
+	if !strings.Contains(body, "m-install") {
+		t.Error("installing machine missing")
+	}
+}
+
+func TestW4_MachineActions_Admin(t *testing.T) {
+	s := newWebUIServer(t)
+	s.createUser(t, "admin", "secret", auth.RoleAdmin)
+	cookie := s.login(t, "admin", "secret")
+
+	_, _ = s.store.CreateMachine("action-target", state.MachineSpec{}, map[string]string{}, nil)
+	_, _ = s.store.UpdateMachineStatus("action-target", state.MachineStatus{Stage: state.StageReady})
+
+	// Restart.
+	status, _, hdr := s.postFormWithCookie(t, "/machines/action-target/restart", "", cookie)
+	if status != http.StatusSeeOther {
+		t.Errorf("restart status = %d, want 303", status)
+	}
+	if !strings.Contains(hdr.Get("Location"), "/machines/action-target") {
+		t.Errorf("restart Location = %q", hdr.Get("Location"))
+	}
+
+	// Shutdown.
+	status, _, hdr = s.postFormWithCookie(t, "/machines/action-target/shutdown", "", cookie)
+	if status != http.StatusSeeOther {
+		t.Errorf("shutdown status = %d, want 303", status)
+	}
+	if !strings.Contains(hdr.Get("Location"), "/machines/action-target") {
+		t.Errorf("shutdown Location = %q", hdr.Get("Location"))
+	}
+}
+
+func TestW4_MachineDelete_Admin(t *testing.T) {
+	s := newWebUIServer(t)
+	s.createUser(t, "admin", "secret", auth.RoleAdmin)
+	cookie := s.login(t, "admin", "secret")
+
+	_, _ = s.store.CreateMachine("to-delete", state.MachineSpec{}, map[string]string{}, nil)
+	_, _ = s.store.UpdateMachineStatus("to-delete", state.MachineStatus{Stage: state.StageReady})
+
+	status, _, hdr := s.deleteWithCookie(t, "/machines/to-delete", cookie)
+	if status != http.StatusSeeOther {
+		t.Fatalf("delete status = %d, want 303", status)
+	}
+	if !strings.Contains(hdr.Get("Location"), "/machines") {
+		t.Errorf("Location = %q", hdr.Get("Location"))
+	}
+
+	// K8s-style: machine still exists, just marked for deletion.
+	m, _ := s.store.GetMachine("to-delete")
+	if m == nil {
+		t.Fatal("machine should still exist (graceful deletion)")
+	}
+	if m.Metadata.DeletionTimestamp == nil {
+		t.Error("expected deletionTimestamp to be set")
+	}
+}

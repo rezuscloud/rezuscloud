@@ -1067,6 +1067,59 @@ func (s *Store) ListProviders() ([]*Provider, error) {
 
 // --- JoinToken-Specific Operations ---
 
+// ListJoinTokens returns all join tokens. Use ListOption label selectors
+// to filter by tenant or node group.
+func (s *Store) ListJoinTokens(opts ...ListOption) ([]*JoinToken, int, error) {
+	o := newListOptions(opts...)
+	mds, specs, statuses, total, err := s.ListResources("jointoken", o)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	items := make([]*JoinToken, 0, len(mds))
+	for i := range mds {
+		var spec JoinTokenSpec
+		var status JoinTokenStatus
+		_ = json.Unmarshal(specs[i], &spec)
+		_ = json.Unmarshal(statuses[i], &status)
+		items = append(items, &JoinToken{
+			Metadata: mds[i],
+			Spec:     spec,
+			Status:   status,
+		})
+	}
+
+	return items, total, nil
+}
+
+// ListJoinTokensByTenant returns join tokens for a specific tenant.
+func (s *Store) ListJoinTokensByTenant(tenantName string, opts ...ListOption) ([]*JoinToken, int, error) {
+	opts = append(opts, WithLabelSelector("rezuscloud.io/tenant="+tenantName))
+	return s.ListJoinTokens(opts...)
+}
+
+// GetJoinToken returns a join token by its value. Returns nil if not found.
+// Unlike LookupJoinToken, this does not auto-remove expired tokens.
+func (s *Store) GetJoinToken(token string) (*JoinToken, error) {
+	var spec JoinTokenSpec
+	var status JoinTokenStatus
+
+	md, err := s.GetResource("jointoken", token, &spec, &status)
+	if err == ErrNotFound {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return &JoinToken{Metadata: md, Spec: spec, Status: status}, nil
+}
+
+// DeleteJoinToken removes a join token from the store.
+func (s *Store) DeleteJoinToken(token string) error {
+	return s.RemoveResource("jointoken", token)
+}
+
 // CreateJoinToken creates a join token.
 func (s *Store) CreateJoinToken(token string, spec JoinTokenSpec, tenantName, nodeGroup string) (*JoinToken, error) {
 	labels := map[string]string{
