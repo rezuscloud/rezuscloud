@@ -4,12 +4,15 @@
 package web
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/rezuscloud/rezuscloud/internal/auth"
 	"github.com/rezuscloud/rezuscloud/internal/credentials"
@@ -53,6 +56,17 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /clusters/{name}/nodegroups/{ng}/scale", h.AuthRequired(h.NodeGroupScale))
 	mux.HandleFunc("GET /clusters/{name}/kubeconfig", h.AuthRequired(h.ClusterKubeconfig))
 	mux.HandleFunc("GET /clusters/{name}/talosconfig", h.AuthRequired(h.ClusterTalosconfig))
+
+	// Machines (W4).
+	mux.HandleFunc("GET /machines", h.AuthRequired(h.MachinesList))
+	mux.HandleFunc("GET /machines/jointokens", h.AuthRequired(h.JoinTokensList))
+	mux.HandleFunc("POST /machines/jointokens", h.AuthRequired(h.JoinTokenCreate))
+	mux.HandleFunc("GET /machines/pending", h.AuthRequired(h.MachinesPending))
+	mux.HandleFunc("GET /machines/{id}", h.AuthRequired(h.MachineDetail))
+	mux.HandleFunc("POST /machines/{id}/restart", h.AuthRequired(h.MachineRestart))
+	mux.HandleFunc("POST /machines/{id}/shutdown", h.AuthRequired(h.MachineShutdown))
+	mux.HandleFunc("POST /machines/{id}/approve", h.AuthRequired(h.MachineApprove))
+	mux.HandleFunc("DELETE /machines/{id}", h.AuthRequired(h.MachineDelete))
 
 	// Legacy /tenants aliases (kept for backward compatibility; /clusters is the
 	// user-facing name per W2). New code should use /clusters/*.
@@ -743,4 +757,478 @@ func (h *Handler) credentialDownload(w http.ResponseWriter, r *http.Request, kin
 	w.Header().Set("Content-Type", "application/yaml")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", name+"-"+kind+".yaml"))
 	_, _ = w.Write(data)
+}
+
+// --- W4: Machines & Join Tokens ---
+
+// MachinesList handles GET /machines.
+func (h *Handler) MachinesList(w http.ResponseWriter, r *http.Request) {
+	cluster := strings.TrimSpace(r.URL.Query().Get("cluster"))
+	stage := strings.TrimSpace(r.URL.Query().Get("stage"))
+	connectedOnly := r.URL.Query().Get("connected") == "true"
+
+	machines, _, err := h.store.ListMachines()
+	if err != nil {
+		http.Error(w, "Failed to list machines: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	rows := make([]pages.MachineFleetRow, 0, len(machines))
+	for _, m := range machines {
+		if cluster != "" && m.Metadata.Labels["rezuscloud.io/tenant"] != cluster {
+			continue
+		}
+		if stage != "" && string(m.Status.Stage) != stage {
+			continue
+		}
+		if connectedOnly && !m.Spec.Connected {
+			continue
+		}
+		rows = append(rows, machineFleetRow(m))
+	}
+
+	h.render(w, r, layout.BaseProps{
+		Title: "Machines",
+		Page:  "machines",
+		Content: pages.MachinesList(pages.MachinesListData{
+			Machines:        rows,
+			FilterCluster:   cluster,
+			FilterStage:     stage,
+			FilterConnected: connectedOnly,
+			ClusterNames:    h.clusterNames(),
+			Stages:          machineStages,
+			LiveStream:      h.bus != nil,
+		}),
+		Breadcrumb: []layout.BreadcrumbItem{
+			{Name: "Machines", Current: true},
+		},
+	})
+}
+
+// MachinesPending handles GET /machines/pending.
+// Shows machines that are not yet ready (initializing, installing, configuring).
+func (h *Handler) MachinesPending(w http.ResponseWriter, r *http.Request) {
+	machines, _, err := h.store.ListMachines()
+	if err != nil {
+		http.Error(w, "Failed to list machines: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	pendingStages := map[state.MachineStage]bool{
+		state.StageInitializing: true,
+		state.StageInstalling:   true,
+		state.StageConfiguring:  true,
+	}
+
+	rows := make([]pages.MachineFleetRow, 0)
+	for _, m := range machines {
+		if pendingStages[m.Status.Stage] {
+			rows = append(rows, machineFleetRow(m))
+		}
+	}
+
+	h.render(w, r, layout.BaseProps{
+		Title: "Pending Machines",
+		Page:  "machines",
+		Content: pages.MachinesList(pages.MachinesListData{
+			Machines:     rows,
+			ClusterNames: h.clusterNames(),
+			Stages:       machineStages,
+			LiveStream:   h.bus != nil,
+		}),
+		Breadcrumb: []layout.BreadcrumbItem{
+			{Name: "Machines", URL: "/machines"},
+			{Name: "Pending", Current: true},
+		},
+	})
+}
+
+// MachineDetail handles GET /machines/{id}.
+func (h *Handler) MachineDetail(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if id == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	m, err := h.store.GetMachine(id)
+	if err != nil {
+		http.Error(w, "Failed to load machine: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if m == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	data := pages.MachineDetailData{
+		ID:         m.Metadata.Name,
+		Cluster:    m.Metadata.Labels["rezuscloud.io/tenant"],
+		Role:       m.Status.Role,
+		Stage:      string(m.Status.Stage),
+		Connected:  m.Spec.Connected,
+		NodeGroup:  m.Metadata.Labels["rezuscloud.io/node-group"],
+		LastSeen:   formatAge(m.Metadata.UpdatedAt),
+		Talos:      m.Status.TalosVersion,
+		Kubernetes: m.Status.K8sVersion,
+		Schematic:  schematicID(m.Status.Schematic),
+		CanMutate:  h.canMutate(r),
+	}
+	if m.Status.Hardware != nil {
+		data.Hardware = &pages.HardwareView{
+			Arch:      m.Status.Hardware.Arch,
+			CPU:       hardwareCPU(m.Status.Hardware),
+			MemoryMB:  hardwareMemoryMB(m.Status.Hardware),
+			DiskCount: len(m.Status.Hardware.BlockDevices),
+			DiskTotal: hardwareDiskTotal(m.Status.Hardware),
+		}
+	}
+	if m.Status.Network != nil {
+		data.Network = &pages.NetworkView{
+			Hostname:  m.Status.Network.Hostname,
+			Addresses: m.Status.Network.Addresses,
+		}
+	}
+
+	h.render(w, r, layout.BaseProps{
+		Title:   "Machine " + shortDisplayID(id),
+		Page:    "machine",
+		Content: pages.MachineDetail(data),
+		Breadcrumb: []layout.BreadcrumbItem{
+			{Name: "Machines", URL: "/machines"},
+			{Name: shortDisplayID(id), Current: true},
+		},
+	})
+}
+
+// MachineRestart handles POST /machines/{id}/restart.
+// Stub — real implementation will come in W7+ when machine actions are wired.
+func (h *Handler) MachineRestart(w http.ResponseWriter, r *http.Request) {
+	if !h.canMutate(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	id := r.PathValue("id")
+	if id == "" {
+		http.NotFound(w, r)
+		return
+	}
+	if _, err := h.store.GetMachine(id); err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	} else if m, _ := h.store.GetMachine(id); m == nil {
+		http.NotFound(w, r)
+		return
+	}
+	// TODO(W7): issue restart via machine link.
+	http.Redirect(w, r, "/machines/"+id+"?toast=restart+queued&toast-type=success", http.StatusSeeOther)
+}
+
+// MachineShutdown handles POST /machines/{id}/shutdown.
+func (h *Handler) MachineShutdown(w http.ResponseWriter, r *http.Request) {
+	if !h.canMutate(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	id := r.PathValue("id")
+	if id == "" {
+		http.NotFound(w, r)
+		return
+	}
+	if m, _ := h.store.GetMachine(id); m == nil {
+		http.NotFound(w, r)
+		return
+	}
+	// TODO(W7): issue shutdown via machine link.
+	http.Redirect(w, r, "/machines/"+id+"?toast=shutdown+queued&toast-type=success", http.StatusSeeOther)
+}
+
+// MachineApprove handles POST /machines/{id}/approve.
+// For now, approving a machine is a no-op (machines auto-join via token).
+func (h *Handler) MachineApprove(w http.ResponseWriter, r *http.Request) {
+	if !h.canMutate(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	id := r.PathValue("id")
+	if m, _ := h.store.GetMachine(id); m == nil {
+		http.NotFound(w, r)
+		return
+	}
+	http.Redirect(w, r, "/machines/"+id+"?toast=approved&toast-type=success", http.StatusSeeOther)
+}
+
+// MachineDelete handles DELETE /machines/{id}.
+func (h *Handler) MachineDelete(w http.ResponseWriter, r *http.Request) {
+	if !h.canMutate(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	id := r.PathValue("id")
+	if id == "" {
+		http.NotFound(w, r)
+		return
+	}
+	if m, _ := h.store.GetMachine(id); m == nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := h.store.DeleteMachine(id); err != nil {
+		http.Error(w, "Failed to delete machine: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/machines?toast=machine+removed&toast-type=success", http.StatusSeeOther)
+}
+
+// JoinTokensList handles GET /machines/jointokens.
+func (h *Handler) JoinTokensList(w http.ResponseWriter, r *http.Request) {
+	tokens, _, err := h.store.ListJoinTokens()
+	if err != nil {
+		http.Error(w, "Failed to list tokens: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	rows := make([]pages.JoinTokenRow, 0, len(tokens))
+	for _, jt := range tokens {
+		rows = append(rows, joinTokenRow(jt))
+	}
+
+	data := pages.JoinTokensListData{
+		Tokens:       rows,
+		ClusterNames: h.clusterNames(),
+		CanMutate:    h.canMutate(r),
+	}
+
+	// Flash a previously-created token (via query param — set by JoinTokenCreate on redirect).
+	if tok := r.URL.Query().Get("new_token"); tok != "" {
+		jt, _ := h.store.GetJoinToken(tok)
+		if jt != nil {
+			data.NewToken = tok
+			data.NewTokenExp = jt.Spec.ExpiresAt
+			data.NewTokenCluster = jt.Metadata.Labels["rezuscloud.io/tenant"]
+			data.NewTokenArgs = kernelArgsPreview(tok, h.machineLinkEndpoint())
+		}
+	}
+
+	h.render(w, r, layout.BaseProps{
+		Title:   "Join Tokens",
+		Page:    "jointokens",
+		Content: pages.JoinTokensList(data),
+		Breadcrumb: []layout.BreadcrumbItem{
+			{Name: "Machines", URL: "/machines"},
+			{Name: "Join Tokens", Current: true},
+		},
+	})
+}
+
+// JoinTokenCreate handles POST /machines/jointokens.
+func (h *Handler) JoinTokenCreate(w http.ResponseWriter, r *http.Request) {
+	if !h.canMutate(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	cluster := strings.TrimSpace(r.FormValue("cluster"))
+	nodeGroup := strings.TrimSpace(r.FormValue("nodegroup"))
+	ttlStr := strings.TrimSpace(r.FormValue("ttl"))
+	singleUse := r.FormValue("single_use") == "true"
+
+	if cluster == "" || nodeGroup == "" {
+		http.Error(w, "cluster and nodegroup are required", http.StatusBadRequest)
+		return
+	}
+
+	// Verify cluster exists.
+	t, _ := h.store.GetTenant(cluster)
+	if t == nil {
+		http.Error(w, "cluster not found", http.StatusNotFound)
+		return
+	}
+
+	// Parse TTL.
+	ttl := 24 * time.Hour
+	if ttlStr != "" && ttlStr != "0" {
+		if parsed, err := time.ParseDuration(ttlStr); err == nil {
+			ttl = parsed
+		}
+	}
+
+	// Generate token + spec.
+	token, err := generateJoinTokenValue()
+	if err != nil {
+		http.Error(w, "token generation failed", http.StatusInternalServerError)
+		return
+	}
+
+	spec := state.JoinTokenSpec{
+		SingleUse: singleUse,
+		NodeGroup: nodeGroup,
+	}
+	if ttl > 0 {
+		spec.ExpiresAt = time.Now().UTC().Add(ttl)
+	}
+
+	if _, err := h.store.CreateJoinToken(token, spec, cluster, nodeGroup); err != nil {
+		http.Error(w, "failed to create token: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Redirect to list with the new token highlighted.
+	http.Redirect(w, r, "/machines/jointokens?new_token="+url.QueryEscape(token), http.StatusSeeOther)
+}
+
+// clusterNames returns the list of cluster names for filter dropdowns.
+func (h *Handler) clusterNames() []string {
+	tenants, _, _ := h.store.ListTenants()
+	out := make([]string, 0, len(tenants))
+	for _, t := range tenants {
+		out = append(out, t.Metadata.Name)
+	}
+	return out
+}
+
+// machineLinkEndpoint returns the configured endpoint string for kernel args preview.
+// TODO: make this configurable. For now, returns a placeholder.
+func (h *Handler) machineLinkEndpoint() string {
+	return "machinelink.rezus.cloud:50001"
+}
+
+// machineFleetRow converts a Machine to a fleet-table row.
+func machineFleetRow(m *state.Machine) pages.MachineFleetRow {
+	return pages.MachineFleetRow{
+		ID:        m.Metadata.Name,
+		Cluster:   m.Metadata.Labels["rezuscloud.io/tenant"],
+		Role:      m.Status.Role,
+		Stage:     string(m.Status.Stage),
+		Connected: m.Spec.Connected,
+		NodeGroup: m.Metadata.Labels["rezuscloud.io/node-group"],
+		LastSeen:  formatAge(m.Metadata.UpdatedAt),
+	}
+}
+
+// joinTokenRow converts a JoinToken to a list-table row.
+func joinTokenRow(jt *state.JoinToken) pages.JoinTokenRow {
+	status := "active"
+	if jt.Status.Used {
+		status = "used"
+	} else if !jt.Spec.ExpiresAt.IsZero() && time.Now().UTC().After(jt.Spec.ExpiresAt) {
+		status = "expired"
+	}
+
+	expires := "never"
+	if !jt.Spec.ExpiresAt.IsZero() {
+		expires = jt.Spec.ExpiresAt.Format("2006-01-02 15:04 MST")
+	}
+
+	return pages.JoinTokenRow{
+		Token:     shortDisplayID(jt.Metadata.Name),
+		Cluster:   jt.Metadata.Labels["rezuscloud.io/tenant"],
+		NodeGroup: jt.Spec.NodeGroup,
+		Status:    status,
+		ExpiresAt: expires,
+		CreatedAt: jt.Metadata.CreatedAt.Format("2006-01-02 15:04 MST"),
+	}
+}
+
+// formatAge renders a human-readable "X ago" string from a timestamp.
+func formatAge(t time.Time) string {
+	if t.IsZero() {
+		return "—"
+	}
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return "just now"
+	case d < time.Hour:
+		return fmt.Sprintf("%d minutes ago", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("%d hours ago", int(d.Hours()))
+	default:
+		return fmt.Sprintf("%d days ago", int(d.Hours()/24))
+	}
+}
+
+// shortDisplayID returns the first 8 chars of a machine ID for display.
+func shortDisplayID(id string) string {
+	if len(id) <= 8 {
+		return id
+	}
+	return id[:8]
+}
+
+// schematicID safely extracts the schematic ID.
+func schematicID(s *state.SchematicInfo) string {
+	if s == nil {
+		return ""
+	}
+	return s.ID
+}
+
+// hardwareCPU renders a one-line description of the CPU.
+func hardwareCPU(h *state.HardwareInfo) string {
+	if len(h.Processors) == 0 {
+		return "—"
+	}
+	p := h.Processors[0]
+	if p.Description != "" {
+		return p.Description
+	}
+	if p.CoreCount > 0 {
+		return fmt.Sprintf("%d cores", p.CoreCount)
+	}
+	return "—"
+}
+
+// hardwareMemoryMB sums memory modules.
+func hardwareMemoryMB(h *state.HardwareInfo) int {
+	total := 0
+	for _, m := range h.MemoryModules {
+		total += m.SizeMB
+	}
+	return total
+}
+
+// hardwareDiskTotal sums block device sizes.
+func hardwareDiskTotal(h *state.HardwareInfo) int64 {
+	var total int64
+	for _, d := range h.BlockDevices {
+		total += d.Size
+	}
+	return total
+}
+
+// kernelArgsPreview renders the kernel args a machine should boot with.
+func kernelArgsPreview(token, endpoint string) string {
+	return fmt.Sprintf(
+		"siderolink.api=https://%s?jointoken=%s\n"+
+			"talos.platform=metal\n"+
+			"talos.config=.siderolink",
+		endpoint, token,
+	)
+}
+
+// generateJoinTokenValue returns a 32-byte hex token.
+func generateJoinTokenValue() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// machineStages is the list of known machine stages for the filter dropdown.
+var machineStages = []string{
+	string(state.StageInitializing),
+	string(state.StageInstalling),
+	string(state.StageConfiguring),
+	string(state.StageReady),
+	string(state.StageRestarting),
+	string(state.StageStopping),
+	string(state.StageOff),
+	string(state.StageUpdating),
+	string(state.StageRemoving),
 }

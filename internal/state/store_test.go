@@ -453,6 +453,119 @@ func TestJoinToken_Cleanup(t *testing.T) {
 	}
 }
 
+func TestListJoinTokens_Empty(t *testing.T) {
+	s := openTestStore(t)
+
+	items, total, err := s.ListJoinTokens()
+	if err != nil {
+		t.Fatalf("ListJoinTokens: %v", err)
+	}
+	if total != 0 || len(items) != 0 {
+		t.Errorf("expected empty list, got %d items (total=%d)", len(items), total)
+	}
+}
+
+func TestListJoinTokens_WithTokens(t *testing.T) {
+	s := openTestStore(t)
+
+	_, _ = s.CreateJoinToken("tok-a", JoinTokenSpec{
+		ExpiresAt: time.Now().UTC().Add(1 * time.Hour),
+		NodeGroup: "workers",
+	}, "tenant-a", "workers")
+	_, _ = s.CreateJoinToken("tok-b", JoinTokenSpec{
+		ExpiresAt: time.Now().UTC().Add(2 * time.Hour),
+		NodeGroup: "control",
+	}, "tenant-b", "control")
+
+	items, total, err := s.ListJoinTokens()
+	if err != nil {
+		t.Fatalf("ListJoinTokens: %v", err)
+	}
+	if total != 2 || len(items) != 2 {
+		t.Fatalf("expected 2 tokens, got %d items (total=%d)", len(items), total)
+	}
+
+	// Verify labels are preserved.
+	haveTenantA := false
+	haveTenantB := false
+	for _, jt := range items {
+		if jt.Metadata.Labels["rezuscloud.io/tenant"] == "tenant-a" {
+			haveTenantA = true
+		}
+		if jt.Metadata.Labels["rezuscloud.io/tenant"] == "tenant-b" {
+			haveTenantB = true
+		}
+	}
+	if !haveTenantA || !haveTenantB {
+		t.Errorf("labels not preserved; tenant-a=%v tenant-b=%v", haveTenantA, haveTenantB)
+	}
+}
+
+func TestListJoinTokensByTenant(t *testing.T) {
+	s := openTestStore(t)
+
+	_, _ = s.CreateJoinToken("tok-a", JoinTokenSpec{NodeGroup: "workers"}, "tenant-a", "workers")
+	_, _ = s.CreateJoinToken("tok-b", JoinTokenSpec{NodeGroup: "control"}, "tenant-b", "control")
+
+	items, total, err := s.ListJoinTokensByTenant("tenant-a")
+	if err != nil {
+		t.Fatalf("ListJoinTokensByTenant: %v", err)
+	}
+	if total != 1 || len(items) != 1 {
+		t.Fatalf("expected 1 token for tenant-a, got %d items (total=%d)", len(items), total)
+	}
+	if items[0].Spec.NodeGroup != "workers" {
+		t.Errorf("NodeGroup = %q, want workers", items[0].Spec.NodeGroup)
+	}
+}
+
+func TestGetJoinToken(t *testing.T) {
+	s := openTestStore(t)
+
+	_, _ = s.CreateJoinToken("mytoken", JoinTokenSpec{NodeGroup: "workers"}, "tenant-a", "workers")
+
+	// Existing.
+	jt, err := s.GetJoinToken("mytoken")
+	if err != nil {
+		t.Fatalf("GetJoinToken: %v", err)
+	}
+	if jt == nil {
+		t.Fatal("expected non-nil token")
+	}
+	if jt.Spec.NodeGroup != "workers" {
+		t.Errorf("NodeGroup = %q, want workers", jt.Spec.NodeGroup)
+	}
+
+	// Non-existent returns nil (not error).
+	missing, err := s.GetJoinToken("does-not-exist")
+	if err != nil {
+		t.Fatalf("GetJoinToken(missing): %v", err)
+	}
+	if missing != nil {
+		t.Error("expected nil for missing token")
+	}
+}
+
+func TestDeleteJoinToken(t *testing.T) {
+	s := openTestStore(t)
+
+	_, _ = s.CreateJoinToken("removable", JoinTokenSpec{NodeGroup: "workers"}, "tenant-a", "workers")
+
+	if err := s.DeleteJoinToken("removable"); err != nil {
+		t.Fatalf("DeleteJoinToken: %v", err)
+	}
+
+	jt, _ := s.GetJoinToken("removable")
+	if jt != nil {
+		t.Error("expected token to be removed")
+	}
+
+	// Deleting non-existent is also OK (idempotent).
+	if err := s.DeleteJoinToken("removable"); err != nil {
+		t.Errorf("second delete should be idempotent: %v", err)
+	}
+}
+
 // --- User Tests ---
 
 func TestUser_CRUD(t *testing.T) {
