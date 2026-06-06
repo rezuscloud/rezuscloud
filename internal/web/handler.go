@@ -2286,8 +2286,8 @@ func (h *Handler) APITokensPage(w http.ResponseWriter, r *http.Request) {
 
 	toast := h.popToast(r)
 	h.render(w, r, layout.BaseProps{
-		Title: "API Tokens",
-		Page:  "api-tokens",
+		Title:   "API Tokens",
+		Page:    "api-tokens",
 		Content: pages.APITokensPage(data),
 		Breadcrumb: []layout.BreadcrumbItem{
 			{Name: "Settings", URL: "/settings/api-tokens"},

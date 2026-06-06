@@ -293,7 +293,7 @@ func TestAuthenticateWithTokens_APIToken(t *testing.T) {
 
 func TestAuthenticateWithTokens_StillAcceptsJWT(t *testing.T) {
 	store, _ := setupAuthTest(t)
-	user:= createTestUser(t, store, "alice", RoleEdit, "pw123456")
+	user := createTestUser(t, store, "alice", RoleEdit, "pw123456")
 	jwtMgr := NewJWTManager("secret")
 
 	pair, err := jwtMgr.GenerateToken(user, DefaultTokenExpiry)

@@ -1276,7 +1276,7 @@ type APIToken struct {
 	ID        string     `json:"id"`
 	UserName  string     `json:"userName"`
 	Role      string     `json:"role"` // denormalized from user at lookup time
-	TokenHash string     `json:"-"`     // never serialized to clients
+	TokenHash string     `json:"-"`    // never serialized to clients
 	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
 	CreatedAt time.Time  `json:"createdAt"`
 	LastUsed  *time.Time `json:"lastUsed,omitempty"`

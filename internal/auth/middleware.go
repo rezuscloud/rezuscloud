@@ -43,7 +43,6 @@ func RoleFromContext(ctx context.Context) string {
 //   - JWT signed by this manager (preferred path; contains username + role)
 //   - Long-lived API token (rez_<...>) — verified by SHA-256 lookup against
 //     the store, with the user's current role resolved on each request
-//
 type APITokenVerifier interface {
 	VerifyAPIToken(plaintext string) (*state.User, bool)
 }
