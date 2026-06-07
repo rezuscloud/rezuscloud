@@ -3,6 +3,7 @@ package layout
 import (
 	"bytes"
 	"context"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -764,4 +765,249 @@ func TestCodeBlock_CompleteRender(t *testing.T) {
 	if !strings.Contains(html, "/etc/talos/config.yaml") {
 		t.Errorf("missing caption, got:\n%s", html)
 	}
+}
+
+// ---------- Theme support (#67) ----------
+
+// TestCSS_HasSemanticTokens confirms the CSS defines the semantic indirection
+// layer that the dark theme remap targets. Without these tokens, :root.dark
+// has nothing to override.
+func TestCSS_HasSemanticTokens(t *testing.T) {
+	css := CSS()
+	for _, token := range []string{
+		"--bg:",
+		"--bg-elevated:",
+		"--bg-elevated-strong:",
+		"--fg:",
+		"--fg-muted:",
+		"--border:",
+		"--accent:",
+		"--success:",
+		"--danger:",
+		"--warning:",
+		"--overlay:",
+		"--fg-on-accent:",
+		"--fg-on-danger:",
+	} {
+		if !strings.Contains(css, token) {
+			t.Errorf("CSS() missing semantic token %s", token)
+		}
+	}
+}
+
+// TestCSS_HasDarkModeRemap confirms :root.dark exists and remaps the
+// semantic tokens to the NeXT palette.
+func TestCSS_HasDarkModeRemap(t *testing.T) {
+	css := CSS()
+	if !strings.Contains(css, ":root.dark {") {
+		t.Fatalf("CSS() missing :root.dark block — dark mode will not activate")
+	}
+	// Every semantic token defined in :root must be remapped in :root.dark.
+	// We find the dark block and assert it contains the key remaps.
+	idx := strings.Index(css, ":root.dark {")
+	end := strings.Index(css[idx:], "}")
+	if end == -1 {
+		t.Fatalf("could not find closing brace of :root.dark block")
+	}
+	darkBlock := css[idx : idx+end]
+	for _, remap := range []string{
+		"--bg: var(--next-black)",
+		"--fg: var(--next-white)",
+		"--accent: var(--next-teal)",
+		"--border: var(--next-mid)",
+		"--success: var(--positive-next)",
+		"--danger: var(--negative-next)",
+		"color-scheme: dark",
+	} {
+		if !strings.Contains(darkBlock, remap) {
+			t.Errorf("CSS() :root.dark block missing remap %q", remap)
+		}
+	}
+}
+
+// TestCSS_LightModeSetsColorScheme confirms the light :root block announces
+// color-scheme: light so native form controls render in the right palette.
+func TestCSS_LightModeSetsColorScheme(t *testing.T) {
+	css := CSS()
+	// Find the first :root block (not :root.dark)
+	idx := strings.Index(css, ":root {")
+	if idx == -1 {
+		t.Fatalf("CSS() missing :root block")
+	}
+	end := strings.Index(css[idx:], "}")
+	rootBlock := css[idx : idx+end]
+	if !strings.Contains(rootBlock, "color-scheme: light") {
+		t.Errorf("CSS() :root block missing 'color-scheme: light' — native controls will use UA default")
+	}
+}
+
+// TestCSS_ComponentRulesUseSemanticTokens is the regression guard: every
+// .ds-* rule must reference semantic tokens, never the raw palette tokens
+// directly. Raw palette refs bypass the dark-mode remap.
+func TestCSS_ComponentRulesUseSemanticTokens(t *testing.T) {
+	css := CSS()
+
+	// Locate the boundary between token declarations and component rules.
+	// The component rules start at the global body block comment.
+	boundary := strings.Index(css, "Global body / form defaults")
+	if boundary == -1 {
+		t.Fatalf("could not locate component-rule boundary — CSS structure changed")
+	}
+	componentCSS := css[boundary:]
+
+	// Raw tokens that components must never reference directly. They must
+	// go through the semantic indirection.
+	forbidden := []string{
+		"var(--paper)",
+		"var(--surface)",
+		"var(--surface-strong)",
+		"var(--ink)",
+		"var(--ink-muted)",
+		"var(--rule)",
+		"var(--positive)",
+		"var(--negative)",
+	}
+	for _, raw := range forbidden {
+		if strings.Contains(componentCSS, raw) {
+			// Show context for easier debugging
+			idx := strings.Index(componentCSS, raw)
+			ctxStart := idx - 60
+			if ctxStart < 0 {
+				ctxStart = 0
+			}
+			ctxEnd := idx + len(raw) + 60
+			if ctxEnd > len(componentCSS) {
+				ctxEnd = len(componentCSS)
+			}
+			t.Errorf("component CSS must not reference raw palette token %s directly (use the semantic equivalent). Context: %q",
+				raw, componentCSS[ctxStart:ctxEnd])
+		}
+	}
+}
+
+// TestCSS_NoHardCodedColorsInComponentRules guards against hex / rgb / rgba /
+// oklch literals in component CSS — they bypass the theme system entirely.
+//
+// Token declarations in :root are allowed to use oklch() (they're the source
+// of truth). Anything below the boundary must go through var(--...).
+func TestCSS_NoHardCodedColorsInComponentRules(t *testing.T) {
+	css := CSS()
+	boundary := strings.Index(css, "Global body / form defaults")
+	if boundary == -1 {
+		t.Fatalf("could not locate component-rule boundary")
+	}
+	componentCSS := css[boundary:]
+
+	// Hex colors (#abc, #abcdef, #abcdef99). Tolerate # in CSS selectors
+	// (there shouldn't be any in this file, but defensive).
+	hexMatches := regexFindAll(hexColorPattern, componentCSS)
+	if len(hexMatches) > 0 {
+		t.Errorf("component CSS contains %d hard-coded hex color(s); first = %q. Use semantic tokens instead.",
+			len(hexMatches), hexMatches[0])
+	}
+
+	// rgb(...) / rgba(...) — none in components.
+	for _, fn := range []string{"rgb(", "rgba("} {
+		if strings.Contains(componentCSS, fn) {
+			idx := strings.Index(componentCSS, fn)
+			t.Errorf("component CSS contains hard-coded %s... — use var(--...) instead. Context: %q",
+				fn, componentCSS[imax(0, idx-40):idx+40])
+		}
+	}
+
+	// oklch(...) — allowed only inside var() declarations or comments. Since
+	// we already banned raw palette tokens above, any oklch() in component
+	// rules is by definition hard-coded. Allow the special case of oklch()
+	// inside the overlay (used for backdrop fade — would be unusual to find
+	// in component CSS).
+	oklchMatches := regexFindAll(oklchPattern, componentCSS)
+	if len(oklchMatches) > 0 {
+		t.Errorf("component CSS contains %d hard-coded oklch() color(s); first = %q. Use semantic tokens instead.",
+			len(oklchMatches), oklchMatches[0])
+	}
+}
+
+// TestBase_IncludesPrePaintThemeScript verifies the inline script in <head>
+// applies the .dark class before first paint. Without it, dark-mode users
+// see a flash of light theme on every page load (FOUC).
+func TestBase_IncludesPrePaintThemeScript(t *testing.T) {
+	html := renderComponent(t, Base(BaseProps{
+		Title:   "Test",
+		Page:    "login",
+		Content: templ.Raw("<p>hello</p>"),
+	}))
+	// The script must be in <head>, so it runs before <body> paints.
+	headEnd := strings.Index(html, "</head>")
+	if headEnd == -1 {
+		t.Fatalf("could not locate </head>")
+	}
+	head := html[:headEnd]
+	for _, want := range []string{
+		"localStorage.getItem('rezuscloud-theme')",
+		"matchMedia('(prefers-color-scheme: dark)')",
+		"document.documentElement.classList.add('dark')",
+	} {
+		if !strings.Contains(head, want) {
+			t.Errorf("pre-paint theme script in <head> missing %q", want)
+		}
+	}
+}
+
+// TestBase_RendersThemeToggleButton confirms the sidebar footer includes
+// the Mac/NeXT toggle. Login page is excluded (no sidebar), so we test with
+// a regular page and a logged-in user.
+func TestBase_RendersThemeToggleButton(t *testing.T) {
+	html := renderComponent(t, Base(BaseProps{
+		Title:   "Dashboard",
+		Page:    "dashboard",
+		User:    "admin",
+		Content: templ.Raw("<p>main</p>"),
+	}))
+	body := stripStyle(html)
+	if !strings.Contains(body, `class="ds-theme-toggle"`) {
+		t.Errorf("expected sidebar footer to include a ds-theme-toggle button, got body:\n%s", body)
+	}
+	if !strings.Contains(body, `aria-label="Toggle theme"`) {
+		t.Errorf("expected aria-label on theme toggle, got body:\n%s", body)
+	}
+	if !strings.Contains(body, `rezuscloud-theme`) {
+		t.Errorf("expected toggle to write to localStorage key 'rezuscloud-theme', got body:\n%s", body)
+	}
+}
+
+// TestBase_LoginPageOmitsThemeToggle confirms the login page (no sidebar)
+// doesn't render the toggle — the user has no sidebar to put it in. The
+// pre-paint script in <head> still applies the user's preference, so the
+// login card itself renders in the right palette.
+func TestBase_LoginPageOmitsThemeToggle(t *testing.T) {
+	html := renderComponent(t, Base(BaseProps{
+		Title:   "Login",
+		Page:    "login",
+		Content: templ.Raw("<p>form</p>"),
+	}))
+	body := stripStyle(html)
+	if strings.Contains(body, `ds-theme-toggle`) {
+		t.Errorf("login page should not render theme toggle (no sidebar), got body:\n%s", body)
+	}
+}
+
+// ---------- Test helpers ----------
+
+const (
+	hexColorPattern = `#[0-9a-fA-F]{3,8}\b`
+	oklchPattern    = `oklch\([^)]+\)`
+)
+
+// regexFindAll is a thin wrapper around regexp.FindAllString. Kept here so
+// the test file doesn't need to import regexp at the top level — the helper
+// is only used by the theme tests.
+func regexFindAll(pattern, src string) []string {
+	return regexp.MustCompile(pattern).FindAllString(src, -1)
+}
+
+func imax(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
