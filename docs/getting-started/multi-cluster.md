@@ -121,8 +121,8 @@ Selection is automatic at join time.
 
 ## See Also
 
-- [ADR 12: Provider-Based Machine Provisioning](adr/0012-provider-based-machine-provisioning.md)
-- [ADR 13: SideroLink-Based Config Pull](adr/0013-siderolink-config-pull.md)
-- [ADR 14: Full Talos Cluster Lifecycle](adr/0014-full-talos-cluster-lifecycle.md)
-- [Architecture](architecture.md)
-- [CLI Reference](cli-reference.md)
+- [ADR 12: Provider-Based Machine Provisioning](../adr/0012-provider-based-machine-provisioning.md)
+- [ADR 13: SideroLink-Based Config Pull](../adr/0013-siderolink-config-pull.md)
+- [ADR 14: Full Talos Cluster Lifecycle](../adr/0014-full-talos-cluster-lifecycle.md)
+- [Architecture](../concepts/architecture.md)
+- [CLI Reference](../reference/cli.md)

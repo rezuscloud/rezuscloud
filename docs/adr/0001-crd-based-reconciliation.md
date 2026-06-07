@@ -35,4 +35,4 @@ The controller reconciles: dispatching to providers for machine provisioning, ge
 
 - [ADR 12: Provider-Based Machine Provisioning](0012-provider-based-machine-provisioning.md)
 - [ADR 14: Full Talos Cluster Lifecycle](0014-full-talos-cluster-lifecycle.md)
-- [API Design Document](../../api-design.md)
+- [API Design Document](../concepts/api-design.md)

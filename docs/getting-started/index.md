@@ -79,7 +79,7 @@ Providers only create/delete machines. Machines pull config from the management 
 
 ## Next Steps
 
-- [Architecture](architecture.md) — How RezusCloud works internally
-- [CLI Reference](cli-reference.md) — All commands and flags
+- [Architecture](../concepts/architecture.md) — How RezusCloud works internally
+- [CLI Reference](../reference/cli.md) — All commands and flags
 - [Multi-Cluster](multi-cluster.md) — Multi-tenant cluster management
-- [Versioning](versioning.md) — Automatic semantic versioning
+- [Versioning](../reference/versioning.md) — Automatic semantic versioning
