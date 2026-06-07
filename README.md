@@ -136,3 +136,7 @@ go build -o rezusctl ./cmd/rezusctl
 | `REZUSCLOUD_PROVIDER_ADDR` | `:50190` | Provider gRPC address |
 | `REZUSCLOUD_ADMIN_PASSWORD` | — | Initial admin password |
 | `REZUSCLOUD_JWT_SECRET` | — | JWT signing secret |
+## Validation
+
+Preview env now consumes the HelmRelease pattern from k8s-config MR !7.
+This change exists only to trigger a preview-ready cycle for end-to-end validation.
