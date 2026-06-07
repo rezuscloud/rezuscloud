@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -54,24 +53,6 @@ func main() {
 	// Initialize auth.
 	jwtManager := auth.NewJWTManager(cfg.JWTSecret)
 	ensureAdminUser(store, cfg)
-
-	// Start MachineLink server.
-	linkListener, err := net.Listen("tcp", cfg.MachineLinkAddr)
-	if err != nil {
-		log.Fatalf("machinelink listen: %v", err)
-	}
-	log.Printf("  machinelink: %s", linkListener.Addr())
-
-	go serveMachineLink(ctx, linkListener, store)
-
-	// Start Provider gRPC server.
-	providerListener, err := net.Listen("tcp", cfg.ProviderAddr)
-	if err != nil {
-		log.Fatalf("provider listen: %v", err)
-	}
-	log.Printf("  provider gRPC: %s", providerListener.Addr())
-
-	go serveProviderGRPC(ctx, providerListener, store)
 
 	// Start HTTP server (WebUI + health + API).
 	mux := http.NewServeMux()
@@ -139,34 +120,28 @@ func main() {
 
 	// Best-effort shutdown — ignore errors (context already cancelled, connections closing).
 	_ = srv.Shutdown(shutdownCtx) //nolint:errcheck // shutdown in deferred context
-	_ = linkListener.Close()      //nolint:errcheck // listener close on shutdown
-	_ = providerListener.Close()  //nolint:errcheck // listener close on shutdown
 	_ = store.Close()             //nolint:errcheck // store close on shutdown
 	log.Println("stopped")
 }
 
 // config holds the management plane configuration.
 type config struct {
-	Addr            string // HTTP listen address
-	DataDir         string // Persistent data directory
-	Mode            string // "standalone" or "cluster"
-	MachineLinkAddr string // MachineLink gRPC listen address
-	ProviderAddr    string // Provider gRPC listen address
-	JoinToken       string // Global join token for machine authentication
-	JWTSecret       string // JWT signing secret
-	AdminPassword   string // Initial admin password
+	Addr          string // HTTP listen address
+	DataDir       string // Persistent data directory
+	Mode          string // "standalone" or "cluster"
+	JoinToken     string // Global join token for machine authentication
+	JWTSecret     string // JWT signing secret
+	AdminPassword string // Initial admin password
 }
 
 func loadConfig() config {
 	return config{
-		Addr:            envOr("REZUSCLOUD_ADDR", ":8080"),
-		DataDir:         envOr("REZUSCLOUD_DATA_DIR", "/data"),
-		Mode:            envOr("REZUSCLOUD_MODE", "standalone"),
-		MachineLinkAddr: envOr("REZUSCLOUD_MACHINELINK_ADDR", ":50180"),
-		ProviderAddr:    envOr("REZUSCLOUD_PROVIDER_ADDR", ":50190"),
-		JoinToken:       os.Getenv("REZUSCLOUD_JOIN_TOKEN"),
-		JWTSecret:       envOr("REZUSCLOUD_JWT_SECRET", ""),
-		AdminPassword:   os.Getenv("REZUSCLOUD_ADMIN_PASSWORD"),
+		Addr:          envOr("REZUSCLOUD_ADDR", ":8080"),
+		DataDir:       envOr("REZUSCLOUD_DATA_DIR", "/data"),
+		Mode:          envOr("REZUSCLOUD_MODE", "standalone"),
+		JoinToken:     os.Getenv("REZUSCLOUD_JOIN_TOKEN"),
+		JWTSecret:     envOr("REZUSCLOUD_JWT_SECRET", ""),
+		AdminPassword: os.Getenv("REZUSCLOUD_ADMIN_PASSWORD"),
 	}
 }
 
@@ -175,54 +150,6 @@ func envOr(key, fallback string) string {
 		return v
 	}
 	return fallback
-}
-
-// --- MachineLink Server (stub → real implementation later) ---
-
-func serveMachineLink(ctx context.Context, ln net.Listener, _ *state.Store) {
-	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				log.Printf("machinelink accept: %v", err)
-				return
-			}
-		}
-		go handleMachineLinkConn(ctx, conn)
-	}
-}
-
-func handleMachineLinkConn(ctx context.Context, conn net.Conn) {
-	defer conn.Close()
-	log.Printf("machinelink: connection from %s", conn.RemoteAddr())
-	<-ctx.Done()
-}
-
-// --- Provider gRPC Server (stub → real implementation later) ---
-
-func serveProviderGRPC(ctx context.Context, ln net.Listener, _ *state.Store) {
-	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				log.Printf("provider accept: %v", err)
-				return
-			}
-		}
-		go handleProviderConn(ctx, conn)
-	}
-}
-
-func handleProviderConn(ctx context.Context, conn net.Conn) {
-	defer conn.Close()
-	log.Printf("provider: connection from %s", conn.RemoteAddr())
-	<-ctx.Done()
 }
 
 // --- HTTP Handlers ---

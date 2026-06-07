@@ -57,24 +57,16 @@ The chart skips Secret creation. Expected keys: `jwt-secret` (required), `admin-
 
 ## Services
 
-rezuscloud exposes three TCP ports. The chart creates up to three Services so each can have its own type:
+rezuscloud exposes one TCP port for HTTP (WebUI + REST API + healthz/readyz). The chart creates a single Service for it:
 
 | Service | Port | Type (default) | Purpose |
 |---------|------|----------------|---------|
 | `<release>-rezuscloud` | 8080 | ClusterIP | HTTP (WebUI + REST API + healthz/readyz) |
-| `<release>-rezuscloud-machinelink` | 50180 | LoadBalancer | Machines phone home over WireGuard-over-gRPC |
-| `<release>-rezuscloud-provider` | 50190 | LoadBalancer | Outbound-only provider binaries connect here |
 
-For home/lab clusters without a real LoadBalancer, set both to `NodePort`:
-
-```yaml
-machineLinkService:
-  type: NodePort
-providerService:
-  type: NodePort
-```
-
-Or use MetalLB and keep `LoadBalancer`.
+Inbound traffic for machine registration will be carried by a single UDP port
+(WireGuard / Siderolink, per `arch/06-deployment/overview.md`). That Service
+is added to the chart alongside the real SideroLink implementation — tracked
+separately.
 
 ## Persistence
 
@@ -144,14 +136,8 @@ See [values.yaml](./values.yaml) for the full schema with inline documentation.
 | `replicaCount` | `1` | **Cannot be > 1** until #22 ships |
 | `rezuscloud.addr` | `:8080` | HTTP listen address |
 | `rezuscloud.dataDir` | `/data` | SQLite directory (matches `persistence.mountPath`) |
-| `rezuscloud.machineLinkAddr` | `:50180` | MachineLink listen address |
-| `rezuscloud.providerAddr` | `:50190` | Provider gRPC listen address |
 | `service.type` | `ClusterIP` | HTTP service type |
 | `service.port` | `8080` | HTTP service port |
-| `machineLinkService.enabled` | `true` | Create MachineLink Service |
-| `machineLinkService.type` | `LoadBalancer` | MachineLink service type |
-| `providerService.enabled` | `true` | Create Provider gRPC Service |
-| `providerService.type` | `LoadBalancer` | Provider service type |
 | `persistence.enabled` | `true` | Enable PVC for SQLite |
 | `persistence.size` | `1Gi` | PVC size |
 | `ingress.enabled` | `false` | Enable Ingress |
