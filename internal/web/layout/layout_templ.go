@@ -188,7 +188,12 @@ func toast(data ToastData) templ.Component {
 	})
 }
 
-func Base(props BaseProps) templ.Component {
+// themeToggle renders the canonical Mac↔NeXT icon button from
+// design-system/components/theme-toggle.html. Place it in every page
+// topbar (including login) so users can switch themes from anywhere.
+// The pre-paint script in <head> applies .dark to <html> before first
+// paint, then Alpine takes over for subsequent toggles.
+func themeToggle() templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
 		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
@@ -209,20 +214,49 @@ func Base(props BaseProps) templ.Component {
 			templ_7745c5c3_Var9 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<!doctype html><html lang=\"en\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><title>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 12, "<button type=\"button\" class=\"ds-theme-toggle\" aria-label=\"Toggle theme\" x-data=\"{ dark: document.documentElement.classList.contains('dark') }\" x-init=\"$watch('dark', (v) => { document.documentElement.classList.toggle('dark', v); try { localStorage.setItem('rezuscloud-theme', v ? 'next' : 'mac'); } catch (e) {} })\" @click=\"dark = !dark\"><svg class=\"ds-theme-toggle-icon\" x-show=\"dark\" x-cloak viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"4\"></circle> <path d=\"M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41\"></path></svg> <svg class=\"ds-theme-toggle-icon\" x-show=\"!dark\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z\"></path></svg></button>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		var templ_7745c5c3_Var10 string
-		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(props.Title)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/layout.templ`, Line: 60, Col: 23}
+		return nil
+	})
+}
+
+func Base(props BaseProps) templ.Component {
+	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
+		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
+		if templ_7745c5c3_CtxErr := ctx.Err(); templ_7745c5c3_CtxErr != nil {
+			return templ_7745c5c3_CtxErr
 		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
+		templ_7745c5c3_Buffer, templ_7745c5c3_IsBuffer := templruntime.GetBuffer(templ_7745c5c3_W)
+		if !templ_7745c5c3_IsBuffer {
+			defer func() {
+				templ_7745c5c3_BufErr := templruntime.ReleaseBuffer(templ_7745c5c3_Buffer)
+				if templ_7745c5c3_Err == nil {
+					templ_7745c5c3_Err = templ_7745c5c3_BufErr
+				}
+			}()
+		}
+		ctx = templ.InitializeContext(ctx)
+		templ_7745c5c3_Var10 := templ.GetChildren(ctx)
+		if templ_7745c5c3_Var10 == nil {
+			templ_7745c5c3_Var10 = templ.NopComponent
+		}
+		ctx = templ.ClearChildren(ctx)
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, "<!doctype html><html lang=\"en\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\"><title>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 13, " — RezusCloud</title>")
+		var templ_7745c5c3_Var11 string
+		templ_7745c5c3_Var11, templ_7745c5c3_Err = templ.JoinStringErrs(props.Title)
+		if templ_7745c5c3_Err != nil {
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/layout.templ`, Line: 84, Col: 23}
+		}
+		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var11))
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, " — RezusCloud</title>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -230,255 +264,255 @@ func Base(props BaseProps) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 14, "<script>\n\t\t\t\t// Pre-paint theme application. Runs synchronously in <head> before <body>\n\t\t\t\t// renders, so the correct palette is applied on first paint — no FOUC.\n\t\t\t\t//\n\t\t\t\t// Precedence:\n\t\t\t\t//   1. localStorage 'rezuscloud-theme' if set ('mac' | 'next')\n\t\t\t\t//   2. prefers-color-scheme: dark media query\n\t\t\t\t//   3. default = Mac (light)\n\t\t\t\t(function () {\n\t\t\t\t\tvar dark;\n\t\t\t\t\ttry {\n\t\t\t\t\t\tvar stored = localStorage.getItem('rezuscloud-theme');\n\t\t\t\t\t\tif (stored === 'mac' || stored === 'next') {\n\t\t\t\t\t\t\tdark = (stored === 'next');\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tdark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;\n\t\t\t\t\t\t}\n\t\t\t\t\t} catch (e) {\n\t\t\t\t\t\t// localStorage disabled (private mode, etc.) — fall through to OS pref.\n\t\t\t\t\t\tdark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;\n\t\t\t\t\t}\n\t\t\t\t\tif (dark) document.documentElement.classList.add('dark');\n\t\t\t\t})();\n\t\t\t</script><script src=\"https://unpkg.com/htmx.org@2.0.4\"></script><script src=\"https://unpkg.com/htmx-ext-sse@2.3.1/sse.js\"></script><script defer src=\"https://unpkg.com/alpinejs@3.14.8/dist/cdn.min.js\"></script><script>\n\t\t\t\tdocument.addEventListener(\"click\", function (ev) {\n\t\t\t\t\tvar t = ev.target;\n\t\t\t\t\tif (!(t instanceof Element)) return;\n\t\t\t\t\t// Open: any element with data-modal-open=\"<id>\"\n\t\t\t\t\tvar opener = t.closest(\"[data-modal-open]\");\n\t\t\t\t\tif (opener) {\n\t\t\t\t\t\tvar id = opener.getAttribute(\"data-modal-open\");\n\t\t\t\t\t\tvar d = document.getElementById(id);\n\t\t\t\t\t\tif (d && d.tagName === \"DIALOG\") {\n\t\t\t\t\t\t\td.showModal();\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\t// Close: any element with data-modal-close, or backdrop click on dialog\n\t\t\t\t\tvar closer = t.closest(\"[data-modal-close]\");\n\t\t\t\t\tif (closer) {\n\t\t\t\t\t\tvar d = closer.closest(\"dialog\");\n\t\t\t\t\t\tif (d) {\n\t\t\t\t\t\t\td.close();\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t\t// Backdrop click → close. Native dialog forwards the click to the backdrop\n\t\t\t\t// when the dialog itself is clicked (not its contents) because dialog has padding:0\n\t\t\t\t// and contents are wrapped in a full-size box. We rely on the rect check.\n\t\t\t\tdocument.addEventListener(\"click\", function (ev) {\n\t\t\t\t\tvar t = ev.target;\n\t\t\t\t\tif (t && t.tagName === \"DIALOG\" && t.classList.contains(\"ds-modal\")) {\n\t\t\t\t\t\tvar r = t.getBoundingClientRect();\n\t\t\t\t\t\tvar inside =\n\t\t\t\t\t\t\tev.clientX >= r.left &&\n\t\t\t\t\t\t\tev.clientX <= r.right &&\n\t\t\t\t\t\t\tev.clientY >= r.top &&\n\t\t\t\t\t\t\tev.clientY <= r.bottom;\n\t\t\t\t\t\tif (!inside) {\n\t\t\t\t\t\t\tt.close();\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t</script></head><body>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<script>\n\t\t\t\t// Pre-paint theme application. Runs synchronously in <head> before <body>\n\t\t\t\t// renders, so the correct palette is applied on first paint — no FOUC.\n\t\t\t\t//\n\t\t\t\t// Precedence:\n\t\t\t\t//   1. localStorage 'rezuscloud-theme' if set ('mac' | 'next')\n\t\t\t\t//   2. prefers-color-scheme: dark media query\n\t\t\t\t//   3. default = Mac (light)\n\t\t\t\t(function () {\n\t\t\t\t\tvar dark;\n\t\t\t\t\ttry {\n\t\t\t\t\t\tvar stored = localStorage.getItem('rezuscloud-theme');\n\t\t\t\t\t\tif (stored === 'mac' || stored === 'next') {\n\t\t\t\t\t\t\tdark = (stored === 'next');\n\t\t\t\t\t\t} else {\n\t\t\t\t\t\t\tdark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;\n\t\t\t\t\t\t}\n\t\t\t\t\t} catch (e) {\n\t\t\t\t\t\t// localStorage disabled (private mode, etc.) — fall through to OS pref.\n\t\t\t\t\t\tdark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;\n\t\t\t\t\t}\n\t\t\t\t\tif (dark) document.documentElement.classList.add('dark');\n\t\t\t\t})();\n\t\t\t</script><script src=\"https://unpkg.com/htmx.org@2.0.4\"></script><script src=\"https://unpkg.com/htmx-ext-sse@2.3.1/sse.js\"></script><script defer src=\"https://unpkg.com/alpinejs@3.14.8/dist/cdn.min.js\"></script><script>\n\t\t\t\tdocument.addEventListener(\"click\", function (ev) {\n\t\t\t\t\tvar t = ev.target;\n\t\t\t\t\tif (!(t instanceof Element)) return;\n\t\t\t\t\t// Open: any element with data-modal-open=\"<id>\"\n\t\t\t\t\tvar opener = t.closest(\"[data-modal-open]\");\n\t\t\t\t\tif (opener) {\n\t\t\t\t\t\tvar id = opener.getAttribute(\"data-modal-open\");\n\t\t\t\t\t\tvar d = document.getElementById(id);\n\t\t\t\t\t\tif (d && d.tagName === \"DIALOG\") {\n\t\t\t\t\t\t\td.showModal();\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t\t// Close: any element with data-modal-close, or backdrop click on dialog\n\t\t\t\t\tvar closer = t.closest(\"[data-modal-close]\");\n\t\t\t\t\tif (closer) {\n\t\t\t\t\t\tvar d = closer.closest(\"dialog\");\n\t\t\t\t\t\tif (d) {\n\t\t\t\t\t\t\td.close();\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t\t// Backdrop click → close. Native dialog forwards the click to the backdrop\n\t\t\t\t// when the dialog itself is clicked (not its contents) because dialog has padding:0\n\t\t\t\t// and contents are wrapped in a full-size box. We rely on the rect check.\n\t\t\t\tdocument.addEventListener(\"click\", function (ev) {\n\t\t\t\t\tvar t = ev.target;\n\t\t\t\t\tif (t && t.tagName === \"DIALOG\" && t.classList.contains(\"ds-modal\")) {\n\t\t\t\t\t\tvar r = t.getBoundingClientRect();\n\t\t\t\t\t\tvar inside =\n\t\t\t\t\t\t\tev.clientX >= r.left &&\n\t\t\t\t\t\t\tev.clientX <= r.right &&\n\t\t\t\t\t\t\tev.clientY >= r.top &&\n\t\t\t\t\t\t\tev.clientY <= r.bottom;\n\t\t\t\t\t\tif (!inside) {\n\t\t\t\t\t\t\tt.close();\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t});\n\t\t\t</script></head><body>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		if props.Page != "login" {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 15, "<button class=\"ds-mobile-toggle\" x-on:click=\"document.querySelector('.ds-sidebar').classList.toggle('ds-sidebar--open')\">☰</button><aside class=\"ds-sidebar\"><div class=\"ds-sidebar-header\"><div class=\"ds-sidebar-logo\"><span class=\"ds-sidebar-logo-rezus\">Rezus</span> <span class=\"ds-sidebar-logo-cloud\">Cloud</span></div></div><nav class=\"ds-sidebar-nav\" aria-label=\"Main navigation\"><div class=\"ds-sidebar-section-label\">Operate</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<button class=\"ds-mobile-toggle\" x-on:click=\"document.querySelector('.ds-sidebar').classList.toggle('ds-sidebar--open')\">☰</button><aside class=\"ds-sidebar\"><div class=\"ds-sidebar-header\"><div class=\"ds-sidebar-logo\"><span class=\"ds-sidebar-logo-rezus\">Rezus</span> <span class=\"ds-sidebar-logo-cloud\">Cloud</span></div></div><nav class=\"ds-sidebar-nav\" aria-label=\"Main navigation\"><div class=\"ds-sidebar-section-label\">Operate</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var11 = []any{templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "dashboard"))}
-			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var11...)
+			var templ_7745c5c3_Var12 = []any{templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "dashboard"))}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var12...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 16, "<a href=\"/\" class=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "<a href=\"/\" class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var12 string
-			templ_7745c5c3_Var12, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var11).String())
+			var templ_7745c5c3_Var13 string
+			templ_7745c5c3_Var13, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var12).String())
 			if templ_7745c5c3_Err != nil {
 				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/layout.templ`, Line: 1, Col: 0}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var12)
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var13)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "\"><svg class=\"ds-sidebar-icon\" viewBox=\"0 0 16 16\" fill=\"currentColor\"><path d=\"M8 1.5l6.5 5v8h-4v-4h-5v4h-4v-8L8 1.5z\"></path></svg> Overview</a> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "\"><svg class=\"ds-sidebar-icon\" viewBox=\"0 0 16 16\" fill=\"currentColor\"><path d=\"M8 1.5l6.5 5v8h-4v-4h-5v4h-4v-8L8 1.5z\"></path></svg> Overview</a> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var13 = []any{templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "clusters" || props.Page == "cluster"))}
-			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var13...)
+			var templ_7745c5c3_Var14 = []any{templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "clusters" || props.Page == "cluster"))}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var14...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 18, "<a href=\"/clusters\" class=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<a href=\"/clusters\" class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var14 string
-			templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var13).String())
+			var templ_7745c5c3_Var15 string
+			templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var14).String())
 			if templ_7745c5c3_Err != nil {
 				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/layout.templ`, Line: 1, Col: 0}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var14)
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var15)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "\"><svg class=\"ds-sidebar-icon\" viewBox=\"0 0 16 16\" fill=\"currentColor\"><path d=\"M2 2h5v5H2V2zm7 0h5v5H9V2zM2 9h5v5H2V9zm7 0h5v5H9V9z\"></path></svg> Clusters</a> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "\"><svg class=\"ds-sidebar-icon\" viewBox=\"0 0 16 16\" fill=\"currentColor\"><path d=\"M2 2h5v5H2V2zm7 0h5v5H9V2zM2 9h5v5H2V9zm7 0h5v5H9V9z\"></path></svg> Clusters</a> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var15 = []any{templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "machines" || props.Page == "machine"))}
-			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var15...)
+			var templ_7745c5c3_Var16 = []any{templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "machines" || props.Page == "machine"))}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var16...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 20, "<a href=\"/machines\" class=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "<a href=\"/machines\" class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var16 string
-			templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var15).String())
+			var templ_7745c5c3_Var17 string
+			templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var16).String())
 			if templ_7745c5c3_Err != nil {
 				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/layout.templ`, Line: 1, Col: 0}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var16)
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var17)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "\"><svg class=\"ds-sidebar-icon\" viewBox=\"0 0 16 16\" fill=\"currentColor\"><path d=\"M3 3h10v2H3V3zm0 4h10v2H3V7zm0 4h10v2H3v-2z\"></path></svg> Machines</a> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "\"><svg class=\"ds-sidebar-icon\" viewBox=\"0 0 16 16\" fill=\"currentColor\"><path d=\"M3 3h10v2H3V3zm0 4h10v2H3V7zm0 4h10v2H3v-2z\"></path></svg> Machines</a> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var17 = []any{templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "jointokens"))}
-			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var17...)
+			var templ_7745c5c3_Var18 = []any{templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "jointokens"))}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var18...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 22, "<a href=\"/machines/jointokens\" class=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<a href=\"/machines/jointokens\" class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var18 string
-			templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var17).String())
+			var templ_7745c5c3_Var19 string
+			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var18).String())
 			if templ_7745c5c3_Err != nil {
 				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/layout.templ`, Line: 1, Col: 0}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var18)
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var19)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "\"><svg class=\"ds-sidebar-icon\" viewBox=\"0 0 16 16\" fill=\"currentColor\"><path d=\"M8 1l2 4 4 .5-3 3 .5 4-3.5-2-3.5 2 .5-4-3-3 4-.5z\"></path></svg> Join Tokens</a> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "\"><svg class=\"ds-sidebar-icon\" viewBox=\"0 0 16 16\" fill=\"currentColor\"><path d=\"M8 1l2 4 4 .5-3 3 .5 4-3.5-2-3.5 2 .5-4-3-3 4-.5z\"></path></svg> Join Tokens</a> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var19 = []any{templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "providers"))}
-			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var19...)
+			var templ_7745c5c3_Var20 = []any{templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "providers"))}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var20...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "<a href=\"/providers\" class=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "<a href=\"/providers\" class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var20 string
-			templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var19).String())
+			var templ_7745c5c3_Var21 string
+			templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var20).String())
 			if templ_7745c5c3_Err != nil {
 				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/layout.templ`, Line: 1, Col: 0}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var20)
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var21)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "\"><svg class=\"ds-sidebar-icon\" viewBox=\"0 0 16 16\" fill=\"currentColor\"><path d=\"M2 4h12v8H2V4zm0-2h12v1H2V2zm0 11h12v1H2v-1z\"></path></svg> Providers</a><div class=\"ds-sidebar-section-label\">Settings</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "\"><svg class=\"ds-sidebar-icon\" viewBox=\"0 0 16 16\" fill=\"currentColor\"><path d=\"M2 4h12v8H2V4zm0-2h12v1H2V2zm0 11h12v1H2v-1z\"></path></svg> Providers</a><div class=\"ds-sidebar-section-label\">Settings</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var21 = []any{templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "settings"))}
-			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var21...)
+			var templ_7745c5c3_Var22 = []any{templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "settings"))}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var22...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "<a href=\"/settings\" class=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "<a href=\"/settings\" class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var22 string
-			templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var21).String())
+			var templ_7745c5c3_Var23 string
+			templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var22).String())
 			if templ_7745c5c3_Err != nil {
 				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/layout.templ`, Line: 1, Col: 0}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var22)
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var23)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "\"><svg class=\"ds-sidebar-icon\" viewBox=\"0 0 16 16\" fill=\"currentColor\"><path d=\"M8 4.5a2 2 0 100 4 2 2 0 000-4zm0 6a4 4 0 110-8 4 4 0 010 8zM1 8a7 7 0 1014 0A7 7 0 001 8z\"></path></svg> Overview</a> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "\"><svg class=\"ds-sidebar-icon\" viewBox=\"0 0 16 16\" fill=\"currentColor\"><path d=\"M8 4.5a2 2 0 100 4 2 2 0 000-4zm0 6a4 4 0 110-8 4 4 0 010 8zM1 8a7 7 0 1014 0A7 7 0 001 8z\"></path></svg> Overview</a> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var23 = []any{templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "users"))}
-			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var23...)
+			var templ_7745c5c3_Var24 = []any{templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "users"))}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var24...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "<a href=\"/settings/users\" class=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "<a href=\"/settings/users\" class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var24 string
-			templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var23).String())
+			var templ_7745c5c3_Var25 string
+			templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var24).String())
 			if templ_7745c5c3_Err != nil {
 				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/layout.templ`, Line: 1, Col: 0}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var24)
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var25)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "\">> <svg class=\"ds-sidebar-icon\" viewBox=\"0 0 16 16\" fill=\"currentColor\"><path d=\"M8 8a3 3 0 100-6 3 3 0 000 6zm-5 7c0-2.8 2.2-5 5-5s5 2.2 5 5H3z\"></path></svg> Users</a> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "\">> <svg class=\"ds-sidebar-icon\" viewBox=\"0 0 16 16\" fill=\"currentColor\"><path d=\"M8 8a3 3 0 100-6 3 3 0 000 6zm-5 7c0-2.8 2.2-5 5-5s5 2.2 5 5H3z\"></path></svg> Users</a> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var25 = []any{templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "api-tokens"))}
-			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var25...)
+			var templ_7745c5c3_Var26 = []any{templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "api-tokens"))}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var26...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "<a href=\"/settings/api-tokens\" class=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<a href=\"/settings/api-tokens\" class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var26 string
-			templ_7745c5c3_Var26, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var25).String())
+			var templ_7745c5c3_Var27 string
+			templ_7745c5c3_Var27, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var26).String())
 			if templ_7745c5c3_Err != nil {
 				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/layout.templ`, Line: 1, Col: 0}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var26)
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var27)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "\"><svg class=\"ds-sidebar-icon\" viewBox=\"0 0 16 16\" fill=\"currentColor\"><path d=\"M11 2l3 3-8 8H3v-3l8-8z\"></path></svg> API Tokens</a> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "\"><svg class=\"ds-sidebar-icon\" viewBox=\"0 0 16 16\" fill=\"currentColor\"><path d=\"M11 2l3 3-8 8H3v-3l8-8z\"></path></svg> API Tokens</a> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var27 = []any{templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "audit"))}
-			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var27...)
+			var templ_7745c5c3_Var28 = []any{templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "audit"))}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var28...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "<a href=\"/settings/audit\" class=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "<a href=\"/settings/audit\" class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var28 string
-			templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var27).String())
+			var templ_7745c5c3_Var29 string
+			templ_7745c5c3_Var29, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var28).String())
 			if templ_7745c5c3_Err != nil {
 				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/layout.templ`, Line: 1, Col: 0}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var28)
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var29)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "\"><svg class=\"ds-sidebar-icon\" viewBox=\"0 0 16 16\" fill=\"currentColor\"><path d=\"M2 2h12v12H2V2zm2 2v8h8V4H4zm1 1h6v1H5V5zm0 2h6v1H5V7zm0 2h4v1H5V9z\"></path></svg> Audit Log</a> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "\"><svg class=\"ds-sidebar-icon\" viewBox=\"0 0 16 16\" fill=\"currentColor\"><path d=\"M2 2h12v12H2V2zm2 2v8h8V4H4zm1 1h6v1H5V5zm0 2h6v1H5V7zm0 2h4v1H5V9z\"></path></svg> Audit Log</a> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var29 = []any{templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "backups"))}
-			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var29...)
+			var templ_7745c5c3_Var30 = []any{templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "backups"))}
+			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var30...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "<a href=\"/settings/backups\" class=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "<a href=\"/settings/backups\" class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var30 string
-			templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var29).String())
+			var templ_7745c5c3_Var31 string
+			templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var30).String())
 			if templ_7745c5c3_Err != nil {
 				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/layout.templ`, Line: 1, Col: 0}
 			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var30)
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var31)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "\"><svg class=\"ds-sidebar-icon\" viewBox=\"0 0 16 16\" fill=\"currentColor\"><path d=\"M2 3h12v10H2V3zm6 2v6h4V5H8z\"></path></svg> Backups</a></nav><div class=\"ds-sidebar-footer\"><button type=\"button\" class=\"ds-theme-toggle\" aria-label=\"Toggle theme\" x-data=\"{ dark: document.documentElement.classList.contains('dark') }\" x-init=\"$watch('dark', (v) => { document.documentElement.classList.toggle('dark', v); try { localStorage.setItem('rezuscloud-theme', v ? 'next' : 'mac'); } catch (e) {} })\" @click=\"dark = !dark\"><svg class=\"ds-theme-toggle-icon\" x-show=\"dark\" x-cloak viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"4\"></circle> <path d=\"M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41\"></path></svg> <svg class=\"ds-theme-toggle-icon\" x-show=\"!dark\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z\"></path></svg></button> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "\"><svg class=\"ds-sidebar-icon\" viewBox=\"0 0 16 16\" fill=\"currentColor\"><path d=\"M2 3h12v10H2V3zm6 2v6h4V5H8z\"></path></svg> Backups</a></nav><div class=\"ds-sidebar-footer\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if props.User != "" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "<div class=\"ds-sidebar-user\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "<div class=\"ds-sidebar-user\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var31 string
-				templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(props.User)
+				var templ_7745c5c3_Var32 string
+				templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(props.User)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/layout.templ`, Line: 203, Col: 48}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/layout.templ`, Line: 211, Col: 48}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "</div><a href=\"/logout\" class=\"ds-sidebar-logout\">Sign Out</a>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "</div><a href=\"/logout\" class=\"ds-sidebar-logout\">Sign Out</a>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "</div></aside><main class=\"ds-main\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "</div></aside><main class=\"ds-main\"><div class=\"ds-topbar\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -486,8 +520,16 @@ func Base(props BaseProps) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
+			templ_7745c5c3_Err = themeToggle().Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "</div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
 			if props.Toast.Message != "" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "<div class=\"ds-toast-container\" x-data=\"{ show: true }\" x-init=\"setTimeout(() => show = false, 5000)\" x-show=\"show\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "<div class=\"ds-toast-container\" x-data=\"{ show: true }\" x-init=\"setTimeout(() => show = false, 5000)\" x-show=\"show\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -495,7 +537,7 @@ func Base(props BaseProps) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "</div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "</div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -504,17 +546,29 @@ func Base(props BaseProps) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "</main>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "</main>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "<div class=\"ds-floating-top-right\">")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = themeToggle().Render(ctx, templ_7745c5c3_Buffer)
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "</div>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
 			templ_7745c5c3_Err = props.Content.Render(ctx, templ_7745c5c3_Buffer)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "</body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "</body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

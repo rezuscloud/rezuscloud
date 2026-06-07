@@ -51,6 +51,30 @@ templ toast(data ToastData) {
 	}
 }
 
+// themeToggle renders the canonical Mac↔NeXT icon button from
+// design-system/components/theme-toggle.html. Place it in every page
+// topbar (including login) so users can switch themes from anywhere.
+// The pre-paint script in <head> applies .dark to <html> before first
+// paint, then Alpine takes over for subsequent toggles.
+templ themeToggle() {
+	<button
+		type="button"
+		class="ds-theme-toggle"
+		aria-label="Toggle theme"
+		x-data="{ dark: document.documentElement.classList.contains('dark') }"
+		x-init="$watch('dark', (v) => { document.documentElement.classList.toggle('dark', v); try { localStorage.setItem('rezuscloud-theme', v ? 'next' : 'mac'); } catch (e) {} })"
+		@click="dark = !dark"
+	>
+		<svg class="ds-theme-toggle-icon" x-show="dark" x-cloak viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+			<circle cx="12" cy="12" r="4"/>
+			<path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>
+		</svg>
+		<svg class="ds-theme-toggle-icon" x-show="!dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+			<path d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+		</svg>
+	</button>
+}
+
 templ Base(props BaseProps) {
 	<!DOCTYPE html>
 	<html lang="en">
@@ -183,22 +207,6 @@ templ Base(props BaseProps) {
 						</a>
 					</nav>
 					<div class="ds-sidebar-footer">
-						<button
-							type="button"
-							class="ds-theme-toggle"
-							aria-label="Toggle theme"
-							x-data="{ dark: document.documentElement.classList.contains('dark') }"
-							x-init="$watch('dark', (v) => { document.documentElement.classList.toggle('dark', v); try { localStorage.setItem('rezuscloud-theme', v ? 'next' : 'mac'); } catch (e) {} })"
-							@click="dark = !dark"
-						>
-							<svg class="ds-theme-toggle-icon" x-show="dark" x-cloak viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-								<circle cx="12" cy="12" r="4"/>
-								<path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>
-							</svg>
-							<svg class="ds-theme-toggle-icon" x-show="!dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-								<path d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
-							</svg>
-						</button>
 						if props.User != "" {
 							<div class="ds-sidebar-user">{ props.User }</div>
 							<a href="/logout" class="ds-sidebar-logout">Sign Out</a>
@@ -206,7 +214,10 @@ templ Base(props BaseProps) {
 					</div>
 				</aside>
 				<main class="ds-main">
-					@breadcrumb(props.Breadcrumb)
+					<div class="ds-topbar">
+						@breadcrumb(props.Breadcrumb)
+						@themeToggle()
+					</div>
 					if props.Toast.Message != "" {
 						<div class="ds-toast-container" x-data="{ show: true }" x-init="setTimeout(() => show = false, 5000)" x-show="show">
 							@toast(props.Toast)
@@ -215,6 +226,7 @@ templ Base(props BaseProps) {
 					@props.Content
 				</main>
 			} else {
+				<div class="ds-floating-top-right">@themeToggle()</div>
 				@props.Content
 			}
 		</body>

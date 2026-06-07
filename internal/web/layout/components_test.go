@@ -953,9 +953,10 @@ func TestBase_IncludesPrePaintThemeScript(t *testing.T) {
 	}
 }
 
-// TestBase_RendersThemeToggleButton confirms the sidebar footer includes
-// the Mac/NeXT toggle with sun/moon icons. Login page is excluded (no
-// sidebar), so we test with a regular page and a logged-in user.
+// TestBase_RendersThemeToggleButton confirms the topbar (right side,
+// alongside the breadcrumb) renders the Mac/NeXT toggle with sun/moon
+// icons. The toggle must be in the topbar — not buried in the sidebar
+// footer — so users can find it without scrolling.
 func TestBase_RendersThemeToggleButton(t *testing.T) {
 	html := renderComponent(t, Base(BaseProps{
 		Title:   "Dashboard",
@@ -965,7 +966,7 @@ func TestBase_RendersThemeToggleButton(t *testing.T) {
 	}))
 	body := stripStyle(html)
 	if !strings.Contains(body, `class="ds-theme-toggle"`) {
-		t.Errorf("expected sidebar footer to include a ds-theme-toggle button, got body:\n%s", body)
+		t.Errorf("expected topbar to include a ds-theme-toggle button, got body:\n%s", body)
 	}
 	if !strings.Contains(body, `aria-label="Toggle theme"`) {
 		t.Errorf("expected aria-label on theme toggle, got body:\n%s", body)
@@ -1014,23 +1015,45 @@ func TestBase_RendersThemeToggleButton(t *testing.T) {
 			t.Errorf("theme toggle must be icon-only, found text %q inside button: %s", forbidden, btnContents)
 		}
 	}
+	// Toggle must be in the topbar, not the sidebar footer.
+	if !strings.Contains(body, `class="ds-topbar"`) {
+		t.Errorf("expected topbar wrapper .ds-topbar to be rendered (toggle must live in the topbar, not the sidebar footer), got body:\n%s", body)
+	}
 }
 
-// TestBase_LoginPageOmitsThemeToggle confirms the login page (no sidebar)
-// doesn't render the toggle — the user has no sidebar to put it in. The
-// pre-paint script in <head> still applies the user's preference, so the
-// login card itself renders in the right palette.
-func TestBase_LoginPageOmitsThemeToggle(t *testing.T) {
+// TestBase_LoginPageHasFloatingThemeToggle confirms the login page (which
+// has no sidebar / topbar) still renders the toggle as a fixed-position
+// element in the top-right corner. Users should be able to flip theme
+// before they even log in.
+func TestBase_LoginPageHasFloatingThemeToggle(t *testing.T) {
 	html := renderComponent(t, Base(BaseProps{
 		Title:   "Login",
 		Page:    "login",
 		Content: templ.Raw("<p>form</p>"),
 	}))
 	body := stripStyle(html)
-	if strings.Contains(body, `ds-theme-toggle`) {
-		t.Errorf("login page should not render theme toggle (no sidebar), got body:\n%s", body)
+	// Login page must include the toggle button itself.
+	if !strings.Contains(body, `class="ds-theme-toggle"`) {
+		t.Errorf("expected login page to render the theme toggle (even without sidebar), got body:\n%s", body)
+	}
+	// And it must be wrapped in the fixed-position container so it appears
+	// in the top-right corner rather than inline with the form.
+	if !strings.Contains(body, `class="ds-floating-top-right"`) {
+		t.Errorf("expected login page to wrap the toggle in .ds-floating-top-right for fixed top-right placement, got body:\n%s", body)
+	}
+	// And it must NOT include the topbar (no breadcrumb on login).
+	if strings.Contains(body, `class="ds-topbar"`) {
+		t.Errorf("login page should not render .ds-topbar (no breadcrumb), got body:\n%s", body)
+	}
+	// And it must NOT include the sidebar.
+	if strings.Contains(body, `class="ds-sidebar"`) {
+		t.Errorf("login page should not render the sidebar, got body:\n%s", body)
 	}
 }
+
+// TestBase_LoginPageOmitsThemeToggle has been replaced by the inverted
+// assertion TestBase_LoginPageHasFloatingThemeToggle (login now does
+// render the toggle, just in fixed position).
 
 // ---------- Test helpers ----------
 
