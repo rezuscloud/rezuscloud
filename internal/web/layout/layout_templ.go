@@ -455,7 +455,7 @@ func Base(props BaseProps) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "\"><svg class=\"ds-sidebar-icon\" viewBox=\"0 0 16 16\" fill=\"currentColor\"><path d=\"M2 3h12v10H2V3zm6 2v6h4V5H8z\"></path></svg> Backups</a></nav><div class=\"ds-sidebar-footer\"><button type=\"button\" class=\"ds-theme-toggle\" aria-label=\"Toggle theme\" x-data=\"{}\" x-init=\"$el.textContent = document.documentElement.classList.contains('dark') ? 'Mac' : 'NeXT'\" x-on:click=\"\n\t\t\t\t\t\t\tvar root = document.documentElement;\n\t\t\t\t\t\t\tvar isDark = root.classList.toggle('dark');\n\t\t\t\t\t\t\ttry { localStorage.setItem('rezuscloud-theme', isDark ? 'next' : 'mac'); } catch (e) {}\n\t\t\t\t\t\t\t$el.textContent = isDark ? 'Mac' : 'NeXT';\n\t\t\t\t\t\t\">NeXT</button> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "\"><svg class=\"ds-sidebar-icon\" viewBox=\"0 0 16 16\" fill=\"currentColor\"><path d=\"M2 3h12v10H2V3zm6 2v6h4V5H8z\"></path></svg> Backups</a></nav><div class=\"ds-sidebar-footer\"><button type=\"button\" class=\"ds-theme-toggle\" aria-label=\"Toggle theme\" x-data=\"{ dark: document.documentElement.classList.contains('dark') }\" x-init=\"$watch('dark', (v) => { document.documentElement.classList.toggle('dark', v); try { localStorage.setItem('rezuscloud-theme', v ? 'next' : 'mac'); } catch (e) {} })\" @click=\"dark = !dark\"><svg class=\"ds-theme-toggle-icon\" x-show=\"dark\" x-cloak viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"4\"></circle> <path d=\"M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41\"></path></svg> <svg class=\"ds-theme-toggle-icon\" x-show=\"!dark\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z\"></path></svg></button> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -467,7 +467,7 @@ func Base(props BaseProps) templ.Component {
 				var templ_7745c5c3_Var31 string
 				templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.JoinStringErrs(props.User)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/layout.templ`, Line: 200, Col: 48}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/layout.templ`, Line: 203, Col: 48}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var31))
 				if templ_7745c5c3_Err != nil {

@@ -954,8 +954,8 @@ func TestBase_IncludesPrePaintThemeScript(t *testing.T) {
 }
 
 // TestBase_RendersThemeToggleButton confirms the sidebar footer includes
-// the Mac/NeXT toggle. Login page is excluded (no sidebar), so we test with
-// a regular page and a logged-in user.
+// the Mac/NeXT toggle with sun/moon icons. Login page is excluded (no
+// sidebar), so we test with a regular page and a logged-in user.
 func TestBase_RendersThemeToggleButton(t *testing.T) {
 	html := renderComponent(t, Base(BaseProps{
 		Title:   "Dashboard",
@@ -974,13 +974,45 @@ func TestBase_RendersThemeToggleButton(t *testing.T) {
 		t.Errorf("expected toggle to write to localStorage key 'rezuscloud-theme', got body:\n%s", body)
 	}
 	// Regression guard for #69: bare `x-data` (no value) silently kills the
-	// Alpine component — x-on:click never fires. Must be `x-data="{}"` (or
-	// any other valid expression) for Alpine v3 to initialize the scope.
-	if !strings.Contains(body, `x-data="{}"`) {
-		t.Errorf("expected x-data=\"{}\" (Alpine v3 requires an expression — bare x-data kills the component, see #69), got body:\n%s", body)
+	// Alpine component — click handler never fires. Must have a value.
+	if !strings.Contains(body, `x-data="{`) {
+		t.Errorf("expected x-data=\"{...}\" (Alpine v3 requires an expression — bare x-data kills the component, see #69), got body:\n%s", body)
 	}
 	if strings.Contains(body, `x-data x-init`) || strings.Contains(body, `>x-data<`) {
 		t.Errorf("detected bare 'x-data' (no value) — Alpine v3 will not initialize, see #69")
+	}
+	// Sun icon: shown when dark mode is active (clicking switches to light)
+	if !strings.Contains(body, `ds-theme-toggle-icon`) {
+		t.Errorf("expected toggle to render ds-theme-toggle-icon SVG(s), got body:\n%s", body)
+	}
+	// Both sun and moon icons must be present (Alpine controls visibility)
+	sunPath := `<circle cx="12" cy="12" r="4"`
+	moonPath := `M20.354 15.354A9 9 0 018.646 3.646`
+	if !strings.Contains(body, sunPath) {
+		t.Errorf("expected sun icon (circle + rays) — `%s` — to be in HTML, got body:\n%s", sunPath, body)
+	}
+	if !strings.Contains(body, moonPath) {
+		t.Errorf("expected moon icon (crescent path containing `%s`) to be in HTML, got body:\n%s", moonPath, body)
+	}
+	// x-cloak on one of the icons (the dark-mode-only one) so it doesn't
+	// flash before Alpine initializes
+	if !strings.Contains(body, `x-cloak`) {
+		t.Errorf("expected x-cloak on the dark-mode-only SVG to prevent FOUC, got body:\n%s", body)
+	}
+	// No text content between the button tags — it's icon-only
+	openIdx := strings.Index(body, `class="ds-theme-toggle"`)
+	if openIdx == -1 {
+		t.Fatalf("theme toggle not found")
+	}
+	closeIdx := strings.Index(body[openIdx:], `</button>`)
+	if closeIdx == -1 {
+		t.Fatalf("theme toggle button not closed")
+	}
+	btnContents := body[openIdx : openIdx+closeIdx]
+	for _, forbidden := range []string{"Mac", "NeXT"} {
+		if strings.Contains(btnContents, ">"+forbidden+"<") {
+			t.Errorf("theme toggle must be icon-only, found text %q inside button: %s", forbidden, btnContents)
+		}
 	}
 }
 
