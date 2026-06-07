@@ -973,6 +973,15 @@ func TestBase_RendersThemeToggleButton(t *testing.T) {
 	if !strings.Contains(body, `rezuscloud-theme`) {
 		t.Errorf("expected toggle to write to localStorage key 'rezuscloud-theme', got body:\n%s", body)
 	}
+	// Regression guard for #69: bare `x-data` (no value) silently kills the
+	// Alpine component — x-on:click never fires. Must be `x-data="{}"` (or
+	// any other valid expression) for Alpine v3 to initialize the scope.
+	if !strings.Contains(body, `x-data="{}"`) {
+		t.Errorf("expected x-data=\"{}\" (Alpine v3 requires an expression — bare x-data kills the component, see #69), got body:\n%s", body)
+	}
+	if strings.Contains(body, `x-data x-init`) || strings.Contains(body, `>x-data<`) {
+		t.Errorf("detected bare 'x-data' (no value) — Alpine v3 will not initialize, see #69")
+	}
 }
 
 // TestBase_LoginPageOmitsThemeToggle confirms the login page (no sidebar)

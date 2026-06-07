@@ -455,7 +455,7 @@ func Base(props BaseProps) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "\"><svg class=\"ds-sidebar-icon\" viewBox=\"0 0 16 16\" fill=\"currentColor\"><path d=\"M2 3h12v10H2V3zm6 2v6h4V5H8z\"></path></svg> Backups</a></nav><div class=\"ds-sidebar-footer\"><button type=\"button\" class=\"ds-theme-toggle\" aria-label=\"Toggle theme\" x-data x-init=\"$el.textContent = document.documentElement.classList.contains('dark') ? 'Mac' : 'NeXT'\" x-on:click=\"\n\t\t\t\t\t\t\tvar root = document.documentElement;\n\t\t\t\t\t\t\tvar isDark = root.classList.toggle('dark');\n\t\t\t\t\t\t\ttry { localStorage.setItem('rezuscloud-theme', isDark ? 'next' : 'mac'); } catch (e) {}\n\t\t\t\t\t\t\t$el.textContent = isDark ? 'Mac' : 'NeXT';\n\t\t\t\t\t\t\">NeXT</button> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "\"><svg class=\"ds-sidebar-icon\" viewBox=\"0 0 16 16\" fill=\"currentColor\"><path d=\"M2 3h12v10H2V3zm6 2v6h4V5H8z\"></path></svg> Backups</a></nav><div class=\"ds-sidebar-footer\"><button type=\"button\" class=\"ds-theme-toggle\" aria-label=\"Toggle theme\" x-data=\"{}\" x-init=\"$el.textContent = document.documentElement.classList.contains('dark') ? 'Mac' : 'NeXT'\" x-on:click=\"\n\t\t\t\t\t\t\tvar root = document.documentElement;\n\t\t\t\t\t\t\tvar isDark = root.classList.toggle('dark');\n\t\t\t\t\t\t\ttry { localStorage.setItem('rezuscloud-theme', isDark ? 'next' : 'mac'); } catch (e) {}\n\t\t\t\t\t\t\t$el.textContent = isDark ? 'Mac' : 'NeXT';\n\t\t\t\t\t\t\">NeXT</button> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

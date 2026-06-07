@@ -187,7 +187,7 @@ templ Base(props BaseProps) {
 							type="button"
 							class="ds-theme-toggle"
 							aria-label="Toggle theme"
-							x-data
+							x-data="{}"
 							x-init="$el.textContent = document.documentElement.classList.contains('dark') ? 'Mac' : 'NeXT'"
 							x-on:click="
 							var root = document.documentElement;
