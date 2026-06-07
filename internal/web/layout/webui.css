@@ -1,8 +1,18 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-/* ===== Design System Tokens (from @rezuscloud/design-system) ===== */
+/*
+ * ===== Design System Tokens =====
+ *
+ * Two-tier structure:
+ *   1. Raw palette tokens (--paper, --next-black, etc.) — never referenced
+ *      directly by component rules. They are the source of truth for color
+ *      values and are copied verbatim from design-system/css/theme.css.
+ *   2. Semantic tokens (--bg, --fg, --accent, --danger, --code-bg, etc.) —
+ *      what every .ds-* rule references. They are remapped under :root.dark
+ *      to flip the entire UI between Mac (light) and NeXT (dark) modes.
+ */
 :root {
-  /* Mac mode: warm-tinted B&W (amber hue ~85) */
+  /* --- Raw palette: Mac mode (warm-tinted B&W, amber hue ~85) --- */
   --paper: oklch(99.5% 0.004 85);
   --surface: oklch(95.5% 0.004 85);
   --surface-strong: oklch(88.5% 0.006 85);
@@ -11,7 +21,7 @@
   --rule: oklch(72% 0.005 85);
   --accent: oklch(78% 0.16 75);
 
-  /* NeXT mode: cool grayscale + teal accent */
+  /* --- Raw palette: NeXT mode (cool grayscale + teal accent) --- */
   --next-black: oklch(6% 0.005 270);
   --next-dark: oklch(20% 0.006 270);
   --next-mid: oklch(34% 0.006 270);
@@ -23,16 +33,93 @@
   --next-teal: oklch(60% 0.08 170);
   --next-teal-hi: oklch(70% 0.07 170);
 
-  /* Semantic */
+  /* --- Raw palette: semantic alternates --- */
   --positive: oklch(55% 0.12 150);
   --positive-next: oklch(75% 0.14 150);
   --negative: oklch(50% 0.12 25);
   --negative-next: oklch(65% 0.14 25);
+  --warning: oklch(68% 0.14 80);
+  --warning-next: oklch(75% 0.12 80);
+  --info: oklch(50% 0.08 250);
+  --info-next: oklch(70% 0.08 250);
 
-  /* Fonts */
+  /* --- Fonts --- */
   --font-display: "Silkscreen", system-ui, sans-serif;
   --font-body: system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "VT323", "Courier New", monospace;
+
+  /*
+   * Semantic tokens (Mac defaults).
+   * Every component rule uses these, never the raw palette.
+   * Names are abstract on purpose: --bg, --fg, --accent, etc. so the
+   * dark-mode remap below is a 1-line swap per token.
+   */
+  --bg: var(--paper);
+  --bg-elevated: var(--surface);             /* table stripes, hover, sidebar */
+  --bg-elevated-strong: var(--surface-strong); /* sidebar header, cards */
+  --bg-input: var(--paper);                  /* form inputs */
+  --bg-code: oklch(96% 0.005 85);            /* one step darker than surface */
+  --fg: var(--ink);
+  --fg-muted: var(--ink-muted);
+  --fg-on-accent: oklch(99.5% 0.004 85);     /* paper, used on gold buttons */
+  --fg-on-danger: oklch(99.5% 0.004 85);
+  --border: var(--rule);
+  --border-strong: var(--ink);
+  --accent: var(--accent);                   /* gold */
+  --accent-hover: oklch(72% 0.16 75);
+  --success: var(--positive);
+  --danger: var(--negative);
+  --danger-hover: oklch(45% 0.14 25);
+  --warning: var(--warning);
+  --info: var(--info);
+  --overlay: oklch(0% 0 0 / 0.5);            /* modal backdrop */
+
+  color-scheme: light;
+}
+
+/*
+ * NeXT (dark) semantic remap.
+ * Raw palette stays the same; we just point --bg / --fg / ... at the NeXT
+ * tokens. Component rules see the swap automatically.
+ */
+:root.dark {
+  --bg: var(--next-black);
+  --bg-elevated: var(--next-dark);
+  --bg-elevated-strong: var(--next-mid);
+  --bg-input: var(--next-dark);
+  --bg-code: var(--next-dark);
+  --fg: var(--next-white);
+  --fg-muted: var(--next-light);
+  --fg-on-accent: var(--next-black);
+  --fg-on-danger: var(--next-black);
+  --border: var(--next-mid);
+  --border-strong: var(--next-light);
+  --accent: var(--next-teal);
+  --accent-hover: var(--next-teal-hi);
+  --success: var(--positive-next);
+  --danger: var(--negative-next);
+  --danger-hover: oklch(70% 0.16 25);
+  --warning: var(--warning-next);
+  --info: var(--info-next);
+  --overlay: oklch(0% 0 0 / 0.7);
+
+  color-scheme: dark;
+}
+
+/* ===== Global body / form defaults ===== */
+html, body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+a { color: var(--accent); text-decoration: underline; }
+a:hover { color: var(--accent-hover); }
+
+code, kbd, samp, pre {
+  font-family: var(--font-mono);
 }
 
 /* ===== Focus ===== */
@@ -44,8 +131,8 @@
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  background: var(--surface-strong);
-  border-right: 1px solid var(--rule);
+  background: var(--bg-elevated-strong);
+  border-right: 1px solid var(--border);
   position: fixed;
   left: 0;
   top: 0;
@@ -53,14 +140,14 @@
 }
 .ds-sidebar-header {
   padding: 1rem;
-  border-bottom: 1px solid var(--rule);
+  border-bottom: 1px solid var(--border);
 }
 .ds-sidebar-logo {
   font-family: var(--font-display);
   font-size: 0.875rem;
   font-weight: 700;
 }
-.ds-sidebar-logo-rezus { color: var(--ink); }
+.ds-sidebar-logo-rezus { color: var(--fg); }
 .ds-sidebar-logo-cloud { color: var(--accent); }
 .ds-sidebar-nav {
   flex: 1;
@@ -77,17 +164,17 @@
   font-family: var(--font-display);
   font-size: 0.6875rem;
   font-weight: 700;
-  color: var(--ink-muted);
+  color: var(--fg-muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   text-decoration: none;
   border-radius: 0;
   transition: background 0.15s, color 0.15s;
 }
-.ds-sidebar-link:hover { background: var(--surface); text-decoration: none; }
+.ds-sidebar-link:hover { background: var(--bg-elevated); text-decoration: none; }
 .ds-sidebar-link--active {
-  background: var(--paper);
-  color: var(--ink);
+  background: var(--bg);
+  color: var(--fg);
 }
 .ds-sidebar-icon {
   width: 0.875rem;
@@ -96,38 +183,67 @@
 }
 .ds-sidebar-footer {
   padding: 0.75rem 1rem;
-  border-top: 1px solid var(--rule);
+  border-top: 1px solid var(--border);
 }
 .ds-sidebar-version {
   font-family: var(--font-mono);
   font-size: 0.75rem;
-  color: var(--ink-muted);
+  color: var(--fg-muted);
 }
 .ds-sidebar-user {
   font-family: var(--font-mono);
   font-size: 0.75rem;
-  color: var(--ink-muted);
+  color: var(--fg-muted);
   padding: 0.5rem 0.75rem;
 }
 .ds-sidebar-logout {
   font-family: var(--font-display);
   font-size: 0.5625rem;
   font-weight: 700;
-  color: var(--ink-muted);
+  color: var(--fg-muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   text-decoration: none;
   padding: 0.25rem 0.75rem;
   transition: color 0.15s;
 }
-.ds-sidebar-logout:hover { color: var(--negative); text-decoration: none; }
+.ds-sidebar-logout:hover { color: var(--danger); text-decoration: none; }
+
+/* ===== Theme toggle (sidebar footer) ===== */
+.ds-theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 0.375rem 0.75rem;
+  margin-bottom: 0.5rem;
+  font-family: var(--font-display);
+  font-size: 0.5625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--fg-muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.ds-theme-toggle:hover {
+  color: var(--fg);
+  border-color: var(--fg);
+  background: var(--bg-elevated);
+}
+.ds-theme-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 
 /* ===== Main content area ===== */
 .ds-main {
   margin-left: 14rem;
   padding: 1.5rem 2rem;
   min-height: 100vh;
-  background: var(--paper);
+  background: var(--bg);
 }
 
 /* ===== Page title ===== */
@@ -135,15 +251,15 @@
   font-family: var(--font-display);
   font-size: 1.25rem;
   font-weight: 700;
-  color: var(--ink);
+  color: var(--fg);
   margin-bottom: 1.5rem;
 }
 
 /* ===== Stat Block (from ds-stat-block) ===== */
 .ds-stat-block {
   padding: 0.75rem 1rem;
-  background: var(--paper);
-  border: 1px solid var(--rule);
+  background: var(--bg);
+  border: 1px solid var(--border);
 }
 .ds-stat-label {
   font-family: var(--font-display);
@@ -151,21 +267,21 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: var(--ink-muted);
+  color: var(--fg-muted);
   margin-bottom: 0.25rem;
 }
 .ds-stat-value {
   font-family: var(--font-display);
   font-size: 1.75rem;
   font-weight: 700;
-  color: var(--ink);
+  color: var(--fg);
   line-height: 1;
 }
 
 /* ===== Data Table (from ds-table) ===== */
 .ds-table-wrapper {
   overflow-x: auto;
-  border: 1px solid var(--rule);
+  border: 1px solid var(--border);
   margin-bottom: 1.5rem;
 }
 .ds-table {
@@ -174,8 +290,8 @@
 }
 .ds-table-th {
   padding: 0.5rem 0.75rem;
-  background: var(--surface-strong);
-  border-bottom: 1px solid var(--rule);
+  background: var(--bg-elevated-strong);
+  border-bottom: 1px solid var(--border);
   font-family: var(--font-display);
   font-size: 0.625rem;
   font-weight: 700;
@@ -184,14 +300,14 @@
   letter-spacing: 0.1em;
   text-align: left;
 }
-.ds-table-row:nth-child(even) { background: var(--surface); }
-.ds-table-row:hover { background: var(--surface); }
+.ds-table-row:nth-child(even) { background: var(--bg-elevated); }
+.ds-table-row:hover { background: var(--bg-elevated); }
 .ds-table-td {
   padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid var(--rule);
+  border-bottom: 1px solid var(--border);
   font-family: var(--font-body);
   font-size: 0.8125rem;
-  color: var(--ink);
+  color: var(--fg);
 }
 .ds-table-mono {
   font-family: var(--font-mono);
@@ -208,20 +324,20 @@
   text-transform: uppercase;
   letter-spacing: 0.05em;
   line-height: 1.5;
-  border: 1px solid var(--rule);
-  background: var(--surface);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
 }
 .ds-status-badge--positive {
-  color: var(--positive);
-  border-color: var(--positive);
+  color: var(--success);
+  border-color: var(--success);
 }
 .ds-status-badge--negative {
-  color: var(--negative);
-  border-color: var(--negative);
+  color: var(--danger);
+  border-color: var(--danger);
 }
 .ds-status-badge--neutral {
-  color: var(--ink-muted);
-  border-color: var(--rule);
+  color: var(--fg-muted);
+  border-color: var(--border);
 }
 
 /* ===== Status Dot (from ds-status-dot) ===== */
@@ -232,9 +348,9 @@
   flex-shrink: 0;
   display: inline-block;
 }
-.ds-status-dot--positive { background: var(--positive); }
-.ds-status-dot--negative { background: var(--negative); }
-.ds-status-dot--neutral { background: var(--rule); }
+.ds-status-dot--positive { background: var(--success); }
+.ds-status-dot--negative { background: var(--danger); }
+.ds-status-dot--neutral { background: var(--border); }
 
 /* ===== CTA Button (from ds-cta-button) ===== */
 .ds-btn {
@@ -250,12 +366,12 @@
   letter-spacing: 0.05em;
   text-decoration: none;
   cursor: pointer;
-  border: 1px solid var(--ink);
-  background: var(--ink);
-  color: var(--paper);
+  border: 1px solid var(--fg);
+  background: var(--fg);
+  color: var(--bg);
   transition: background 0.15s;
 }
-.ds-btn:hover { background: var(--accent); border-color: var(--accent); text-decoration: none; }
+.ds-btn:hover { background: var(--accent); border-color: var(--accent); color: var(--fg-on-accent); text-decoration: none; }
 
 /* ===== Text Input (from ds-text-input) ===== */
 .ds-input-group { margin-bottom: 1rem; }
@@ -266,28 +382,28 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: var(--ink-muted);
+  color: var(--fg-muted);
   margin-bottom: 0.25rem;
 }
 .ds-input {
   width: 100%;
   padding: 0.5rem 0.75rem;
-  border: 1px solid var(--rule);
-  background: var(--paper);
-  color: var(--ink);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--fg);
   font-family: var(--font-body);
   font-size: 0.875rem;
 }
-.ds-input:focus { outline: none; border-color: var(--ink); }
+.ds-input:focus { outline: none; border-color: var(--fg); }
 
 /* ===== Alert Banner (from ds-alert-banner) ===== */
 .ds-alert {
   padding: 0.75rem 1rem;
   margin-bottom: 1rem;
   font-size: 0.8125rem;
-  border: 1px solid var(--negative);
-  background: var(--surface);
-  color: var(--negative);
+  border: 1px solid var(--danger);
+  background: var(--bg-elevated);
+  color: var(--danger);
 }
 
 /* ===== Empty State (from ds-empty-state) ===== */
@@ -301,13 +417,13 @@
   font-family: var(--font-display);
   font-size: 0.875rem;
   font-weight: 700;
-  color: var(--ink);
+  color: var(--fg);
   margin-bottom: 0.5rem;
 }
 .ds-empty-state-desc {
   font-family: var(--font-body);
   font-size: 0.8125rem;
-  color: var(--ink-muted);
+  color: var(--fg-muted);
 }
 
 /* ===== Login Page ===== */
@@ -316,20 +432,20 @@
   align-items: center;
   justify-content: center;
   min-height: 100vh;
-  background: var(--surface);
+  background: var(--bg-elevated);
 }
 .ds-login-card {
   width: 100%;
   max-width: 22rem;
   padding: 2rem;
-  background: var(--paper);
-  border: 1px solid var(--rule);
+  background: var(--bg);
+  border: 1px solid var(--border);
 }
 .ds-login-title {
   font-family: var(--font-display);
   font-size: 1rem;
   font-weight: 700;
-  color: var(--ink);
+  color: var(--fg);
   text-align: center;
   margin-bottom: 1.5rem;
 }
@@ -356,10 +472,10 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: var(--ink-muted);
+  color: var(--fg-muted);
   margin-bottom: 0.75rem;
   padding-bottom: 0.5rem;
-  border-bottom: 1px solid var(--rule);
+  border-bottom: 1px solid var(--border);
 }
 
 /* ===== Stat grid row spacing ===== */
@@ -368,7 +484,7 @@
 }
 
 /* ===== Links ===== */
-a { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
+a { color: var(--fg); text-decoration: underline; text-underline-offset: 2px; }
 a:hover { color: var(--accent); }
 
 /* ===== Responsive mobile nav toggle ===== */
@@ -380,14 +496,14 @@ a:hover { color: var(--accent); }
   z-index: 200;
   width: 2rem;
   height: 2rem;
-  background: var(--surface-strong);
-  border: 1px solid var(--rule);
+  background: var(--bg-elevated-strong);
+  border: 1px solid var(--border);
   cursor: pointer;
   align-items: center;
   justify-content: center;
   font-family: var(--font-display);
   font-size: 0.75rem;
-  color: var(--ink);
+  color: var(--fg);
 }
 @media (max-width: 768px) {
   .ds-mobile-toggle { display: flex; }
@@ -405,20 +521,20 @@ a:hover { color: var(--accent); }
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--ink-muted);
+  color: var(--fg-muted);
 }
 .ds-breadcrumb a {
-  color: var(--ink-muted);
+  color: var(--fg-muted);
   text-decoration: none;
   transition: color 0.15s;
 }
 .ds-breadcrumb a:hover { color: var(--accent); text-decoration: none; }
 .ds-breadcrumb-sep {
-  color: var(--rule);
+  color: var(--border);
   font-weight: 400;
 }
 .ds-breadcrumb-current {
-  color: var(--ink);
+  color: var(--fg);
 }
 
 /* ===== Toast / Alert Container (W2) ===== */
@@ -433,21 +549,21 @@ a:hover { color: var(--accent); }
 }
 .ds-toast {
   padding: 0.75rem 1rem;
-  background: var(--paper);
-  border: 1px solid var(--rule);
+  background: var(--bg);
+  border: 1px solid var(--border);
   font-family: var(--font-body);
   font-size: 0.8125rem;
-  color: var(--ink);
+  color: var(--fg);
   min-width: 16rem;
   max-width: 24rem;
 }
 .ds-toast--success {
-  border-color: var(--positive);
-  color: var(--positive);
+  border-color: var(--success);
+  color: var(--success);
 }
 .ds-toast--error {
-  border-color: var(--negative);
-  color: var(--negative);
+  border-color: var(--danger);
+  color: var(--danger);
 }
 
 /* ===== Sidebar Navigation Sub-sections (W2) ===== */
@@ -457,7 +573,7 @@ a:hover { color: var(--accent); }
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.12em;
-  color: var(--rule);
+  color: var(--border);
   padding: 0.75rem 0.75rem 0.25rem;
   margin-top: 0.5rem;
 }
@@ -465,18 +581,18 @@ a:hover { color: var(--accent); }
 
 /* ===== Modal (native <dialog>) ===== */
 dialog.ds-modal {
-  background: var(--paper);
-  border: 1px solid var(--ink);
+  background: var(--bg);
+  border: 1px solid var(--fg);
   padding: 0;
   margin: auto;
   min-width: 20rem;
   max-width: 32rem;
   max-height: 80vh;
   width: fit-content;
-  color: var(--ink);
+  color: var(--fg);
 }
 dialog.ds-modal::backdrop {
-  background: oklch(0% 0 0 / 0.5);
+  background: var(--overlay);
 }
 dialog.ds-modal[open] {
   display: block;
@@ -494,13 +610,13 @@ dialog.ds-modal[open] {
   align-items: center;
   margin: 0;
   padding: 0.875rem 1.25rem;
-  border-bottom: 1px solid var(--rule);
+  border-bottom: 1px solid var(--border);
 }
 .ds-modal-title {
   font-family: var(--font-display);
   font-size: 0.875rem;
   font-weight: 700;
-  color: var(--ink);
+  color: var(--fg);
   margin: 0;
 }
 .ds-modal-close {
@@ -509,16 +625,16 @@ dialog.ds-modal[open] {
   cursor: pointer;
   font-family: var(--font-display);
   font-size: 1rem;
-  color: var(--ink-muted);
+  color: var(--fg-muted);
   padding: 0;
   line-height: 1;
 }
-.ds-modal-close:hover { color: var(--negative); }
+.ds-modal-close:hover { color: var(--danger); }
 .ds-modal-body {
   padding: 1.25rem;
   font-family: var(--font-body);
   font-size: 0.875rem;
-  color: var(--ink);
+  color: var(--fg);
 }
 .ds-modal-footer {
   display: flex;
@@ -526,41 +642,42 @@ dialog.ds-modal[open] {
   gap: 0.5rem;
   margin-top: 1.25rem;
   padding-top: 1rem;
-  border-top: 1px solid var(--rule);
+  border-top: 1px solid var(--border);
 }
 .ds-confirm-message {
   margin: 0;
   font-family: var(--body-font, var(--font-body));
   font-size: 0.875rem;
-  color: var(--ink);
+  color: var(--fg);
   line-height: 1.5;
 }
 
 /* Button variants for confirm dialogs (extend ds-btn). */
 .ds-btn--secondary {
-  background: var(--paper);
-  color: var(--ink);
-  border-color: var(--ink);
+  background: var(--bg);
+  color: var(--fg);
+  border-color: var(--fg);
 }
 .ds-btn--secondary:hover {
-  background: var(--surface);
-  border-color: var(--ink);
+  background: var(--bg-elevated);
+  border-color: var(--fg);
+  color: var(--fg);
 }
 .ds-btn--danger {
-  background: var(--negative);
-  color: var(--paper);
-  border-color: var(--negative);
+  background: var(--danger);
+  color: var(--fg-on-danger);
+  border-color: var(--danger);
 }
 .ds-btn--danger:hover {
-  background: oklch(45% 0.14 25);
-  border-color: oklch(45% 0.14 25);
+  background: var(--danger-hover);
+  border-color: var(--danger-hover);
 }
 
 /* ===== Card (for detail pages) ===== */
 .ds-card {
-  border: 1px solid var(--rule);
+  border: 1px solid var(--border);
   padding: 1rem;
-  background: var(--paper);
+  background: var(--bg);
 }
 .ds-card-header {
   font-family: var(--font-display);
@@ -568,7 +685,7 @@ dialog.ds-modal[open] {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: var(--ink-muted);
+  color: var(--fg-muted);
   margin-bottom: 0.5rem;
 }
 
@@ -576,7 +693,7 @@ dialog.ds-modal[open] {
 .ds-tabs {
   display: flex;
   gap: 0;
-  border-bottom: 1px solid var(--rule);
+  border-bottom: 1px solid var(--border);
   margin-bottom: 1.5rem;
   overflow-x: auto;
 }
@@ -587,7 +704,7 @@ dialog.ds-modal[open] {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: var(--ink-muted);
+  color: var(--fg-muted);
   text-decoration: none;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
@@ -599,11 +716,11 @@ dialog.ds-modal[open] {
   text-decoration: none;
 }
 .ds-tabs-link--active {
-  color: var(--ink);
-  border-bottom-color: var(--ink);
+  color: var(--fg);
+  border-bottom-color: var(--fg);
 }
 .ds-tabs-link--active:hover {
-  color: var(--ink);
+  color: var(--fg);
 }
 
 /* ===== CopyButton (#12) ===== */
@@ -624,23 +741,23 @@ dialog.ds-modal[open] {
 .ds-copy-btn-feedback {
   font-family: var(--font-display);
   font-size: 0.625rem;
-  color: var(--positive);
+  color: var(--success);
 }
 [x-cloak] { display: none !important; }
 
 /* ===== CodeBlock (#12) ===== */
 .ds-codeblock {
   margin: 0 0 1.5rem 0;
-  border: 1px solid var(--rule);
-  background: var(--surface);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
 }
 .ds-codeblock-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 0.5rem 0.75rem;
-  background: var(--surface-strong);
-  border-bottom: 1px solid var(--rule);
+  background: var(--bg-elevated-strong);
+  border-bottom: 1px solid var(--border);
 }
 .ds-codeblock-caption {
   font-family: var(--font-display);
@@ -648,17 +765,17 @@ dialog.ds-modal[open] {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  color: var(--ink-muted);
+  color: var(--fg-muted);
 }
 .ds-codeblock-pre {
   margin: 0;
   padding: 0.75rem 1rem;
-  background: var(--paper);
+  background: var(--bg);
   overflow: auto;
   font-family: var(--font-mono);
   font-size: 0.8125rem;
   line-height: 1.4;
-  color: var(--ink);
+  color: var(--fg);
 }
 .ds-codeblock-pre code {
   font-family: inherit;
@@ -682,18 +799,18 @@ dialog.ds-modal[open] {
   max-width: 32rem;
 }
 .ds-input--error {
-  border-color: var(--negative);
+  border-color: var(--danger);
 }
 .ds-input-error {
   font-family: var(--font-display);
   font-size: 0.5625rem;
-  color: var(--negative);
+  color: var(--danger);
   margin-top: 0.25rem;
 }
 .ds-input-hint {
   font-family: var(--font-body);
   font-size: 0.75rem;
-  color: var(--ink-muted);
+  color: var(--fg-muted);
   margin-top: 0.25rem;
 }
 .ds-form-actions {
@@ -716,15 +833,15 @@ dialog.ds-modal[open] {
 
 /* Card variants for cluster detail Settings tab */
 .ds-card--danger {
-  border-color: var(--negative);
+  border-color: var(--danger);
 }
 .ds-section-header--danger {
-  color: var(--negative);
+  color: var(--danger);
 }
 
 /* Link — slight color lift */
 .ds-link {
-  color: var(--ink);
+  color: var(--fg);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
@@ -741,7 +858,7 @@ dialog.ds-modal[open] {
   gap: 8px;
   margin-top: 4px;
   font-size: 14px;
-  color: var(--text-muted);
+  color: var(--fg-muted);
 }
 
 .ds-header-actions {
@@ -755,7 +872,7 @@ dialog.ds-modal[open] {
   flex-wrap: wrap;
   gap: 16px;
   padding: 16px;
-  background: var(--surface);
+  background: var(--bg-elevated);
   border: 1px solid var(--border);
   margin-bottom: 16px;
   align-items: flex-end;
@@ -781,7 +898,7 @@ dialog.ds-modal[open] {
 }
 
 .ds-text-muted {
-  color: var(--text-muted);
+  color: var(--fg-muted);
 }
 
 .ds-text-small {
@@ -791,8 +908,8 @@ dialog.ds-modal[open] {
 .ds-empty {
   padding: 32px 16px;
   text-align: center;
-  color: var(--text-muted);
-  background: var(--surface);
+  color: var(--fg-muted);
+  background: var(--bg-elevated);
   border: 1px dashed var(--border);
 }
 
@@ -802,12 +919,12 @@ dialog.ds-modal[open] {
 }
 
 .ds-empty-hint code {
-  background: var(--paper);
+  background: var(--bg);
   padding: 1px 4px;
 }
 
 .ds-code-inline {
-  background: var(--paper);
+  background: var(--bg);
   padding: 1px 6px;
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   font-size: 0.92em;
@@ -815,7 +932,7 @@ dialog.ds-modal[open] {
 
 .ds-code-block {
   display: block;
-  background: var(--paper);
+  background: var(--bg);
   padding: 10px 12px;
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   font-size: 13px;
@@ -852,7 +969,7 @@ dialog.ds-modal[open] {
 }
 
 .ds-def-list dt {
-  color: var(--text-muted);
+  color: var(--fg-muted);
 }
 
 .ds-def-list dd {
@@ -874,7 +991,7 @@ dialog.ds-modal[open] {
 }
 
 .ds-logs {
-  background: var(--paper);
+  background: var(--bg);
   border: 1px solid var(--border);
   padding: 12px;
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -914,7 +1031,7 @@ dialog.ds-modal[open] {
 }
 
 .ds-logs-time {
-  color: var(--text-muted);
+  color: var(--fg-muted);
   flex-shrink: 0;
   width: 90px;
 }
@@ -926,10 +1043,10 @@ dialog.ds-modal[open] {
   font-size: 11px;
 }
 
-.ds-logs-level--error   { color: #c53030; }
-.ds-logs-level--warn    { color: #b7791f; }
-.ds-logs-level--info    { color: var(--text); }
-.ds-logs-level--debug   { color: var(--text-muted); }
+.ds-logs-level--error   { color: var(--danger); }
+.ds-logs-level--warn    { color: var(--warning); }
+.ds-logs-level--info    { color: var(--fg); }
+.ds-logs-level--debug   { color: var(--fg-muted); }
 
 .ds-logs-source {
   color: var(--accent);
@@ -942,9 +1059,9 @@ dialog.ds-modal[open] {
 }
 
 .ds-alert {
-  background: var(--surface);
+  background: var(--bg-elevated);
   border: 1px solid var(--border);
-  border-left: 4px solid #c53030;
+  border-left: 4px solid var(--danger);
   padding: 12px;
   margin-bottom: 12px;
 }
