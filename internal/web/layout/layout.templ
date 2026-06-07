@@ -59,6 +59,30 @@ templ Base(props BaseProps) {
 			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 			<title>{ props.Title } — RezusCloud</title>
 			@templ.Raw("<style>" + CSS() + "</style>")
+			<script>
+				// Pre-paint theme application. Runs synchronously in <head> before <body>
+				// renders, so the correct palette is applied on first paint — no FOUC.
+				//
+				// Precedence:
+				//   1. localStorage 'rezuscloud-theme' if set ('mac' | 'next')
+				//   2. prefers-color-scheme: dark media query
+				//   3. default = Mac (light)
+				(function () {
+					var dark;
+					try {
+						var stored = localStorage.getItem('rezuscloud-theme');
+						if (stored === 'mac' || stored === 'next') {
+							dark = (stored === 'next');
+						} else {
+							dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+						}
+					} catch (e) {
+						// localStorage disabled (private mode, etc.) — fall through to OS pref.
+						dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+					}
+					if (dark) document.documentElement.classList.add('dark');
+				})();
+			</script>
 			<script src="https://unpkg.com/htmx.org@2.0.4"></script>
 			<script src="https://unpkg.com/htmx-ext-sse@2.3.1/sse.js"></script>
 			<script defer src="https://unpkg.com/alpinejs@3.14.8/dist/cdn.min.js"></script>
@@ -159,6 +183,19 @@ templ Base(props BaseProps) {
 						</a>
 					</nav>
 					<div class="ds-sidebar-footer">
+						<button
+							type="button"
+							class="ds-theme-toggle"
+							aria-label="Toggle theme"
+							x-data
+							x-init="$el.textContent = document.documentElement.classList.contains('dark') ? 'Mac' : 'NeXT'"
+							x-on:click="
+							var root = document.documentElement;
+							var isDark = root.classList.toggle('dark');
+							try { localStorage.setItem('rezuscloud-theme', isDark ? 'next' : 'mac'); } catch (e) {}
+							$el.textContent = isDark ? 'Mac' : 'NeXT';
+						"
+						>NeXT</button>
 						if props.User != "" {
 							<div class="ds-sidebar-user">{ props.User }</div>
 							<a href="/logout" class="ds-sidebar-logout">Sign Out</a>
