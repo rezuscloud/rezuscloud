@@ -17,9 +17,9 @@ RezusCloud is a single-repo project with two binaries:
 
 1. **Single binary management plane.** One container runs the entire management plane — REST API, SideroLink server, Config Provider, provider gRPC, WebUI, health endpoints. Temporary unavailability does not affect running clusters.
 2. **REST API following Kubernetes model.** Per-type endpoints, metadata/spec/status, labels, finalizers, JWT auth. Not CRDs — the API abstracts the state backend (SQLite, PostgreSQL, or CRDs).
-3. **Pluggable providers for machines.** Provider binaries connect outbound to the management cluster. Works behind NAT, IPv6-only, CGNAT ([ADR 12](adr/0012-provider-based-machine-provisioning.md)).
-4. **Full Talos cluster lifecycle.** RezusCloud generates complete Talos configs for init, controlplane, and worker nodes. No hosted control planes ([ADR 14](adr/0014-full-talos-cluster-lifecycle.md)).
-5. **Docker-first development.** Validate orchestration locally before cloud ([ADR 6](adr/0006-docker-first-platform.md)).
+3. **Pluggable providers for machines.** Provider binaries connect outbound to the management cluster. Works behind NAT, IPv6-only, CGNAT ([ADR 12](../adr/0012-provider-based-machine-provisioning.md)).
+4. **Full Talos cluster lifecycle.** RezusCloud generates complete Talos configs for init, controlplane, and worker nodes. No hosted control planes ([ADR 14](../adr/0014-full-talos-cluster-lifecycle.md)).
+5. **Docker-first development.** Validate orchestration locally before cloud ([ADR 6](../adr/0006-docker-first-platform.md)).
 6. **Outbound-only connectivity.** Providers and machines connect to the management cluster, never the reverse.
 
 ## Layered Architecture
@@ -181,6 +181,6 @@ docs/                Documentation
 ## See Also
 
 - [ADR Index](adr/) — Architecture Decision Records
-- [CLI Reference](cli-reference.md) — All commands and flags
-- [Getting Started](getting-started.md) — Installation and first cluster
-- [API Design](../api-design.md) — Full REST API specification
+- [CLI Reference](../reference/cli.md) — All commands and flags
+- [Getting Started](../getting-started/index.md) — Installation and first cluster
+- [API Design](api-design.md) — Full REST API specification
