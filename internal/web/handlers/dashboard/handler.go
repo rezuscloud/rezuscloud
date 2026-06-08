@@ -14,8 +14,11 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"context"
+
 	"github.com/rezuscloud/rezuscloud/internal/audit"
 	"github.com/rezuscloud/rezuscloud/internal/dashboard" // posture computation
+	"github.com/rezuscloud/rezuscloud/internal/metrics"
 	"github.com/rezuscloud/rezuscloud/internal/state"
 	"github.com/rezuscloud/rezuscloud/internal/watch"
 	"github.com/rezuscloud/rezuscloud/internal/web/layout"
@@ -42,6 +45,12 @@ type BackupReader = dashboard.BackupReader
 // UpgradeReader is the small interface the dashboard needs to list upgrade runs.
 type UpgradeReader = dashboard.UpgradeReader
 
+// MetricsAggregator is the interface for fetching cluster resource metrics.
+// When nil, the dashboard omits the resource pressure section.
+type MetricsAggregator interface {
+	ClusterSummary(ctx context.Context) (*metrics.ClusterResourceSummary, error)
+}
+
 // Handler serves / and /events/stream.
 type Handler struct {
 	store      *state.Store
@@ -49,19 +58,21 @@ type Handler struct {
 	auditStore audit.Store
 	backup     BackupReader
 	upgrades   UpgradeReader
+	metrics    MetricsAggregator
 	host       Host
 }
 
-// New creates a dashboard Handler. bus, auditStore, backup, and upgrades may
-// be nil — the dashboard degrades gracefully when those subsystems are not
-// configured.
-func New(store *state.Store, bus *watch.Bus, auditStore audit.Store, backup BackupReader, upgrades UpgradeReader, host Host) *Handler {
+// New creates a dashboard Handler. bus, auditStore, backup, upgrades, and
+// metrics may be nil — the dashboard degrades gracefully when those subsystems
+// are not configured.
+func New(store *state.Store, bus *watch.Bus, auditStore audit.Store, backup BackupReader, upgrades UpgradeReader, metricsAgg MetricsAggregator, host Host) *Handler {
 	return &Handler{
 		store:      store,
 		bus:        bus,
 		auditStore: auditStore,
 		backup:     backup,
 		upgrades:   upgrades,
+		metrics:    metricsAgg,
 		host:       host,
 	}
 }
@@ -135,6 +146,47 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 				Verb: ev.Verb, Status: ev.Status, RequestID: ev.RequestID, SourceIP: ev.SourceIP,
 				Error: ev.Error,
 			})
+		}
+	}
+
+	// Resource pressure from metrics aggregator.
+	if h.metrics != nil {
+		if summary, err := h.metrics.ClusterSummary(r.Context()); err == nil && summary != nil {
+			data.ResourcePressure = &pages.ResourcePressureData{
+				CPUUsage:    summary.CPU.Usage,
+				CPUCapacity: summary.CPU.Capacity,
+				MemUsage:    summary.Memory.Usage,
+				MemCapacity: summary.Memory.Capacity,
+				PodRunning:  summary.Pods.Running,
+				PodCapacity: summary.Pods.Capacity,
+				Nodes:       summary.Nodes,
+				NodeDetails: make([]pages.NodePressureCard, 0, len(summary.NodeDetails)),
+			}
+			for _, n := range summary.NodeDetails {
+				data.ResourcePressure.NodeDetails = append(data.ResourcePressure.NodeDetails, pages.NodePressureCard{
+					Name:       n.Name,
+					Role:       n.Role,
+					Status:     n.Status,
+					CPUPct:     metrics.Percent(n.CPU.Usage.CPU, n.CPU.Allocatable.CPU),
+					MemPct:     metrics.Percent(n.Memory.Usage.Memory, n.Memory.Allocatable.Memory),
+					PodPct:     metrics.Percent(int64(n.Pods.Running), int64(n.Pods.Allocatable)),
+					DiskPct:    metrics.Percent(n.Disk.UsedBytes, n.Disk.TotalBytes),
+					CPUUsed:    n.CPU.Usage.CPU,
+					CPUAlloc:   n.CPU.Allocatable.CPU,
+					MemUsed:    n.Memory.Usage.Memory,
+					MemAlloc:   n.Memory.Allocatable.Memory,
+					PodCount:   n.Pods.Running,
+					PodAlloc:   n.Pods.Allocatable,
+					DiskUsed:   n.Disk.UsedBytes,
+					DiskTotal:  n.Disk.TotalBytes,
+					Conditions: pages.Conditions{
+					Ready:          string(n.Conditions.Ready),
+					MemoryPressure: string(n.Conditions.MemoryPressure),
+					DiskPressure:   string(n.Conditions.DiskPressure),
+					PIDPressure:    string(n.Conditions.PIDPressure),
+				},
+				})
+			}
 		}
 	}
 

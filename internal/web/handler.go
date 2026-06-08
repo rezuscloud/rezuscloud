@@ -47,6 +47,7 @@ type Handler struct {
 	auditStore audit.Store      // optional — enables /settings/audit
 	backupSvc  *backup.Service  // optional — enables /settings/backups
 	upgradeMgr *upgrade.Manager // optional — enables cluster upgrade endpoints
+	metricsAgg_ dashhandler.MetricsAggregator // optional — enables resource pressure on dashboard
 }
 
 // NewHandler creates a WebUI handler.
@@ -91,6 +92,17 @@ func (h *Handler) WithAuditStore(s audit.Store) *Handler {
 	return h
 }
 
+// WithMetricsAggregator injects a metrics aggregator so the dashboard can
+// show resource pressure (CPU, memory, disk, pod counts).
+func (h *Handler) WithMetricsAggregator(agg dashhandler.MetricsAggregator) *Handler {
+	h.metricsAgg_ = agg
+	return h
+}
+
+func (h *Handler) metricsAgg() dashhandler.MetricsAggregator {
+	return h.metricsAgg_
+}
+
 // WithAuditComponent injects the audit subsystem component.
 func (h *Handler) WithAuditComponent(c *audit.Component) *Handler {
 	if c == nil {
@@ -106,7 +118,7 @@ func (h *Handler) WithAuditComponent(c *audit.Component) *Handler {
 // sub-packages. The Handler itself owns no routes; it only composes them.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	authn.New(h.store, h.jwtManager, h).RegisterRoutes(mux)
-	dashhandler.New(h.store, h.bus, h.auditStore, h.backupAdapter(), h.upgradeAdapter(), h).RegisterRoutes(mux)
+	dashhandler.New(h.store, h.bus, h.auditStore, h.backupAdapter(), h.upgradeAdapter(), h.metricsAgg(), h).RegisterRoutes(mux)
 	clusters.New(h.store, h.upgradeMgr, h).RegisterRoutes(mux)
 	machines.New(h.store, h.bus, h).RegisterRoutes(mux)
 	settings.New(h.store, h.backupSvc, h.auditStore, h).RegisterRoutes(mux)

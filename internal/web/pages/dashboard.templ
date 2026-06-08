@@ -17,6 +17,8 @@ type DashboardData struct {
 	Posture DashboardPosture
 	// RecentAudit lists the most recent audit events (mutation activity).
 	RecentAudit []AuditRow
+	// ResourcePressure is nil when the metrics aggregator is not configured.
+	ResourcePressure *ResourcePressureData
 }
 
 type DashboardPosture struct {
@@ -70,10 +72,54 @@ type TenantSummary struct {
 	Total int
 }
 
+// ResourcePressureData drives the resource pressure section on the dashboard.
+// Nil when the metrics aggregator is not configured.
+type ResourcePressureData struct {
+	CPUUsage    int64 // millicores
+	CPUCapacity int64 // millicores
+	MemUsage    int64 // bytes
+	MemCapacity int64 // bytes
+	PodRunning  int
+	PodCapacity int
+	Nodes       int
+	NodeDetails []NodePressureCard
+}
+
+// NodePressureCard is a compact node summary for the dashboard node grid.
+type NodePressureCard struct {
+	Name       string
+	Role       string
+	Status     string
+	CPUPct     int
+	MemPct     int
+	PodPct     int
+	DiskPct    int
+	CPUUsed    int64 // millicores
+	CPUAlloc   int64 // millicores
+	MemUsed    int64 // bytes
+	MemAlloc   int64 // bytes
+	PodCount   int
+	PodAlloc   int
+	DiskUsed   int64 // bytes
+	DiskTotal  int64 // bytes
+	Conditions Conditions
+}
+
+// Conditions mirrors metrics.Conditions for template use.
+type Conditions struct {
+	Ready          string `json:"ready"`
+	MemoryPressure string `json:"memoryPressure"`
+	DiskPressure   string `json:"diskPressure"`
+	PIDPressure    string `json:"pidPressure"`
+}
+
 templ Dashboard(data DashboardData) {
 	<h1 class="ds-page-title">Overview</h1>
 	<p class="ds-text-muted">Operational posture across the personal cloud.</p>
 	@postureGrid(data)
+	if data.ResourcePressure != nil {
+		@resourcePressure(*data.ResourcePressure)
+	}
 	@clustersTable(data)
 	@recentActivity(data)
 }
@@ -222,6 +268,134 @@ templ recentActivity(data DashboardData) {
 	}
 }
 
+// resourcePressure renders the cluster-wide resource pressure section.
+// Uses KPI tiles for cluster totals and node cards for per-node breakdown.
+templ resourcePressure(data ResourcePressureData) {
+	<div class="ds-section-header">Resource Pressure</div>
+	<div class="ds-grid ds-grid-4" style="margin-bottom: 1.5rem;">
+		@pressureTile("CPU", data.CPUUsage, data.CPUCapacity, "millicores")
+		@pressureTileBytes("Memory", data.MemUsage, data.MemCapacity)
+		@pressureTilePods("Pods", data.PodRunning, data.PodCapacity)
+		@pressureTileCount("Nodes", int64(data.Nodes), "nodes")
+	</div>
+	if len(data.NodeDetails) > 0 {
+		<div class="ds-section-header" style="margin-bottom: 0.75rem;">Nodes</div>
+		<div class="ds-grid ds-grid-3" style="gap: 0.75rem;">
+			for _, n := range data.NodeDetails {
+				@nodePressureCard(n)
+			}
+		</div>
+	}
+}
+
+// pressureTile renders a single KPI-like pressure tile for CPU (millicores).
+templ pressureTile(label string, usage, capacity int64, unit string) {
+	<div class="ds-pressure-tile">
+		<div class="ds-pressure-tile-header">
+			<span class="ds-pressure-tile-label">{ label }</span>
+		</div>
+		<div class="ds-pressure-tile-value">
+			{ formatMillicores(usage) }<span class="ds-pressure-tile-unit"> / { formatMillicores(capacity) }</span>
+		</div>
+		@pressureBar(pctInt(usage, capacity))
+	</div>
+}
+
+// pressureTileBytes renders a pressure tile for memory (bytes).
+templ pressureTileBytes(label string, usage, capacity int64) {
+	<div class="ds-pressure-tile">
+		<div class="ds-pressure-tile-header">
+			<span class="ds-pressure-tile-label">{ label }</span>
+		</div>
+		<div class="ds-pressure-tile-value">
+			{ formatBytes(usage) }<span class="ds-pressure-tile-unit"> / { formatBytes(capacity) }</span>
+		</div>
+		@pressureBar(pctInt(usage, capacity))
+	</div>
+}
+
+// pressureTilePods renders a pressure tile for pod counts.
+templ pressureTilePods(label string, running, capacity int) {
+	<div class="ds-pressure-tile">
+		<div class="ds-pressure-tile-header">
+			<span class="ds-pressure-tile-label">{ label }</span>
+		</div>
+		<div class="ds-pressure-tile-value">
+			{ fmt.Sprintf("%d", running) }<span class="ds-pressure-tile-unit"> / { fmt.Sprintf("%d", capacity) }</span>
+		</div>
+		@pressureBar(pctInt(int64(running), int64(capacity)))
+	</div>
+}
+
+// pressureTileCount renders a simple count tile without a bar.
+templ pressureTileCount(label string, count int64, unit string) {
+	<div class="ds-pressure-tile">
+		<div class="ds-pressure-tile-header">
+			<span class="ds-pressure-tile-label">{ label }</span>
+		</div>
+		<div class="ds-pressure-tile-value">
+			{ fmt.Sprintf("%d", count) }<span class="ds-pressure-tile-unit"> { unit }</span>
+		</div>
+	</div>
+}
+
+// pressureBar renders a horizontal progress bar with threshold coloring.
+templ pressureBar(pct int) {
+	<div
+		class="ds-pressure-bar"
+		role="progressbar"
+		aria-valuenow={ fmt.Sprintf("%d", pct) }
+		aria-valuemin="0"
+		aria-valuemax="100"
+	>
+		<div
+			class={ "ds-pressure-bar-fill ds-pressure-bar-fill--" + pressureClass(pct) }
+			style={ fmt.Sprintf("width: %d%%", pct) }
+		></div>
+	</div>
+	<span class={ "ds-pressure-pct ds-pressure-pct--" + pressureClass(pct) }>{ fmt.Sprintf("%d%%", pct) }</span>
+}
+
+// nodePressureCard renders a compact card for a single node with resource bars.
+templ nodePressureCard(n NodePressureCard) {
+	<div class="ds-node-press-card">
+		<div class="ds-node-press-header">
+			<span class={ "ds-status-dot ds-status-dot--" + nodeStatusClass(n.Status) }></span>
+			<span class="ds-node-press-name">{ n.Name }</span>
+			<span class="ds-node-press-role">{ n.Role }</span>
+		</div>
+		<div class="ds-node-press-bars">
+			@nodeBar("CPU", n.CPUPct, formatMillicores(n.CPUUsed), formatMillicores(n.CPUAlloc))
+			@nodeBar("Mem", n.MemPct, formatBytes(n.MemUsed), formatBytes(n.MemAlloc))
+			@nodeBar("Pods", n.PodPct, fmt.Sprintf("%d", n.PodCount), fmt.Sprintf("%d", n.PodAlloc))
+			@nodeBar("Disk", n.DiskPct, formatBytes(n.DiskUsed), formatBytes(n.DiskTotal))
+		</div>
+	</div>
+}
+
+// nodeBar renders a labeled progress bar for a node resource.
+templ nodeBar(label string, pct int, used, total string) {
+	<div class="ds-node-press-row">
+		<div class="ds-node-press-row-head">
+			<span class="ds-node-press-row-label">{ label }</span>
+			<span class="ds-node-press-row-value"><b>{ used }</b> / { total }</span>
+		</div>
+		<div
+			class="ds-node-press-row-bar"
+			role="progressbar"
+			aria-valuenow={ fmt.Sprintf("%d", pct) }
+			aria-valuemin="0"
+			aria-valuemax="100"
+		>
+			<div
+				class={ "ds-node-press-row-fill ds-node-press-row-fill--" + pressureClass(pct) }
+				style={ fmt.Sprintf("width: %d%%", pct) }
+			></div>
+		</div>
+	</div>
+}
+
+// clustersTable renders the cluster list.
 templ clustersTable(data DashboardData) {
 	if len(data.Tenants) > 0 {
 		<div class="ds-section-header">Clusters</div>

@@ -11,6 +11,7 @@ import (
 
 	"github.com/rezuscloud/rezuscloud/internal/audit"
 	"github.com/rezuscloud/rezuscloud/internal/dashboard"
+	"github.com/rezuscloud/rezuscloud/internal/metrics"
 	"github.com/rezuscloud/rezuscloud/internal/state"
 	"github.com/rezuscloud/rezuscloud/internal/watch"
 	"github.com/rezuscloud/rezuscloud/internal/web/layout"
@@ -86,7 +87,7 @@ func TestDashboard_PostureWithBackupAndUpgrade(t *testing.T) {
 	upgradeReader := &fakeUpgradeReader{
 		runs: []dashboard.UpgradeRun{{Tenant: "t", Target: "1.30.0", Phase: "running"}},
 	}
-	h := New(store, nil, nil, backupReader, upgradeReader, host)
+	h := New(store, nil, nil, backupReader, upgradeReader, nil, host)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
@@ -116,7 +117,7 @@ func newTestStore(t *testing.T) *state.Store {
 func TestNew_HandlerConstructs(t *testing.T) {
 	store := newTestStore(t)
 	host := &stubHost{}
-	h := New(store, nil, nil, nil, nil, host)
+	h := New(store, nil, nil, nil, nil, nil, host)
 	if h == nil {
 		t.Fatal("New returned nil")
 	}
@@ -133,7 +134,7 @@ func TestNew_HandlerConstructs(t *testing.T) {
 func TestDashboard_RendersWithMinimalDeps(t *testing.T) {
 	store := newTestStore(t)
 	host := &stubHost{}
-	h := New(store, nil, nil, nil, nil, host)
+	h := New(store, nil, nil, nil, nil, nil, host)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
@@ -162,7 +163,7 @@ func TestDashboard_RendersWithAuditEvents(t *testing.T) {
 			{ID: 2, UserName: "bob", Method: "GET", Path: "/api/v1/machines"},
 		},
 	}
-	h := New(store, nil, auditStore, nil, nil, host)
+	h := New(store, nil, auditStore, nil, nil, nil, host)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	w := httptest.NewRecorder()
@@ -181,7 +182,7 @@ func TestDashboard_RendersWithAuditEvents(t *testing.T) {
 func TestEventsStream_Returns404WhenBusNil(t *testing.T) {
 	store := newTestStore(t)
 	host := &stubHost{}
-	h := New(store, nil, nil, nil, nil, host)
+	h := New(store, nil, nil, nil, nil, nil, host)
 
 	req := httptest.NewRequest(http.MethodGet, "/events/stream", nil)
 	w := httptest.NewRecorder()
@@ -199,7 +200,7 @@ func TestEventsStream_StreamsEvents(t *testing.T) {
 	host := &stubHost{}
 	bus := watch.NewBus()
 	// watch.Bus has no Close; rely on test process exit.
-	h := New(store, bus, nil, nil, nil, host)
+	h := New(store, bus, nil, nil, nil, nil, host)
 
 	// Pre-publish an event so the receiver has something to read.
 	bus.Publish("machine", watch.Event{
@@ -242,7 +243,7 @@ func TestEventsStream_StreamsEvents(t *testing.T) {
 func TestRegisterRoutes(t *testing.T) {
 	store := newTestStore(t)
 	host := &stubHost{}
-	h := New(store, nil, nil, nil, nil, host)
+	h := New(store, nil, nil, nil, nil, nil, host)
 
 	mux := http.NewServeMux()
 	h.RegisterRoutes(mux)
@@ -265,4 +266,62 @@ func TestRegisterRoutes(t *testing.T) {
 // assert that the interface shape is what we expect.
 func TestHost_Interface(t *testing.T) {
 	var _ Host = (*stubHost)(nil)
+}
+
+// stubMetricsAggregator returns a fixed ClusterResourceSummary for testing.
+type stubMetricsAggregator struct {
+	summary *metrics.ClusterResourceSummary
+	err     error
+}
+
+func (s *stubMetricsAggregator) ClusterSummary(ctx context.Context) (*metrics.ClusterResourceSummary, error) {
+	return s.summary, s.err
+}
+
+func TestDashboard_ResourcePressure(t *testing.T) {
+	store := newTestStore(t)
+	agg := &stubMetricsAggregator{
+		summary: &metrics.ClusterResourceSummary{
+			Nodes: 2,
+			CPU: metrics.ClusterCPU{
+				Capacity: 20000, Allocatable: 19900, Requested: 8000, Usage: 6400,
+			},
+			Memory: metrics.ClusterMemory{
+				Capacity: 64e9, Allocatable: 63e9, Requested: 32e9, Usage: 40e9,
+			},
+			Pods: metrics.ClusterPods{Capacity: 220, Allocatable: 220, Running: 78},
+			NodeDetails: []metrics.NodeResourceMetrics{
+				{
+					Name: "cp-01", Role: "control-plane", Status: "healthy",
+					CPU:    metrics.CPU{Usage: metrics.ResourceQuantity{CPU: 1200}, Allocatable: metrics.ResourceQuantity{CPU: 3950}},
+					Memory: metrics.Memory{Usage: metrics.ResourceQuantity{Memory: 8e9}, Allocatable: metrics.ResourceQuantity{Memory: 24e9}},
+					Pods:   metrics.Pods{Running: 37, Allocatable: 110},
+					Disk:   metrics.Disk{UsedBytes: 20e9, TotalBytes: 50e9},
+					Conditions: metrics.Conditions{Ready: metrics.ConditionTrue},
+				},
+				{
+					Name: "worker-01", Role: "worker", Status: "warning",
+					CPU:    metrics.CPU{Usage: metrics.ResourceQuantity{CPU: 5200}, Allocatable: metrics.ResourceQuantity{CPU: 15950}},
+					Memory: metrics.Memory{Usage: metrics.ResourceQuantity{Memory: 32e9}, Allocatable: metrics.ResourceQuantity{Memory: 39e9}},
+					Pods:   metrics.Pods{Running: 41, Allocatable: 110},
+					Disk:   metrics.Disk{UsedBytes: 100e9, TotalBytes: 150e9},
+					Conditions: metrics.Conditions{Ready: metrics.ConditionTrue, MemoryPressure: metrics.ConditionTrue},
+				},
+			},
+		},
+	}
+
+	host := &stubHost{}
+	h := New(store, nil, nil, nil, nil, agg, host)
+	req := httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("Cookie", "session=valid")
+	w := httptest.NewRecorder()
+	h.Dashboard(w, req)
+
+	if host.lastProps.Title != "Dashboard" {
+		t.Errorf("Title = %q, want Dashboard", host.lastProps.Title)
+	}
+	if host.lastProps.Page != "dashboard" {
+		t.Errorf("Page = %q, want dashboard", host.lastProps.Page)
+	}
 }
