@@ -77,7 +77,7 @@ type k8sPod struct {
 		Namespace string `json:"namespace"`
 	} `json:"metadata"`
 	Spec struct {
-		NodeName   string       `json:"nodeName"`
+		NodeName   string         `json:"nodeName"`
 		Containers []k8sContainer `json:"containers"`
 	} `json:"spec"`
 	Status struct {

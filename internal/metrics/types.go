@@ -16,13 +16,13 @@ type ResourceQuantity struct {
 
 // NodeResourceMetrics holds resource data for a single Kubernetes node.
 type NodeResourceMetrics struct {
-	Name       string `json:"name"`
-	Role       string `json:"role,omitempty"` // "control-plane" or "worker"
-	Status     string `json:"status"`         // "healthy", "warning", "critical"
-	CPU        CPU    `json:"cpu"`
-	Memory     Memory `json:"memory"`
-	Pods       Pods   `json:"pods"`
-	Disk       Disk   `json:"disk"`
+	Name       string     `json:"name"`
+	Role       string     `json:"role,omitempty"` // "control-plane" or "worker"
+	Status     string     `json:"status"`         // "healthy", "warning", "critical"
+	CPU        CPU        `json:"cpu"`
+	Memory     Memory     `json:"memory"`
+	Pods       Pods       `json:"pods"`
+	Disk       Disk       `json:"disk"`
 	Conditions Conditions `json:"conditions"`
 }
 
@@ -59,10 +59,10 @@ type Disk struct {
 
 // Conditions holds Kubernetes node condition status.
 type Conditions struct {
-	Ready         ConditionStatus `json:"ready"`
+	Ready          ConditionStatus `json:"ready"`
 	MemoryPressure ConditionStatus `json:"memoryPressure"`
-	DiskPressure  ConditionStatus `json:"diskPressure"`
-	PIDPressure   ConditionStatus `json:"pidPressure"`
+	DiskPressure   ConditionStatus `json:"diskPressure"`
+	PIDPressure    ConditionStatus `json:"pidPressure"`
 }
 
 // ConditionStatus represents a node condition's current state.
@@ -76,16 +76,16 @@ const (
 
 // ClusterResourceSummary aggregates resource data across all nodes.
 type ClusterResourceSummary struct {
-	Nodes       int              `json:"nodes"`
-	CPU         ClusterCPU       `json:"cpu"`
-	Memory      ClusterMemory    `json:"memory"`
-	Pods        ClusterPods      `json:"pods"`
+	Nodes       int                   `json:"nodes"`
+	CPU         ClusterCPU            `json:"cpu"`
+	Memory      ClusterMemory         `json:"memory"`
+	Pods        ClusterPods           `json:"pods"`
 	NodeDetails []NodeResourceMetrics `json:"nodeDetails"`
 }
 
 // ClusterCPU is the cluster-wide CPU summary.
 type ClusterCPU struct {
-	Capacity    int64 `json:"capacity"`    // total millicores across all nodes
+	Capacity    int64 `json:"capacity"` // total millicores across all nodes
 	Allocatable int64 `json:"allocatable"`
 	Requested   int64 `json:"requested"`
 	Usage       int64 `json:"usage"`
@@ -93,7 +93,7 @@ type ClusterCPU struct {
 
 // ClusterMemory is the cluster-wide memory summary.
 type ClusterMemory struct {
-	Capacity    int64 `json:"capacity"`    // total bytes across all nodes
+	Capacity    int64 `json:"capacity"` // total bytes across all nodes
 	Allocatable int64 `json:"allocatable"`
 	Requested   int64 `json:"requested"`
 	Usage       int64 `json:"usage"`
@@ -108,13 +108,13 @@ type ClusterPods struct {
 
 // PodResourceMetrics holds resource data for a single pod (or top-consumer row).
 type PodResourceMetrics struct {
-	Name      string          `json:"name"`
-	Namespace string          `json:"namespace"`
-	Node      string          `json:"node"`
-	CPU       PodCPU          `json:"cpu"`
-	Memory    PodMemory       `json:"memory"`
-	Ready     string          `json:"ready"`   // e.g. "1/1"
-	Restarts  int             `json:"restarts"`
+	Name      string    `json:"name"`
+	Namespace string    `json:"namespace"`
+	Node      string    `json:"node"`
+	CPU       PodCPU    `json:"cpu"`
+	Memory    PodMemory `json:"memory"`
+	Ready     string    `json:"ready"` // e.g. "1/1"
+	Restarts  int       `json:"restarts"`
 }
 
 // PodCPU holds CPU data for a pod.

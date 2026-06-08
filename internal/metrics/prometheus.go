@@ -180,7 +180,7 @@ func (c *PrometheusClient) NodeConditions(ctx context.Context) (map[string]Condi
 	conditions := make(map[string]Conditions)
 
 	conditionQueries := map[string]string{
-		"Ready":         `kube_node_status_condition{condition="Ready",status="true"}`,
+		"Ready":          `kube_node_status_condition{condition="Ready",status="true"}`,
 		"MemoryPressure": `kube_node_status_condition{condition="MemoryPressure",status="true"}`,
 		"DiskPressure":   `kube_node_status_condition{condition="DiskPressure",status="true"}`,
 		"PIDPressure":    `kube_node_status_condition{condition="PIDPressure",status="true"}`,

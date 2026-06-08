@@ -41,12 +41,12 @@ import (
 // (store, JWT manager, watch bus, audit/backup/upgrade subsystems) and
 // implements the Host interface that section sub-packages call back into.
 type Handler struct {
-	store      *state.Store
-	jwtManager *auth.JWTManager
-	bus        *watch.Bus       // optional — enables /events/stream
-	auditStore audit.Store      // optional — enables /settings/audit
-	backupSvc  *backup.Service  // optional — enables /settings/backups
-	upgradeMgr *upgrade.Manager // optional — enables cluster upgrade endpoints
+	store       *state.Store
+	jwtManager  *auth.JWTManager
+	bus         *watch.Bus                    // optional — enables /events/stream
+	auditStore  audit.Store                   // optional — enables /settings/audit
+	backupSvc   *backup.Service               // optional — enables /settings/backups
+	upgradeMgr  *upgrade.Manager              // optional — enables cluster upgrade endpoints
 	metricsAgg_ dashhandler.MetricsAggregator // optional — enables resource pressure on dashboard
 }
 
