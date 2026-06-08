@@ -33,10 +33,11 @@ type promVectorResult struct {
 }
 
 // promMatrixResult is a single range vector result.
-type promMatrixResult struct {
-	Metric map[string]string `json:"metric"`
-	Values [][2]interface{}  `json:"values"`
-}
+// Reserved for future time-series queries.
+// type promMatrixResult struct {
+// 	Metric map[string]string `json:"metric"`
+// 	Values [][2]interface{}  `json:"values"`
+// }
 
 func (c *PrometheusClient) client() *http.Client {
 	if c.HTTPClient != nil {

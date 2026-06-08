@@ -211,7 +211,7 @@ func parseK8sQuantity(s string) int64 {
 	for suffix, mult := range memSuffixes {
 		if len(s) > len(suffix) && s[len(s)-len(suffix):] == suffix {
 			var v float64
-			fmt.Sscanf(s[:len(s)-len(suffix)], "%f", &v)
+			_, _ = fmt.Sscanf(s[:len(s)-len(suffix)], "%f", &v)
 			return int64(v * float64(mult))
 		}
 	}
@@ -219,13 +219,13 @@ func parseK8sQuantity(s string) int64 {
 	// CPU millicores
 	if len(s) > 1 && s[len(s)-1] == 'm' {
 		var v int64
-		fmt.Sscanf(s[:len(s)-1], "%d", &v)
+		_, _ = fmt.Sscanf(s[:len(s)-1], "%d", &v)
 		return v
 	}
 
 	// Plain number (cores, pods count, etc.)
 	var v float64
-	fmt.Sscanf(s, "%f", &v)
+	_, _ = fmt.Sscanf(s, "%f", &v)
 	// If it looks like a CPU value (small number < 1000), treat as cores → millicores
 	if v < 1000 && v > 0 {
 		// Could be cores. But could also be pod count. Heuristic:
