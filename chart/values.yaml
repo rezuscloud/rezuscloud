@@ -64,10 +64,6 @@ rezuscloud:
   addr: ":8080"
   # -- Data directory inside container. Must match persistence.mountPath.
   dataDir: /data
-  # -- MachineLink listen address. Machines phone home here over WireGuard-over-gRPC.
-  machineLinkAddr: ":50180"
-  # -- Provider gRPC listen address. Outbound-only providers connect here.
-  providerAddr: ":50190"
   # -- Optional global join token (escape hatch — normally use per-tenant tokens via API).
   joinToken: ""
   # -- Initial admin password. Only used on first start when database is empty.
@@ -89,28 +85,6 @@ service:
   # -- HTTP port (WebUI + REST API + healthz/readyz/version).
   port: 8080
   # -- Annotations for the HTTP Service.
-  annotations: {}
-
-# MachineLink Service — exposed so machines outside the cluster can phone home.
-machineLinkService:
-  # -- Create a separate Service for MachineLink.
-  # Recommended so it can be LoadBalancer/NodePort while HTTP stays ClusterIP+Ingress.
-  enabled: true
-  # -- Service type. LoadBalancer recommended for machines phoning home from outside the cluster.
-  type: LoadBalancer
-  # -- MachineLink port.
-  port: 50180
-  # -- Annotations (e.g., for MetalLB, AWS NLB, etc.).
-  annotations: {}
-
-# Provider gRPC Service — exposed so external provider binaries can connect.
-providerService:
-  # -- Create a separate Service for Provider gRPC.
-  enabled: true
-  # -- Service type. LoadBalancer or ClusterIP (if providers run in-cluster).
-  type: LoadBalancer
-  # -- Provider gRPC port.
-  port: 50190
   annotations: {}
 
 ingress:

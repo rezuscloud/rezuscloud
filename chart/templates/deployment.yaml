@@ -47,12 +47,6 @@ spec:
             - name: http
               containerPort: 8080
               protocol: TCP
-            - name: machinelink
-              containerPort: 50180
-              protocol: TCP
-            - name: provider
-              containerPort: 50190
-              protocol: TCP
           env:
             - name: REZUSCLOUD_ADDR
               value: {{ .Values.rezuscloud.addr | quote }}
@@ -60,10 +54,6 @@ spec:
               value: {{ .Values.rezuscloud.dataDir | quote }}
             - name: REZUSCLOUD_MODE
               value: {{ .Values.mode | quote }}
-            - name: REZUSCLOUD_MACHINELINK_ADDR
-              value: {{ .Values.rezuscloud.machineLinkAddr | quote }}
-            - name: REZUSCLOUD_PROVIDER_ADDR
-              value: {{ .Values.rezuscloud.providerAddr | quote }}
             - name: REZUSCLOUD_JWT_SECRET
               valueFrom:
                 secretKeyRef:

@@ -22,20 +22,10 @@ rezuscloud has been deployed.
    echo "WebUI: ${REZUSCLOUD_URL}/"
    echo "API:   ${REZUSCLOUD_URL}/api/v1/"
 
-3. MachineLink and Provider gRPC endpoints (for machines/providers phoning home):
-
-{{- if .Values.machineLinkService.enabled }}
-   MachineLink : {{ .Values.machineLinkService.type }} on port {{ .Values.machineLinkService.port }}
-   {{- if eq .Values.machineLinkService.type "LoadBalancer" }}
-   kubectl --namespace {{ .Release.Namespace }} get svc {{ include "rezuscloud.fullname" . }}-machinelink -o jsonpath='{.status.loadBalancer.ingress}'
-   {{- end }}
-{{- end }}
-{{- if .Values.providerService.enabled }}
-   Provider    : {{ .Values.providerService.type }} on port {{ .Values.providerService.port }}
-   {{- if eq .Values.providerService.type "LoadBalancer" }}
-   kubectl --namespace {{ .Release.Namespace }} get svc {{ include "rezuscloud.fullname" . }}-provider -o jsonpath='{.status.loadBalancer.ingress}'
-   {{- end }}
-{{- end }}
+3. Machine registration:
+   Machines will join the platform over a single UDP port (WireGuard /
+   SideroLink, per `arch/06-deployment/overview.md`). That Service is added to
+   the chart alongside the real SideroLink implementation — tracked separately.
 
 4. Initial admin login (if adminPassword was set):
 
