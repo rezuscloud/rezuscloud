@@ -170,8 +170,15 @@ func (c *OpenStackClient) ProvisionVM(ctx context.Context, name, machineType, jo
 
 	// Extract IPs from addresses.
 	for networkName, addrList := range server.Addresses {
-		for _, addr := range addrList.([]interface{}) {
-			addrMap := addr.(map[string]interface{})
+		addrSlice, ok := addrList.([]interface{})
+		if !ok {
+			continue
+		}
+		for _, addr := range addrSlice {
+			addrMap, ok := addr.(map[string]interface{})
+			if !ok {
+				continue
+			}
 			version, ok := addrMap["version"].(float64)
 			if !ok {
 				continue

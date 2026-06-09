@@ -87,9 +87,6 @@ func (a *ManagementAPI) RegisterProvider(providerType string, machineTypes, regi
 		return fmt.Errorf("create status request: %w", err)
 	}
 	statusReq.Header.Set("Content-Type", "application/json")
-	statusReq.Header.Set("Authorization", "Bearer "+statusReq.Header.Get("Authorization"))
-
-	// Re-set auth header.
 	statusReq.Header.Set("Authorization", "Bearer "+a.apiToken)
 
 	statusResp, err := a.client.Do(statusReq)
@@ -115,7 +112,10 @@ func (a *ManagementAPI) UpdateProviderStatus(providerType string, connected bool
 		},
 	}
 	if errMsg != "" {
-		payload["status"].(map[string]interface{})["error"] = errMsg
+		statusMap, _ := payload["status"].(map[string]interface{})
+		if statusMap != nil {
+			statusMap["error"] = errMsg
+		}
 	}
 
 	body, err := json.Marshal(payload)
