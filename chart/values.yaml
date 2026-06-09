@@ -69,6 +69,13 @@ rezuscloud:
   # -- Initial admin password. Only used on first start when database is empty.
   # After first boot, ignored — manage users via API.
   adminPassword: ""
+  # -- Prometheus URL for resource pressure visualization.
+  # When set alongside k8sAPIURL, the dashboard shows cluster resource metrics.
+  # Example: "http://kube-prometheus-stack-prometheus.monitoring:9090"
+  prometheusURL: ""
+  # -- Kubernetes API server URL for resource pressure visualization.
+  # Example: "https://kubernetes.default.svc"
+  k8sAPIURL: ""
 
 # -- JWT signing secret. REQUIRED for auth to work.
 # Generate with: openssl rand -hex 32
