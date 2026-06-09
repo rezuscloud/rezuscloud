@@ -18,6 +18,7 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/auth"
 	"github.com/rezuscloud/rezuscloud/internal/backup"
 	"github.com/rezuscloud/rezuscloud/internal/ingress"
+	"github.com/rezuscloud/rezuscloud/internal/metrics"
 	"github.com/rezuscloud/rezuscloud/internal/state"
 	"github.com/rezuscloud/rezuscloud/internal/upgrade"
 	"github.com/rezuscloud/rezuscloud/internal/watch"
@@ -90,6 +91,16 @@ func main() {
 		WithAuditComponent(auditComponent).
 		WithBackupComponent(backupComponent).
 		WithUpgradeManager(upgradeMgr)
+
+	// Resource pressure visualization (optional — requires Prometheus + K8s API access).
+	if cfg.PrometheusURL != "" && cfg.K8sAPIURL != "" {
+		agg := &metrics.Aggregator{
+			Prom: &metrics.PrometheusClient{BaseURL: cfg.PrometheusURL},
+			K8s:  &metrics.K8sMetricsClient{BaseURL: cfg.K8sAPIURL},
+		}
+		webHandler.WithMetricsAggregator(agg)
+	}
+
 	webHandler.RegisterRoutes(mux)
 
 	srv := &http.Server{
@@ -132,6 +143,8 @@ type config struct {
 	JoinToken     string // Global join token for machine authentication
 	JWTSecret     string // JWT signing secret
 	AdminPassword string // Initial admin password
+	PrometheusURL string // Prometheus query endpoint (e.g. http://prometheus:9090)
+	K8sAPIURL     string // Kubernetes API server URL (e.g. https://kubernetes.default.svc)
 }
 
 func loadConfig() config {
@@ -142,6 +155,8 @@ func loadConfig() config {
 		JoinToken:     os.Getenv("REZUSCLOUD_JOIN_TOKEN"),
 		JWTSecret:     envOr("REZUSCLOUD_JWT_SECRET", ""),
 		AdminPassword: os.Getenv("REZUSCLOUD_ADMIN_PASSWORD"),
+		PrometheusURL: os.Getenv("REZUSCLOUD_PROMETHEUS_URL"),
+		K8sAPIURL:     os.Getenv("REZUSCLOUD_K8S_API_URL"),
 	}
 }
 
