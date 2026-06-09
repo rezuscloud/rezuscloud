@@ -1,0 +1,44 @@
+# provider-openstack configuration
+# See docs/adr/0012-provider-based-machine-provisioning.md for architecture.
+
+# Provider type registered with RezusCloud management plane.
+providerType: openstack
+
+# OpenStack Keystone v3 endpoint.
+# For kolla-ansible on LAN: http://192.168.7.123:5000/v3
+# Override with OS_AUTH_URL env var.
+authUrl: "http://192.168.7.123:5000/v3"
+
+# Credentials — prefer env vars (OS_USERNAME, OS_PASSWORD, etc.)
+# for non-file-based secret management.
+username: "admin"
+password: ""  # Set via OS_PASSWORD env var
+projectName: "admin"
+userDomainName: "Default"
+projectDomainName: "Default"
+region: "RegionOne"
+
+# Talos image for OpenStack (QCOW2 format).
+# Downloaded from Talos Image Factory on first use, cached in Glance.
+talosImageUrl: "https://factory.talos.dev/image/ce4c980550dd2ab1b17asf844b25b0c341e785f66cfb71f5b447e0b70d76e37/v1.9.4/openstack-x86_64.qcow2"
+talosImageName: "talos-openstack-v1.9.4"
+
+# SideroLink endpoint for config pull (ADR 13).
+# Machines boot with this in kernel args, connect to management plane,
+# and receive their full Talos config.
+siderolinkEndpoint: "https://demo.rezus.cloud:443"
+
+# Network to attach instances to.
+# For kolla-ansible: ext-net maps to 192.168.7.0/24 LAN.
+networkName: "ext-net"
+
+# Flavor mapping per machine type.
+# Uses SCS standard flavors (see openstack-iac/flavors.tf).
+machineTypeFlavor:
+  control-plane: "SCS-2V-4-10"   # 2 vCPU, 4 GiB RAM, 10 GB disk
+  worker: "SCS-2V-8-20"          # 2 vCPU, 8 GiB RAM, 20 GB disk
+
+# Disk size per machine type (GB). Overrides flavor's default disk.
+machineTypeDisk:
+  control-plane: 20
+  worker: 50

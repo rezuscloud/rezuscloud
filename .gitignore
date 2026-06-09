@@ -16,3 +16,4 @@ vendor/
 chart/charts/
 chart/Chart.lock
 *.tgz
+/provider-openstack

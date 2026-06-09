@@ -7,6 +7,7 @@ require (
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/docker/go-connections v0.7.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
+	github.com/gophercloud/gophercloud/v2 v2.12.0
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/siderolabs/crypto v0.6.4
 	github.com/siderolabs/talos/pkg/machinery v1.12.8
@@ -18,6 +19,7 @@ require (
 	k8s.io/apimachinery v0.35.4
 	k8s.io/client-go v0.35.4
 	modernc.org/sqlite v1.51.0
+	sigs.k8s.io/yaml v1.6.0
 )
 
 require (
@@ -171,5 +173,4 @@ require (
 	sigs.k8s.io/kustomize/kyaml v0.20.1 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.2 // indirect
-	sigs.k8s.io/yaml v1.6.0 // indirect
 )
