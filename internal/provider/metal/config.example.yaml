@@ -1,0 +1,43 @@
+# provider-metal configuration
+# See docs/adr/0012-provider-based-machine-provisioning.md for architecture.
+
+# Provider type registered with RezusCloud management plane.
+providerType: metal
+
+# SideroLink endpoint for config pull (ADR 13).
+siderolinkEndpoint: "https://demo.rezus.cloud:443"
+
+# Network auto-discovery of Talos maintenance-mode nodes.
+# Scans the subnet for machines with port 50000 open (Talos gRPC API).
+discovery:
+  enabled: true
+  # Subnet to scan — for kolla-ansible LAN with ext-net.
+  subnet: "192.168.7.0/24"
+  # Talos API port (default: 50000).
+  port: 50000
+  # How often to scan (seconds).
+  intervalSeconds: 60
+  # Per-probe TCP connect timeout (seconds).
+  timeoutSeconds: 2
+  # Parallel probe limit.
+  concurrency: 50
+
+# Static machine inventory (optional — auto-discovery replaces this).
+# Future: machines here get BMC power control, PXE boot, Wake-on-LAN.
+# machines:
+#   - id: basement-r730
+#     bmc:
+#       address: 192.168.1.50
+#       user: admin
+#       password: ""  # from env var METAL_BMC_PASSWORD
+#     tags:
+#       role: worker
+#       region: basement
+#   - id: basement-r620
+#     bmc:
+#       address: 192.168.1.51
+#       user: admin
+#       password: ""
+#     tags:
+#       role: control-plane
+#       region: basement
