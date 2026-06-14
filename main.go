@@ -20,6 +20,7 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/ingress"
 	"github.com/rezuscloud/rezuscloud/internal/metrics"
 	"github.com/rezuscloud/rezuscloud/internal/state"
+	"github.com/rezuscloud/rezuscloud/internal/tfbackend"
 	"github.com/rezuscloud/rezuscloud/internal/upgrade"
 	"github.com/rezuscloud/rezuscloud/internal/watch"
 	"github.com/rezuscloud/rezuscloud/internal/watchbus"
@@ -47,6 +48,13 @@ func main() {
 		log.Fatalf("state init: %v", err)
 	}
 
+	// TF HTTP backend: RezusCloud is the remote state store tofu writes one
+	// encrypted state blob per tenant to (ADR 21). Shares the management DB.
+	tfStore, err := tfbackend.New(store.DB())
+	if err != nil {
+		log.Fatalf("tfbackend init: %v", err)
+	}
+
 	// Initialize watch bus + wire into store mutations.
 	bus := watch.NewBus()
 	store.SetBus(watchbus.New(bus))
@@ -59,6 +67,9 @@ func main() {
 	mux := http.NewServeMux()
 	registerHealthHandlers(mux)
 	registerVersionHandler(mux)
+
+	// TF HTTP backend routes (tofu's remote state endpoint).
+	tfbackend.NewHandler(tfStore).RegisterRoutes(mux, "/tfstate")
 
 	// Audit subsystem: one component owns Store + Recorder + Handlers + Retention.
 	// Passed to both the API router and the WebUI handler.
