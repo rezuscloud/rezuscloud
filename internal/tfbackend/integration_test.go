@@ -16,14 +16,18 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// TestRealTofuBackendRoundTrip exercises the HTTP backend with the real `tofu`
-// binary end-to-end (read + write + round-trip), WITHOUT needing network access
-// or a provider plugin: it uses `tofu state push`/`pull`, which talk directly to
-// the configured backend.
+// TestIntegration_RealTofuBackendRoundTrip exercises the HTTP backend with the
+// real `tofu` binary end-to-end (read + write + round-trip), WITHOUT needing
+// network access or a provider plugin: it uses `tofu state push`/`pull`, which
+// talk directly to the configured backend.
 //
-// Run with: go test -tags=integration ./internal/tfbackend/
+// Test name follows the convention in CONTRIBUTING.md (TestIntegration_* prefix
+// + `integration` build tag) so the CI `integration-test` job selects it via
+// `-run '^TestIntegration'`.
+//
+// Run locally with: go test -tags=integration -run '^TestIntegration' ./internal/tfbackend/
 // Skipped if `tofu` is not on PATH.
-func TestRealTofuBackendRoundTrip(t *testing.T) {
+func TestIntegration_RealTofuBackendRoundTrip(t *testing.T) {
 	if _, err := exec.LookPath("tofu"); err != nil {
 		t.Skip("tofu not on PATH")
 	}

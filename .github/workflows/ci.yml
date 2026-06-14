@@ -66,6 +66,41 @@ jobs:
           CGO_ENABLED: "1"
         run: go test -v -race -short -parallel 4 ./...
 
+  integration-test:
+    name: Integration tests (real tofu)
+    # Integration tests exercise real binaries (the `tofu` CLI) and are gated
+    # out of the fast unit-test job above via the `integration` build tag.
+    # See CONTRIBUTING.md for the test-tier convention.
+    needs: test
+    runs-on: [self-hosted, Linux, X64]
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Install C compiler (required for -race detector)
+        run: which gcc || (sudo apt-get update -q && sudo apt-get install -y gcc)
+
+      # Pin the OpenTofu version we develop and test against. Single source of
+      # truth: .opentofu-version (also consumed by the bundled tofu in #85).
+      # tofu_wrapper: false installs the plain binary on PATH instead of the
+      # output-capturing wrapper, so Go's exec.LookPath("tofu") works directly.
+      - name: Install OpenTofu
+        uses: opentofu/setup-opentofu@v2
+        with:
+          tofu_version_file: .opentofu-version
+          tofu_wrapper: false
+
+      - name: Run integration tests
+        env:
+          CGO_ENABLED: "1"
+        run: go test -v -race -tags=integration -run '^TestIntegration' ./...
+
   build:
     needs: lint
     strategy:
@@ -117,8 +152,8 @@ jobs:
 
   docker-pr:
     name: Build and push PR image
-    needs: [build, test, helm]
-    if: always() && needs.build.result == 'success' && needs.test.result == 'success' && needs.helm.result == 'success' && github.event_name == 'pull_request'
+    needs: [build, test, integration-test, helm]
+    if: always() && needs.build.result == 'success' && needs.test.result == 'success' && needs.integration-test.result == 'success' && needs.helm.result == 'success' && github.event_name == 'pull_request'
     runs-on: [self-hosted, Linux, X64]
     permissions:
       contents: read
