@@ -1,0 +1,8 @@
+name: ARC Spread Test
+on:
+  workflow_dispatch:
+jobs:
+  sleep:
+    runs-on: [self-hosted, Linux, X64]
+    steps:
+      - run: echo "run ${{ github.run_id }}"; hostname; sleep 50
