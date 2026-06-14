@@ -377,3 +377,36 @@ func TestEnvCreds_PassesThroughOnlyNamedAndSet(t *testing.T) {
 		t.Errorf("EnvCreds = %v, want only {TF_VAR_one:1}", got)
 	}
 }
+
+func TestWithEncryption_FailFastOnShortPassphrase(t *testing.T) {
+	// New must reject a too-short passphrase instead of silently running unencrypted.
+	if _, err := New(t.TempDir(), WithEncryption("short")); err == nil {
+		t.Fatal("expected error for short passphrase")
+	}
+	if _, err := New(t.TempDir(), WithEncryption("")); err == nil {
+		t.Fatal("expected error for empty passphrase")
+	}
+}
+
+func TestWithEncryption_InjectsTFEncryptionEnv(t *testing.T) {
+	// A valid passphrase builds the Exec; the fake-tofu marker env proves
+	// TF_ENCRYPTION reached the subprocess carrying the pbkdf2 block. (The JSON
+	// shape itself is tfencryption's own unit-test concern.)
+	bin, _, envFile := fakeTofu(t)
+	ee, err := New(t.TempDir(),
+		WithBinary(bin),
+		WithTimeout(5*time.Second),
+		WithEncryption("correct-horse-battery-staple"),
+		WithCredentials(func() map[string]string { return map[string]string{"FAKE_ENV_FILE": envFile} }),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ee.Run(context.Background(), "personal", "version"); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	env := readFile(t, envFile)
+	if !strings.Contains(env, "TF_ENCRYPTION=") || !strings.Contains(env, "pbkdf2") {
+		t.Errorf("TF_ENCRYPTION (pbkdf2) not injected into child env:\n%s", env)
+	}
+}
