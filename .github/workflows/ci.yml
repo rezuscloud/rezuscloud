@@ -219,6 +219,19 @@ jobs:
           echo "$platforms" | grep -qx 'linux/amd64'
           echo "$platforms" | grep -qx 'linux/arm64'
 
+      - name: Verify bundled tofu (#85)
+        if: steps.pr.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          IMG="ghcr.io/rezuscloud/rezuscloud:pr-${{ steps.pr.outputs.number }}-${{ steps.pr.outputs.sha }}"
+          VER="$(tr -d '[:space:]' < .opentofu-version)"
+          echo "Pinned tofu version: $VER"
+          # distroless/static has no shell, so invoke the binary as the entrypoint.
+          OUT="$(docker run --rm --entrypoint /usr/local/bin/tofu "$IMG" version)"
+          echo "$OUT" | grep -F "OpenTofu v$VER" \
+            || { echo "::error::bundled tofu version mismatch; got:\n$OUT"; exit 1; }
+          echo "OK: bundled tofu reports OpenTofu v$VER"
+
   helm:
     name: Chart lint and validate
     runs-on: [self-hosted, Linux, X64]
