@@ -82,15 +82,15 @@ type Config struct {
 }
 
 // withDefaults returns cfg with zero fields replaced by defaults.
+// ResyncInterval is intentionally NOT defaulted here: zero means "disabled",
+// and a lister present opts into the 5m default (applied in New), since zero
+// alone can't distinguish "I want the default" from "I want disabled".
 func (c Config) withDefaults() Config {
 	if c.DebounceInterval <= 0 {
 		c.DebounceInterval = 5 * time.Second
 	}
 	if c.ResyncInterval < 0 {
 		c.ResyncInterval = 0
-	}
-	if c.ResyncInterval == 0 {
-		// keep zero (disabled); default applied below only if caller wanted one.
 	}
 	if c.Logf == nil {
 		c.Logf = log.Printf
