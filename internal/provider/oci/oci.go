@@ -25,6 +25,11 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/state"
 )
 
+// obj is a local alias for the shared TF-config JSON object type, keeping the
+// render code terse. The builder itself lives in internal/provider (shared by
+// all provider modules).
+type obj = provider.Obj
+
 // Provider is the OCI implementation of provider.Provider.
 type Provider struct{}
 
@@ -91,17 +96,17 @@ func (p *Provider) Render(req provider.RenderRequest) ([]byte, error) {
 	}
 
 	tenantName := req.Tenant.Metadata.Name
-	root := newTFConfig()
+	root := provider.NewTFConfig()
 
 	// --- terraform block: required providers (off-the-shelf registry only) ---
-	root.addRequiredProviders(
-		reqProvider{name: "oci", source: "oracle/oci", version: ">= 6.0"},
-		reqProvider{name: "talos", source: "siderolabs/talos"},
-		reqProvider{name: "random", source: "hashicorp/random"},
+	root.AddRequiredProviders(
+		provider.ReqProvider{Name: "oci", Source: "oracle/oci", Version: ">= 6.0"},
+		provider.ReqProvider{Name: "talos", Source: "siderolabs/talos"},
+		provider.ReqProvider{Name: "random", Source: "hashicorp/random"},
 	)
 
 	// --- provider block: OCI reads creds from OCI_* env (no hardcoded auth) ---
-	root.addProvider("oci", obj{
+	root.AddProvider("oci", obj{
 		// tenancy/region/user/fingerprint/private_key come from the process
 		// environment; the operator's bootstrap credentials are injected per
 		// ADR 22. Leaving them unset means "use the standard provider env".
@@ -109,7 +114,7 @@ func (p *Provider) Render(req provider.RenderRequest) ([]byte, error) {
 	})
 
 	// --- data: availability domains (spread instances across ADs, like ref) ---
-	root.addDataSource("oci_identity_availability_domains", "ads", obj{
+	root.AddDataSource("oci_identity_availability_domains", "ads", obj{
 		"compartment_id": strVar("compartment_ocid"),
 	})
 
@@ -120,14 +125,14 @@ func (p *Provider) Render(req provider.RenderRequest) ([]byte, error) {
 		}
 	}
 
-	// Marshal with deterministic key ordering for stable diffs in state.
-	return json.MarshalIndent(root, "", "  ")
+	// TFConfig.MarshalJSON emits stable, diff-friendly JSON.
+	return json.Marshal(root)
 }
 
 // renderNodeGroup emits the random_pet (stable name) + oci_core_instance pair
 // for one node group. The instance count comes from ng.Count via for_each over
 // the random_pet resources.
-func renderNodeGroup(root *tfConfig, tenantName string, ng state.NodeGroupSpec) error {
+func renderNodeGroup(root *provider.TFConfig, tenantName string, ng state.NodeGroupSpec) error {
 	cfg, err := parseNodeGroupConfig(ng)
 	if err != nil {
 		return err
@@ -161,7 +166,7 @@ func renderNodeGroup(root *tfConfig, tenantName string, ng state.NodeGroupSpec) 
 	displayName := fmt.Sprintf("talos-oci-%s-${%s}", prefix, petRef(petName))
 
 	// random_pet: count = ng.Count, with a keepers.index so each pet is stable.
-	root.addResource("random_pet", petName, obj{
+	root.AddResource("random_pet", petName, obj{
 		"count":     ng.Count,
 		"length":    2,
 		"separator": "-",
@@ -211,7 +216,7 @@ func renderNodeGroup(root *tfConfig, tenantName string, ng state.NodeGroupSpec) 
 		"ignore_changes":        []string{"metadata.user_data", "defined_tags"},
 	}}
 
-	root.addResource("oci_core_instance", instName, inst)
+	root.AddResource("oci_core_instance", instName, inst)
 	return nil
 }
 
