@@ -169,17 +169,24 @@ func renderNodeGroup(root *tfConfig, tenantName string, ng state.NodeGroupSpec) 
 	})
 
 	// oci_core_instance: for_each over the pets, one instance per pet.
+	// Build the VNIC details once so optional fields (nsg_ids) can be added to
+	// the same object without a type assertion (errcheck check-type-assertions).
+	vnic := obj{
+		"assign_public_ip": assignPub,
+		"subnet_id":        cfg.SubnetID,
+	}
+	if cfg.NSGID != "" {
+		vnic["nsg_ids"] = []string{cfg.NSGID}
+	}
+
 	inst := obj{
 		"for_each": fmt.Sprintf("${{ for idx, val in random_pet.%s : idx => val }}", petName),
 		"availability_domain": fmt.Sprintf(
 			"${data.oci_identity_availability_domains.ads.availability_domains[each.key %% length(data.oci_identity_availability_domains.ads.availability_domains)].name}",
 		),
-		"compartment_id": cfg.CompartmentOCID,
-		"shape":          cfg.Shape,
-		"create_vnic_details": []obj{{
-			"assign_public_ip": assignPub,
-			"subnet_id":        cfg.SubnetID,
-		}},
+		"compartment_id":      cfg.CompartmentOCID,
+		"shape":               cfg.Shape,
+		"create_vnic_details": []obj{vnic},
 		"source_details": []obj{{
 			"source_type":             "image",
 			"source_id":               imageRef(cfg.ImageOCID),
@@ -189,9 +196,6 @@ func renderNodeGroup(root *tfConfig, tenantName string, ng state.NodeGroupSpec) 
 		"metadata": obj{
 			"user_data": userDataRef(role, tenantName),
 		},
-	}
-	if cfg.NSGID != "" {
-		inst["create_vnic_details"].([]obj)[0]["nsg_ids"] = []string{cfg.NSGID}
 	}
 	// shape_config only for Flex shapes (fixed shapes reject it).
 	if isFlex(cfg.Shape) && cfg.OCPUs > 0 {
