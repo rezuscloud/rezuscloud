@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/rezuscloud/rezuscloud/internal/tfencryption"
 )
 
 // DefaultTimeout is applied to Run when the caller's context carries no
@@ -62,44 +64,83 @@ func EnvCreds(names ...string) CredentialProvider {
 // Exec orchestrates per-tenant `tofu` subprocess invocations. Construct one with
 // New and drive it with Run. See the package doc for the concurrency contract.
 type Exec struct {
-	root       string             // tfwork root (e.g. $DATA_DIR/tfwork)
-	backendURL string             // RezusCloud's own /tfstate endpoint ("" ⇒ no backend.tf)
-	bin        string             // path to the tofu binary
-	creds      CredentialProvider // bootstrap credential injection (may be nil)
-	timeout    time.Duration      // default per-command timeout (0 ⇒ DefaultTimeout)
-	logf       Logf               // output stream + lifecycle logger
+	root         string             // tfwork root (e.g. $DATA_DIR/tfwork)
+	backendURL   string             // RezusCloud's own /tfstate endpoint ("" ⇒ no backend.tf)
+	bin          string             // path to the tofu binary
+	creds        CredentialProvider // bootstrap credential injection (may be nil)
+	tfEncryption string             // TF_ENCRYPTION env value ("" ⇒ encryption disabled)
+	timeout      time.Duration      // default per-command timeout (0 ⇒ DefaultTimeout)
+	logf         Logf               // output stream + lifecycle logger
 }
 
-// Option configures an Exec.
-type Option func(*Exec)
+// Option configures an Exec. Options may return an error to fail-fast during
+// New (e.g. WithEncryption validates the passphrase). Existing no-failure
+// options return nil.
+type Option func(*Exec) error
 
 // WithBackendURL sets the URL tofu writes state to. When non-empty, each tenant
 // workdir gets a backend.tf pointing at "<url>?ID=<tenant>". When empty, no
 // backend.tf is written (useful for `init -backend=false`-style runs and tests).
 func WithBackendURL(url string) Option {
-	return func(e *Exec) { e.backendURL = strings.TrimRight(url, "/") }
+	return func(e *Exec) error {
+		e.backendURL = strings.TrimRight(url, "/")
+		return nil
+	}
 }
 
 // WithBinary overrides the path to the tofu binary (default: "tofu" on PATH).
 // Tests inject a fake binary here.
 func WithBinary(path string) Option {
-	return func(e *Exec) { e.bin = path }
+	return func(e *Exec) error {
+		e.bin = path
+		return nil
+	}
 }
 
 // WithCredentials injects a bootstrap-credential provider.
 func WithCredentials(c CredentialProvider) Option {
-	return func(e *Exec) { e.creds = c }
+	return func(e *Exec) error {
+		e.creds = c
+		return nil
+	}
+}
+
+// WithEncryption enables OpenTofu native state encryption (ADR 21, #86). The
+// passphrase is validated and converted to a TF_ENCRYPTION env value via
+// internal/tfencryption, then injected into every tofu subprocess so the
+// passphrase NEVER touches disk (it lives only in RezusCloud's process and the
+// transient tofu subprocess). With this set, state written via the #84 backend
+// is opaque (encrypted) at rest and `StatePull` returns decrypted plaintext.
+//
+// Fail-fast: returns an error from New if the passphrase is missing or shorter
+// than tfencryption.MinPassphraseLen, so a misconfigured deploy fails to start
+// rather than silently producing unencrypted state.
+func WithEncryption(passphrase string) Option {
+	return func(e *Exec) error {
+		cfg, err := tfencryption.Config(passphrase)
+		if err != nil {
+			return err
+		}
+		e.tfEncryption = cfg
+		return nil
+	}
 }
 
 // WithTimeout overrides the default per-command timeout applied when the
 // caller's context carries no deadline.
 func WithTimeout(d time.Duration) Option {
-	return func(e *Exec) { e.timeout = d }
+	return func(e *Exec) error {
+		e.timeout = d
+		return nil
+	}
 }
 
 // WithLogger overrides the output/lifecycle logger (defaults to log.Printf).
 func WithLogger(fn Logf) Option {
-	return func(e *Exec) { e.logf = fn }
+	return func(e *Exec) error {
+		e.logf = fn
+		return nil
+	}
 }
 
 // New returns an Exec rooted at root (typically $DATA_DIR/tfwork), creating the
@@ -118,7 +159,9 @@ func New(root string, opts ...Option) (*Exec, error) {
 		logf:    log.Printf,
 	}
 	for _, o := range opts {
-		o(e)
+		if err := o(e); err != nil {
+			return nil, err
+		}
 	}
 	return e, nil
 }
@@ -247,6 +290,23 @@ func (e *Exec) Run(ctx context.Context, tenant string, args ...string) (*Result,
 	}
 }
 
+// StatePull runs `tofu state pull` and returns the state bytes from stdout.
+// When encryption is configured (WithEncryption), tofu decrypts before writing
+// to stdout, so the returned bytes are plaintext — the helper Phase 4's secrets
+// cache uses to extract `client_configuration`. Without encryption configured,
+// the raw (opaque) bytes are returned as-is.
+//
+// The tenant's workdir must already have a configured backend and initialized
+// state (init + at least one apply, or a pushed state). The caller's context
+// deadline is honored as in Run.
+func (e *Exec) StatePull(ctx context.Context, tenant string) ([]byte, error) {
+	r, err := e.Run(ctx, tenant, "state", "pull")
+	if err != nil {
+		return nil, err
+	}
+	return []byte(r.Stdout), nil
+}
+
 // buildEnv composes the child process environment: a known base (PATH, HOME,
 // and a few essentials tofu/curl need) plus tofu-specific vars plus bootstrap
 // credentials. It deliberately does NOT pass through os.Environ() wholesale, so
@@ -262,6 +322,9 @@ func (e *Exec) buildEnv(dir string) []string {
 		"TF_IN_AUTOMATION=1",
 		"TF_LOG=" + os.Getenv("TF_LOG"), // only set if the operator opted in
 		"TF_CLI_ARGS=" + os.Getenv("TF_CLI_ARGS"),
+	}
+	if e.tfEncryption != "" {
+		base = append(base, "TF_ENCRYPTION="+e.tfEncryption)
 	}
 	if e.creds != nil {
 		for k, v := range e.creds() {
