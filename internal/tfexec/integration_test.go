@@ -180,3 +180,88 @@ resource "null_resource" "demo" {
 		t.Fatalf("applied state missing the trigger: %s", got)
 	}
 }
+
+// TestIntegration_EncryptionChain proves OpenTofu native state encryption
+// end-to-end (#86, ADR 21):
+//
+//   - apply WITH encryption → the blob stored in the #84 backend is OPAQUE
+//     (no plaintext resource/attribute markers)
+//   - StatePull WITH encryption → decrypted plaintext
+//   - state pull WITHOUT encryption → tofu refuses (cannot decrypt)
+//
+// Encryption is delivered via the TF_ENCRYPTION env (tfexec.WithEncryption),
+// so the passphrase never touches the per-tenant workdir on disk.
+func TestIntegration_EncryptionChain(t *testing.T) {
+	skipWithoutTofu(t)
+	store, endpoint := backendEnv(t)
+	const tenant = "enc"
+
+	// Encrypted Exec: passphrase injected as TF_ENCRYPTION via WithEncryption.
+	dir := t.TempDir()
+	eEnc, err := New(dir,
+		WithBinary("tofu"),
+		WithBackendURL(endpoint),
+		WithEncryption("correct-horse-battery-staple"),
+		WithTimeout(90*time.Second),
+	)
+	if err != nil {
+		t.Fatalf("encrypted Exec: %v", err)
+	}
+	wd, err := eEnc.Workdir(tenant)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, wd, "main.tf", `terraform {
+  required_providers { null = { source = "registry.opentofu.org/hashicorp/null" } }
+}
+resource "null_resource" "demo" { triggers = { secret = "s3cr3t" } }
+`)
+
+	run := func(e *Exec, args ...string) *Result {
+		t.Helper()
+		res, err := e.Run(context.Background(), tenant, args...)
+		if err != nil {
+			if strings.Contains(res.Stderr, "dial") || strings.Contains(res.Stderr, "timeout") ||
+				strings.Contains(res.Stderr, "Failed to install provider") {
+				t.Skipf("null provider unavailable; skipping:\n%s", res.Stderr)
+			}
+			t.Fatalf("tofu %v: %v\n%s", args, err, res.Stderr)
+		}
+		return res
+	}
+	run(eEnc, "init")
+	run(eEnc, "apply", "-auto-approve", "-input=false")
+
+	// (1) The stored blob is OPAQUE: no plaintext resource/attribute markers.
+	raw, found, err := store.GetState(context.Background(), tenant)
+	if err != nil || !found {
+		t.Fatalf("encrypted state not stored: found=%v err=%v", found, err)
+	}
+	if strings.Contains(string(raw), "null_resource") || strings.Contains(string(raw), "s3cr3t") {
+		t.Fatalf("FAIL: stored blob is PLAINTEXT (leaks null_resource/s3cr3t): %s", raw)
+	}
+
+	// (2) StatePull WITH encryption returns decrypted plaintext.
+	plain, err := eEnc.StatePull(context.Background(), tenant)
+	if err != nil {
+		t.Fatalf("StatePull (encrypted): %v", err)
+	}
+	if !strings.Contains(string(plain), "null_resource") || !strings.Contains(string(plain), "s3cr3t") {
+		t.Fatalf("decrypted pull missing plaintext: %s", plain)
+	}
+
+	// (3) state pull WITHOUT encryption must FAIL: tofu refuses to read the
+	// encrypted blob with no decryption config. A plain Exec (no WithEncryption)
+	// sharing the same workdir proves the bytes are genuinely encrypted.
+	ePlain, err := New(dir,
+		WithBinary("tofu"),
+		WithBackendURL(endpoint),
+		WithTimeout(30*time.Second),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, pullErr := ePlain.Run(context.Background(), tenant, "state", "pull"); pullErr == nil {
+		t.Fatal("plain pull unexpectedly SUCCEEDED — state is not actually encrypted")
+	}
+}
