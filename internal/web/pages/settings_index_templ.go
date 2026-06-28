@@ -19,22 +19,18 @@ type SettingsIndexPageData struct {
 
 // OperationalConfig is the read-only env+helm summary.
 type OperationalConfig struct {
-	JWTSessions          string
-	BcryptCost           string
-	AuditRetentionDays   string
-	BackupDirectory      string
-	MachineLinkEndpoint  string
-	ProviderGRPCEndpoint string
+	JWTSessions        string
+	BcryptCost         string
+	AuditRetentionDays string
+	BackupDirectory    string
 }
 
 // ClusterSummary lists listener endpoints observed from configuration.
 type ClusterSummary struct {
-	HTTPAddr        string
-	MachineLinkAddr string
-	ProviderAddr    string
+	HTTPAddr string
 }
 
-// SettingsIndex renders the settings landing page (minimal, per ADR 17).
+// SettingsIndex renders the settings landing page.
 func SettingsIndex(data SettingsIndexPageData) templ.Component {
 	return templruntime.GeneratedTemplate(func(templ_7745c5c3_Input templruntime.GeneratedComponentInput) (templ_7745c5c3_Err error) {
 		templ_7745c5c3_W, ctx := templ_7745c5c3_Input.Writer, templ_7745c5c3_Input.Context
@@ -56,124 +52,72 @@ func SettingsIndex(data SettingsIndexPageData) templ.Component {
 			templ_7745c5c3_Var1 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<h1 class=\"ds-page-title\">Settings</h1><p class=\"ds-text-muted\">Operational configuration and quick links to settings sections.</p><div class=\"ds-grid ds-grid-2\" style=\"margin-bottom: 1rem;\"><div class=\"ds-section-card\"><div class=\"ds-section-title\">Identity & access</div><ul class=\"ds-link-list\"><li><a href=\"/settings/users\">Users</a> — admin can create / edit / delete users and change roles</li><li><a href=\"/settings/api-tokens\">API tokens</a> — issue long-lived Bearer tokens for automation</li><li><a href=\"/settings/audit\">Audit log</a> — filter and inspect HTTP mutations</li></ul></div><div class=\"ds-section-card\"><div class=\"ds-section-title\">Operations</div><ul class=\"ds-link-list\"><li><a href=\"/settings/backups\">Backups</a> — snapshots, retention, restore</li><li><a href=\"/providers\">Providers</a> — registered provider adapters</li><li><a href=\"/machines/join-manual\">Manual join</a> — boot-from-media kernel args helper</li></ul></div></div><div class=\"ds-section-header\">Runtime configuration</div><div class=\"ds-grid ds-grid-2\"><div class=\"ds-section-card\"><div class=\"ds-section-title\">Listeners</div><dl class=\"ds-kv-list\"><dt>HTTP</dt><dd class=\"ds-table-mono\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<h1 class=\"ds-page-title\">Settings</h1><p class=\"ds-text-muted\">Operational configuration and quick links to settings sections.</p><div class=\"ds-grid ds-grid-2\" style=\"margin-bottom: 1rem;\"><div class=\"ds-section-card\"><div class=\"ds-section-title\">Identity & access</div><ul class=\"ds-link-list\"><li><a href=\"/settings/users\">Users</a> — admin can create / edit / delete users and change roles</li><li><a href=\"/settings/api-tokens\">API tokens</a> — issue long-lived Bearer tokens for automation</li><li><a href=\"/settings/audit\">Audit log</a> — filter and inspect HTTP mutations</li></ul></div><div class=\"ds-section-card\"><div class=\"ds-section-title\">Operations</div><ul class=\"ds-link-list\"><li><a href=\"/settings/backups\">Backups</a> — snapshots, retention, restore</li><li><a href=\"/providers\">Providers</a> — registered provider adapters</li></ul></div></div><div class=\"ds-section-header\">Runtime configuration</div><div class=\"ds-grid ds-grid-2\"><div class=\"ds-section-card\"><div class=\"ds-section-title\">Listeners</div><dl class=\"ds-kv-list\"><dt>HTTP</dt><dd class=\"ds-table-mono\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var2 string
 		templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(data.ClusterSummary.HTTPAddr)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/settings_index.templ`, Line: 57, Col: 60}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/settings_index.templ`, Line: 52, Col: 60}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</dd><dt>MachineLink</dt><dd class=\"ds-table-mono\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</dd></dl></div><div class=\"ds-section-card\"><div class=\"ds-section-title\">Operational params (read-only)</div><dl class=\"ds-kv-list\"><dt>JWT sessions</dt><dd class=\"ds-table-mono\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var3 string
-		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(data.ClusterSummary.MachineLinkAddr)
+		templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(data.OperationalConfig.JWTSessions)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/settings_index.templ`, Line: 59, Col: 67}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/settings_index.templ`, Line: 59, Col: 66}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</dd><dt>Provider gRPC</dt><dd class=\"ds-table-mono\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</dd><dt>Bcrypt cost</dt><dd class=\"ds-table-mono\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var4 string
-		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(data.ClusterSummary.ProviderAddr)
+		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(data.OperationalConfig.BcryptCost)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/settings_index.templ`, Line: 61, Col: 64}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/settings_index.templ`, Line: 61, Col: 65}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</dd></dl></div><div class=\"ds-section-card\"><div class=\"ds-section-title\">Operational params (read-only)</div><dl class=\"ds-kv-list\"><dt>JWT sessions</dt><dd class=\"ds-table-mono\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</dd><dt>Audit retention</dt><dd class=\"ds-table-mono\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var5 string
-		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(data.OperationalConfig.JWTSessions)
+		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(data.OperationalConfig.AuditRetentionDays)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/settings_index.templ`, Line: 68, Col: 66}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/settings_index.templ`, Line: 63, Col: 73}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</dd><dt>Bcrypt cost</dt><dd class=\"ds-table-mono\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</dd><dt>Backup directory</dt><dd class=\"ds-table-mono\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var6 string
-		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(data.OperationalConfig.BcryptCost)
+		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(data.OperationalConfig.BackupDirectory)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/settings_index.templ`, Line: 70, Col: 65}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/settings_index.templ`, Line: 65, Col: 70}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</dd><dt>Audit retention</dt><dd class=\"ds-table-mono\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var7 string
-		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(data.OperationalConfig.AuditRetentionDays)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/settings_index.templ`, Line: 72, Col: 73}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</dd><dt>Backup directory</dt><dd class=\"ds-table-mono\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var8 string
-		templ_7745c5c3_Var8, templ_7745c5c3_Err = templ.JoinStringErrs(data.OperationalConfig.BackupDirectory)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/settings_index.templ`, Line: 74, Col: 70}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var8))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 8, "</dd><dt>MachineLink public</dt><dd class=\"ds-table-mono\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var9 string
-		templ_7745c5c3_Var9, templ_7745c5c3_Err = templ.JoinStringErrs(data.OperationalConfig.MachineLinkEndpoint)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/settings_index.templ`, Line: 76, Col: 74}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var9))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 9, "</dd><dt>Provider gRPC public</dt><dd class=\"ds-table-mono\">")
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		var templ_7745c5c3_Var10 string
-		templ_7745c5c3_Var10, templ_7745c5c3_Err = templ.JoinStringErrs(data.OperationalConfig.ProviderGRPCEndpoint)
-		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/settings_index.templ`, Line: 78, Col: 75}
-		}
-		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var10))
-		if templ_7745c5c3_Err != nil {
-			return templ_7745c5c3_Err
-		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 10, "</dd></dl><p class=\"ds-text-muted ds-text-small\">Configuration is read from environment variables at startup. To change a value, update the deployment (Helm values or env var) and restart.</p></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</dd></dl><p class=\"ds-text-muted ds-text-small\">Configuration is read from environment variables at startup. To change a value, update the deployment (Helm values or env var) and restart.</p></div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

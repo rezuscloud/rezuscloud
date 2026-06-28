@@ -448,9 +448,9 @@ func (h *Handler) credentialDownload(w http.ResponseWriter, r *http.Request, kin
 		})
 	case "talosconfig":
 		data, err = credentials.GenerateTalosconfig(credentials.TalosconfigRequest{
-			ClusterName:     name,
-			MachineLinkAddr: tenant.Spec.ControlPlaneEndpoint,
-			Bundle:          bundle,
+			ClusterName: name,
+			Endpoint:    tenant.Spec.ControlPlaneEndpoint,
+			Bundle:      bundle,
 		})
 	default:
 		http.NotFound(w, r)

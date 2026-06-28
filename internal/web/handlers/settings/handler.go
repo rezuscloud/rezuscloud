@@ -49,7 +49,6 @@ type Host interface {
 	IsAdmin(r *http.Request) bool
 	RedirectAction(w http.ResponseWriter, r *http.Request, target string)
 	TenantNames() []string
-	MachineLinkEndpoint() string
 }
 
 // Handler serves the settings + providers + manual-join routes.
@@ -98,17 +97,13 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 func (h *Handler) SettingsIndexPage(w http.ResponseWriter, r *http.Request) {
 	data := pages.SettingsIndexPageData{
 		OperationalConfig: pages.OperationalConfig{
-			JWTSessions:          envDefault("REZUSCLOUD_JWT_SESSIONS", "24h (default)"),
-			BcryptCost:           envDefault("REZUSCLOUD_BCRYPT_COST", "12 (default)"),
-			AuditRetentionDays:   envDefault("REZUSCLOUD_AUDIT_RETENTION_DAYS", "90 (default)"),
-			BackupDirectory:      envDefault("REZUSCLOUD_BACKUP_DIR", "(tmpdir default)"),
-			MachineLinkEndpoint:  envDefault("REZUSCLOUD_MACHINELINK_PUBLIC_ENDPOINT", "machinelink.rezus.cloud:50001"),
-			ProviderGRPCEndpoint: envDefault("REZUSCLOUD_PROVIDER_PUBLIC_ENDPOINT", "provider.rezus.cloud:50190"),
+			JWTSessions:        envDefault("REZUSCLOUD_JWT_SESSIONS", "24h (default)"),
+			BcryptCost:         envDefault("REZUSCLOUD_BCRYPT_COST", "12 (default)"),
+			AuditRetentionDays: envDefault("REZUSCLOUD_AUDIT_RETENTION_DAYS", "90 (default)"),
+			BackupDirectory:    envDefault("REZUSCLOUD_BACKUP_DIR", "(tmpdir default)"),
 		},
 		ClusterSummary: pages.ClusterSummary{
-			HTTPAddr:        envDefault("REZUSCLOUD_ADDR", ":8080"),
-			MachineLinkAddr: envDefault("REZUSCLOUD_MACHINELINK_ADDR", ":50180"),
-			ProviderAddr:    envDefault("REZUSCLOUD_PROVIDER_ADDR", ":50190"),
+			HTTPAddr: envDefault("REZUSCLOUD_ADDR", ":8080"),
 		},
 		CanMutate: h.host.CanMutate(r),
 	}

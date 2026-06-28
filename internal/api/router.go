@@ -102,9 +102,8 @@ func RegisterSystemRoutes(mux *http.ServeMux, _ *state.Store) {
 	mux.HandleFunc("GET /api/v1/status", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
-			"status":      "ok",
-			"machinelink": "listening",
-			"provider":    "listening",
+			"status":   "ok",
+			"provider": "listening",
 		})
 	})
 }
