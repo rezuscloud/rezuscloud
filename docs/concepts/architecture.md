@@ -6,7 +6,7 @@ RezusCloud is a single-repo project with two binaries:
 
 | Binary | Runs on | Purpose |
 |--------|---------|----------|
-| `rezuscloud` | Management cluster / Docker / Home Assistant | REST API, WebUI, SideroLink, provider gRPC, state store |
+| `rezuscloud` | Management cluster / Docker / Home Assistant | REST API, WebUI, TF execution engine, TF HTTP backend (state store), controllers |
 | `rezusctl` | User's laptop / CI | CLI client: `boot` (standalone), all other commands talk to `rezuscloud` |
 
 `rezusctl boot` creates the management cluster and deploys `rezuscloud`. After that, `rezuscloud` runs autonomously. The CLI is only needed for boot and convenience commands.
@@ -15,7 +15,7 @@ RezusCloud is a single-repo project with two binaries:
 
 ## Design Principles
 
-1. **Single binary management plane.** One container runs the entire management plane — REST API, SideroLink server, Config Provider, provider gRPC, WebUI, health endpoints. Temporary unavailability does not affect running clusters.
+1. **Single binary management plane.** One container runs the entire management plane — REST API, TF execution engine, TF HTTP backend, controllers, WebUI, health endpoints. Temporary unavailability does not affect running clusters.
 2. **REST API following Kubernetes model.** Per-type endpoints, metadata/spec/status, labels, finalizers, JWT auth. Not CRDs — the API abstracts the state backend (SQLite, PostgreSQL, or CRDs).
 3. **Pluggable providers for machines.** Provider binaries connect outbound to the management cluster. Works behind NAT, IPv6-only, CGNAT ([ADR 12](../adr/0012-provider-based-machine-provisioning.md)).
 4. **Full Talos cluster lifecycle.** RezusCloud generates complete Talos configs for init, controlplane, and worker nodes. No hosted control planes ([ADR 14](../adr/0014-full-talos-cluster-lifecycle.md)).
@@ -33,11 +33,13 @@ RezusCloud is a single-repo project with two binaries:
 │  Layer 3: Orchestration                                     │
 │  Controller — watches state, dispatches to providers         │
 │  Config Provider — generates Talos config for connected      │
-│  machines, pushes over SideroLink                            │
+│  machines (generated during `tofu apply` by the                  │
+│  Talos TF provider; delivered via user_data                       │
+│  or Talos API push, NOT SideroLink)                               │
 ├─────────────────────────────────────────────────────────────┤
 │  Layer 2: Node Bootstrap                                    │
 │  Talos machine config generation (init, controlplane, worker)│
-│  SideroLink — machines pull config via WireGuard over gRPC   │
+│  Config delivery: user_data (cloud VMs) / Talos API (metal)  │
 ├─────────────────────────────────────────────────────────────┤
 │  Layer 1: Machine Provisioning (pluggable providers)        │
 │  gRPC providers — connect outbound to management cluster    │
@@ -66,7 +68,8 @@ Management Plane (single binary/container)
 │  │   ├── Watch/SSE (real-time events)                               │
 │  │   └── Log streaming (SSE per machine)                            │
 │  ├── WebUI (templ + Tailwind + HTMX + Alpine.js)                    │
-│  ├── SideroLink server (machine WireGuard connections)              │
+│  ├── TF HTTP backend (state store — single source of truth)        │
+│  ├── TF execution engine (exec's `tofu apply`)                    │
 │  ├── Config Provider (pushes Talos config to machines)              │
 │  ├── Provider gRPC server (accepts provider connections)            │
 │  ├── State store (SQLite / PostgreSQL / CRDs)                       │
@@ -75,12 +78,13 @@ Management Plane (single binary/container)
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
         ▲                         ▲                         ▲
-        │ Reverse proxy           │ SideroLink               │ gRPC
-        │ (Cloudflare/ngrok)      │ (machines pull config)   │ (providers connect)
+        │ Reverse proxy           │ Talos node API           │ Standard TF
+        │ (Cloudflare/ngrok)      │ (bare metal maintenance) │ provider plugins
+        │                         │                         │ (exec'd by tofu)
         │                         │                         │
 ┌───────┴──────────┐  ┌─────────┴──────────┐  ┌────────────┴──────────┐
 │ Public endpoint   │  │ Tenant Nodes       │  │ Provider (anywhere)    │
-│ grpc.manage.      │  │ (Talos Linux)      │  │ hetzner, aws, oci,     │
+│ grpc.manage.      │  │ (Talos Linux)      │  │ oci, openstack,        │
 │ rezus.cloud       │  │ edge,cloud,home    │  │ metal, static...       │
 └──────────────────┘  └────────────────────┘  └────────────────────────┘
 ```
