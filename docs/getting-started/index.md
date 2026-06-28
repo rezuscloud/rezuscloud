@@ -1,5 +1,13 @@
 # Getting Started
 
+> **⚠ This guide describes the pre-pivot architecture (gRPC providers +
+> SideroLink) and is stale.** The current architecture is documented in
+> [`CONTEXT.md`](../../CONTEXT.md) and [`docs/adr/`](../adr/README.md) —
+> RezusCloud now drives infrastructure through OpenTofu (exec'ing `tofu`),
+> config delivery is via `user_data` + Talos API (no SideroLink), and there
+> are no provider binaries. This guide will be rewritten; until then, treat
+> the provider/SideroLink descriptions below as historical, not current.
+
 ## Prerequisites
 
 | Requirement | Version | Check |

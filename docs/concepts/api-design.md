@@ -1,5 +1,15 @@
 # RezusCloud API Design
 
+> **⚠ Partially stale.** The resource-model shape below (metadata/spec/status,
+> labels, finalizers, optimistic concurrency) is current. The **Provider**
+> resource section (`/api/v1/providers`, heartbeat `PUT /status`, `endpoint`
+> field) describes the rejected gRPC-provider-binary model and will be
+> removed — under the current architecture a Provider is a RezusCloud-side TF
+> module (see [`docs/adr/0007-provider-as-tf-wrapper.md`](../adr/0007-provider-as-tf-wrapper.md)),
+> not a registered live process. The **JoinToken** resource is deprecated
+> (see [`CONTEXT.md`](../../CONTEXT.md)). Authoritative current architecture:
+> [`CONTEXT.md`](../../CONTEXT.md) + [`docs/adr/`](../adr/README.md).
+
 REST API for the RezusCloud management plane. Follows the Kubernetes API model:
 metadata/spec/status on every resource, label-based selection, finalizer-controlled
 deletion, optimistic concurrency, sub-resource endpoints for non-CRUD operations.

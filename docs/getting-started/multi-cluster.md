@@ -1,5 +1,14 @@
 # Multi-Cluster with Full Talos Lifecycle
 
+> **⚠ This guide describes the pre-pivot architecture (gRPC providers +
+> SideroLink) and is stale.** The current architecture is documented in
+> [`CONTEXT.md`](../../CONTEXT.md) and [`docs/adr/`](../adr/README.md) —
+> RezusCloud now drives infrastructure through OpenTofu (exec'ing `tofu`),
+> config delivery is via `user_data` + Talos API (no SideroLink), and there
+> are no provider binaries or SideroLink server. This guide will be
+> rewritten; until then, treat the topology and bootstrap-flow diagrams
+> below as historical, not current.
+
 RezusCloud manages multiple independent Kubernetes clusters. Each tenant cluster runs its own etcd, API server, and kubelet on dedicated machines. No shared control plane infrastructure.
 
 ## Architecture
