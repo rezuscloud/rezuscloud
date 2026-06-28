@@ -870,7 +870,6 @@ func (s *Store) DeleteTenant(name string) error {
 	// Add finalizers for controlled teardown.
 	_ = s.AddFinalizer("tenant", name, "rezuscloud.io/machines")
 	_ = s.AddFinalizer("tenant", name, "rezuscloud.io/secrets")
-	_ = s.AddFinalizer("tenant", name, "rezuscloud.io/tokens")
 
 	return nil
 }

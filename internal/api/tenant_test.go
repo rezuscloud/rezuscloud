@@ -175,8 +175,8 @@ func TestTenantAPI_Delete(t *testing.T) {
 	if resp.Metadata.DeletionTimestamp == nil {
 		t.Error("deletionTimestamp should be set")
 	}
-	if len(resp.Metadata.Finalizers) != 3 {
-		t.Errorf("finalizers = %d, want 3", len(resp.Metadata.Finalizers))
+	if len(resp.Metadata.Finalizers) != 2 {
+		t.Errorf("finalizers = %d, want 2", len(resp.Metadata.Finalizers))
 	}
 }
 

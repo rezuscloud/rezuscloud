@@ -135,8 +135,8 @@ func TestTenant_CRUD(t *testing.T) {
 	if deleted.Metadata.DeletionTimestamp == nil {
 		t.Error("deletionTimestamp should be set")
 	}
-	if len(deleted.Metadata.Finalizers) != 3 {
-		t.Errorf("finalizers = %d, want 3", len(deleted.Metadata.Finalizers))
+	if len(deleted.Metadata.Finalizers) != 2 {
+		t.Errorf("finalizers = %d, want 2", len(deleted.Metadata.Finalizers))
 	}
 }
 
@@ -442,8 +442,8 @@ func TestFinalizers_Teardown(t *testing.T) {
 	if tenant.Metadata.DeletionTimestamp == nil {
 		t.Fatal("deletionTimestamp should be set")
 	}
-	if len(tenant.Metadata.Finalizers) != 3 {
-		t.Fatalf("finalizers = %d, want 3", len(tenant.Metadata.Finalizers))
+	if len(tenant.Metadata.Finalizers) != 2 {
+		t.Fatalf("finalizers = %d, want 2", len(tenant.Metadata.Finalizers))
 	}
 
 	// Remove first finalizer.
@@ -457,15 +457,14 @@ func TestFinalizers_Teardown(t *testing.T) {
 
 	tenant, _ = s.GetTenant("test")
 	if tenant == nil {
-		t.Fatal("tenant should still exist (2 finalizers left)")
+		t.Fatal("tenant should still exist (1 finalizer left)")
 	}
-	if len(tenant.Metadata.Finalizers) != 2 {
-		t.Errorf("finalizers = %d, want 2", len(tenant.Metadata.Finalizers))
+	if len(tenant.Metadata.Finalizers) != 1 {
+		t.Errorf("finalizers = %d, want 1", len(tenant.Metadata.Finalizers))
 	}
 
-	// Remove remaining finalizers — last one should trigger permanent deletion.
+	// Remove remaining finalizer — should trigger permanent deletion.
 	_, _ = s.RemoveFinalizer("tenant", "test", "rezuscloud.io/secrets")
-	_, _ = s.RemoveFinalizer("tenant", "test", "rezuscloud.io/tokens")
 
 	gone, _ := s.GetTenant("test")
 	if gone != nil {
