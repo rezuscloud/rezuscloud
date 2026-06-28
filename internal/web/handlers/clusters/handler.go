@@ -36,7 +36,6 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/auth"
 	"github.com/rezuscloud/rezuscloud/internal/credentials"
 	"github.com/rezuscloud/rezuscloud/internal/state"
-	"github.com/rezuscloud/rezuscloud/internal/statemachine"
 	"github.com/rezuscloud/rezuscloud/internal/upgrade"
 	"github.com/rezuscloud/rezuscloud/internal/web/layout"
 	"github.com/rezuscloud/rezuscloud/internal/web/pages"
@@ -51,7 +50,7 @@ type Host interface {
 	CanMutate(r *http.Request) bool
 	RedirectAction(w http.ResponseWriter, r *http.Request, target string)
 	TenantSummaries() []pages.TenantSummary
-	NodeGroupSummaries(tenantName string) []statemachine.NodeGroupSummary
+	NodeGroupSummaries(tenantName string) []state.NodeGroupSummary
 	// BusPresent reports whether the watch bus is configured (used to toggle
 	// the "live updates" hint on the clusters list).
 	BusPresent() bool
@@ -132,7 +131,7 @@ func (h *Handler) TenantDetail(w http.ResponseWriter, r *http.Request) {
 		tenant = &state.Tenant{Metadata: meta, Spec: spec}
 	}
 
-	status := statemachine.ComputeTenantStatus(tenant, machines, nodeGroups)
+	status := state.ComputeTenantStatus(tenant, machines, nodeGroups)
 
 	data := pages.TenantDetailData{
 		Name:             name,

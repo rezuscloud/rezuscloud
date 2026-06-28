@@ -1,28 +1,30 @@
-// Package statemachine computes tenant phases from machine states.
-// The phase is derived (not stored manually) — it's always recomputed
-// from the current machine states whenever the status is updated.
-package statemachine
+// Status derivation: computes tenant phase/status from machine states.
+// The phase is derived (not stored manually) — it's always recomputed from
+// the current machine states whenever the status is requested.
+package state
 
-import (
-	"github.com/rezuscloud/rezuscloud/internal/state"
-)
+// NodeGroupSummary is a minimal view of a node group for phase computation.
+type NodeGroupSummary struct {
+	Name  string
+	Count int
+}
 
 // ComputeTenantPhase determines the tenant phase from machine states and node groups.
-func ComputeTenantPhase(tenant *state.Tenant, machines []*state.Machine, nodeGroups []NodeGroupSummary) state.TenantPhase {
+func ComputeTenantPhase(tenant *Tenant, machines []*Machine, nodeGroups []NodeGroupSummary) TenantPhase {
 	// If deletion timestamp is set, tenant is removing.
 	if tenant.Metadata.DeletionTimestamp != nil {
-		return state.TenantRemoving
+		return TenantRemoving
 	}
 
 	// No machines yet → forming.
 	if len(machines) == 0 {
-		return state.TenantForming
+		return TenantForming
 	}
 
 	// Count ready vs total machines.
 	readyCount := 0
 	for _, m := range machines {
-		if m.Status.Ready && m.Status.Stage == state.StageReady {
+		if m.Status.Ready && m.Status.Stage == StageReady {
 			readyCount++
 		}
 	}
@@ -37,25 +39,25 @@ func ComputeTenantPhase(tenant *state.Tenant, machines []*state.Machine, nodeGro
 
 	// If we have more machines than expected → shrinking.
 	if totalMachines > expectedCount {
-		return state.TenantShrinking
+		return TenantShrinking
 	}
 
 	// If we have fewer machines than expected → forming.
 	if totalMachines < expectedCount {
-		return state.TenantForming
+		return TenantForming
 	}
 
 	// Exact count. Are all ready?
 	if readyCount == totalMachines {
-		return state.TenantActive
+		return TenantActive
 	}
 
 	// Right count but some not ready → forming (still converging).
-	return state.TenantForming
+	return TenantForming
 }
 
 // ComputeTenantStatus builds the full TenantStatus from machine states.
-func ComputeTenantStatus(tenant *state.Tenant, machines []*state.Machine, nodeGroups []NodeGroupSummary) state.TenantStatus {
+func ComputeTenantStatus(tenant *Tenant, machines []*Machine, nodeGroups []NodeGroupSummary) TenantStatus {
 	phase := ComputeTenantPhase(tenant, machines, nodeGroups)
 
 	readyCount := 0
@@ -81,17 +83,17 @@ func ComputeTenantStatus(tenant *state.Tenant, machines []*state.Machine, nodeGr
 		expectedCount += ng.Count
 	}
 
-	available := phase == state.TenantActive || (phase == state.TenantForming && controlPlaneReady)
-	ready := phase == state.TenantActive
+	available := phase == TenantActive || (phase == TenantForming && controlPlaneReady)
+	ready := phase == TenantActive
 	apiReady := controlPlaneReady && readyCount > 0
 
-	return state.TenantStatus{
+	return TenantStatus{
 		Phase:             phase,
 		Available:         available,
 		Ready:             ready,
 		APIReady:          apiReady,
 		ControlPlaneReady: controlPlaneReady,
-		Machines: state.MachineCounts{
+		Machines: MachineCounts{
 			Total:     totalMachines,
 			Healthy:   readyCount,
 			Connected: connectedCount,
@@ -99,10 +101,4 @@ func ComputeTenantStatus(tenant *state.Tenant, machines []*state.Machine, nodeGr
 		KubernetesVersion: tenant.Spec.KubernetesVersion,
 		TalosVersion:      tenant.Spec.TalosVersion,
 	}
-}
-
-// NodeGroupSummary is a minimal view of a node group for phase computation.
-type NodeGroupSummary struct {
-	Name  string
-	Count int
 }
