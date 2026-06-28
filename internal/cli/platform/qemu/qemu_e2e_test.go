@@ -34,8 +34,8 @@ import (
 	"k8s.io/client-go/tools/clientcmd/api"
 
 	"github.com/rezuscloud/rezuscloud/internal/cli/helm"
+	"github.com/rezuscloud/rezuscloud/internal/cli/installer"
 	"github.com/rezuscloud/rezuscloud/internal/cli/platform/qemu"
-	"github.com/rezuscloud/rezuscloud/internal/cli/provider"
 	"github.com/rezuscloud/rezuscloud/internal/cli/talosconfig"
 )
 
@@ -205,12 +205,12 @@ func TestQEMU_KamajiWithCSRSigner(t *testing.T) {
 	t.Log("local-path-provisioner installed")
 
 	t.Log("=== Phase 3b: Install cert-manager ===")
-	installer, err := helm.NewInstallerFromBytes(mgmtKubeconfig)
+	helmInstaller, err := helm.NewInstallerFromBytes(mgmtKubeconfig)
 	if err != nil {
 		t.Fatalf("helm installer: %v", err)
 	}
 
-	err = installer.Install(ctx, provider.ChartConfig{
+	err = helmInstaller.Install(ctx, installer.ChartConfig{
 		Name: "cert-manager", Repository: "https://charts.jetstack.io",
 		Chart: "cert-manager", Version: "v1.20.2", Namespace: "cert-manager",
 		Values: map[string]interface{}{
@@ -239,7 +239,7 @@ func TestQEMU_KamajiWithCSRSigner(t *testing.T) {
 	// Single replica avoids the deadlock entirely.
 
 	// Step 1: Kamaji controller (no etcd subchart).
-	err = installer.Install(ctx, provider.ChartConfig{
+	err = helmInstaller.Install(ctx, installer.ChartConfig{
 		Name: "kamaji", Repository: "https://clastix.github.io/charts",
 		Chart: "kamaji", Version: "1.0.0", Namespace: "kamaji-system",
 		Values: map[string]interface{}{

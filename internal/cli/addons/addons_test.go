@@ -5,7 +5,7 @@ import (
 	"io"
 	"testing"
 
-	"github.com/rezuscloud/rezuscloud/internal/cli/provider"
+	"github.com/rezuscloud/rezuscloud/internal/cli/installer"
 )
 
 func TestNewAddons_NilConfig(t *testing.T) {
@@ -17,9 +17,9 @@ func TestNewAddons_NilConfig(t *testing.T) {
 }
 
 func TestInstallCertManager_Config(t *testing.T) {
-	var received provider.ChartConfig
+	var received installer.ChartConfig
 	mock := &mockInstaller{
-		installFn: func(_ context.Context, cfg provider.ChartConfig, _ io.Writer) error {
+		installFn: func(_ context.Context, cfg installer.ChartConfig, _ io.Writer) error {
 			received = cfg
 			return nil
 		},
@@ -61,9 +61,9 @@ func TestInstallCertManager_Config(t *testing.T) {
 }
 
 func TestInstallExternalDNS_Config(t *testing.T) {
-	var received provider.ChartConfig
+	var received installer.ChartConfig
 	mock := &mockInstaller{
-		installFn: func(_ context.Context, cfg provider.ChartConfig, _ io.Writer) error {
+		installFn: func(_ context.Context, cfg installer.ChartConfig, _ io.Writer) error {
 			received = cfg
 			return nil
 		},
@@ -93,9 +93,9 @@ func TestInstallExternalDNS_Config(t *testing.T) {
 }
 
 func TestInstallExternalDNS_NoSecret(t *testing.T) {
-	var received provider.ChartConfig
+	var received installer.ChartConfig
 	mock := &mockInstaller{
-		installFn: func(_ context.Context, cfg provider.ChartConfig, _ io.Writer) error {
+		installFn: func(_ context.Context, cfg installer.ChartConfig, _ io.Writer) error {
 			received = cfg
 			return nil
 		},
@@ -117,10 +117,10 @@ func TestInstallExternalDNS_NoSecret(t *testing.T) {
 }
 
 type mockInstaller struct {
-	installFn func(context.Context, provider.ChartConfig, io.Writer) error
+	installFn func(context.Context, installer.ChartConfig, io.Writer) error
 }
 
-func (m *mockInstaller) Install(ctx context.Context, cfg provider.ChartConfig, out io.Writer) error {
+func (m *mockInstaller) Install(ctx context.Context, cfg installer.ChartConfig, out io.Writer) error {
 	if m.installFn != nil {
 		return m.installFn(ctx, cfg, out)
 	}

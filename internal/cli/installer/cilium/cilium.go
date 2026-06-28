@@ -10,7 +10,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 
 	"github.com/rezuscloud/rezuscloud/internal/cli/helm"
-	"github.com/rezuscloud/rezuscloud/internal/cli/provider"
+	"github.com/rezuscloud/rezuscloud/internal/cli/installer"
 )
 
 const (
@@ -22,9 +22,9 @@ const (
 	healthNamespace = "kube-system"
 )
 
-// CiliumProvider implements provider.CNIProvider for Cilium CNI.
+// CiliumProvider implements installer.CNIProvider for Cilium CNI.
 type CiliumProvider struct {
-	installer provider.ChartInstaller
+	installer installer.ChartInstaller
 }
 
 // New creates a new Cilium CNI provider.
@@ -37,7 +37,7 @@ func New(kubeconfigPath string) (*CiliumProvider, error) {
 }
 
 // NewWithInstaller creates a CiliumProvider with a custom installer (for testing).
-func NewWithInstaller(installer provider.ChartInstaller) *CiliumProvider {
+func NewWithInstaller(installer installer.ChartInstaller) *CiliumProvider {
 	return &CiliumProvider{installer: installer}
 }
 
@@ -47,7 +47,7 @@ func (c *CiliumProvider) Name() string {
 }
 
 // Install installs Cilium via Helm.
-func (c *CiliumProvider) Install(ctx context.Context, _ kubernetes.Interface, spec provider.CNISpec) error {
+func (c *CiliumProvider) Install(ctx context.Context, _ kubernetes.Interface, spec installer.CNISpec) error {
 	version := spec.Version
 	if version == "" {
 		version = defaultVersion
@@ -67,7 +67,7 @@ func (c *CiliumProvider) Install(ctx context.Context, _ kubernetes.Interface, sp
 		values["k8sServicePort"] = spec.APIServerPort
 	}
 
-	return c.installer.Install(ctx, provider.ChartConfig{
+	return c.installer.Install(ctx, installer.ChartConfig{
 		Name:       releaseName,
 		Repository: chartRepo,
 		Chart:      chartName,
@@ -80,12 +80,12 @@ func (c *CiliumProvider) Install(ctx context.Context, _ kubernetes.Interface, sp
 }
 
 // ConfigureUnderlay is a future extension point for WireGuard/KubeSpan configuration.
-func (c *CiliumProvider) ConfigureUnderlay(_ context.Context, _ kubernetes.Interface, _ provider.TunnelSpec) error {
+func (c *CiliumProvider) ConfigureUnderlay(_ context.Context, _ kubernetes.Interface, _ installer.TunnelSpec) error {
 	return nil
 }
 
 // ConfigureIngress is a future extension point for Gateway API configuration.
-func (c *CiliumProvider) ConfigureIngress(_ context.Context, _ kubernetes.Interface, _ provider.IngressSpec) error {
+func (c *CiliumProvider) ConfigureIngress(_ context.Context, _ kubernetes.Interface, _ installer.IngressSpec) error {
 	return nil
 }
 
@@ -131,7 +131,7 @@ func (c *CiliumProvider) WaitForHealthy(ctx context.Context, client kubernetes.I
 }
 
 // buildValues constructs Helm values for Cilium based on the CNI spec.
-func buildValues(spec provider.CNISpec, mtu int) map[string]interface{} {
+func buildValues(spec installer.CNISpec, mtu int) map[string]interface{} {
 	values := map[string]interface{}{
 		"kubeProxyReplacement": "true",
 		"routingMode":          "tunnel",
@@ -163,8 +163,8 @@ func buildValues(spec provider.CNISpec, mtu int) map[string]interface{} {
 	return values
 }
 
-// Ensure CiliumProvider satisfies provider.CNIProvider at compile time.
-var _ provider.CNIProvider = (*CiliumProvider)(nil)
+// Ensure CiliumProvider satisfies installer.CNIProvider at compile time.
+var _ installer.CNIProvider = (*CiliumProvider)(nil)
 
 // Ensure appsv1 import is used (referenced via DaemonSet in IsHealthy).
 var _ appsv1.DaemonSet
