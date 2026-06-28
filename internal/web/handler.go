@@ -7,7 +7,7 @@
 //   - Constructs the section handlers
 //   - Implements the Host interface they need (Render, PopToast,
 //     AuthRequired, CanMutate, IsAdmin, RedirectAction, TenantSummaries,
-//     NodeGroupSummaries, ClusterNames, TenantNames, MachineLinkEndpoint,
+//     NodeGroupSummaries, ClusterNames, TenantNames,
 //     BusPresent)
 //   - Provides the dashboard adapters (backupAdapter, upgradeAdapter)
 //
@@ -239,12 +239,6 @@ func (h *Handler) RedirectAction(w http.ResponseWriter, r *http.Request, target 
 // dashboard and clusters sub-packages to toggle the "live updates" SSE hint.
 func (h *Handler) BusPresent() bool {
 	return h.bus != nil
-}
-
-// MachineLinkEndpoint returns the configured MachineLink endpoint string for
-// kernel args previews. TODO: make this configurable via env var.
-func (h *Handler) MachineLinkEndpoint() string {
-	return "machinelink.rezus.cloud:50001"
 }
 
 // --- Host interface: tenant/machine loaders ---

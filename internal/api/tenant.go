@@ -338,9 +338,9 @@ func (a *TenantAPI) Talosconfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tc, err := credentials.GenerateTalosconfig(credentials.TalosconfigRequest{
-		ClusterName:     name,
-		MachineLinkAddr: tenant.Spec.ControlPlaneEndpoint,
-		Bundle:          bundle,
+		ClusterName: name,
+		Endpoint:    tenant.Spec.ControlPlaneEndpoint,
+		Bundle:      bundle,
 	})
 	if err != nil {
 		writeError(w, fmt.Sprintf("generate talosconfig: %v", err), "InternalError", http.StatusInternalServerError)

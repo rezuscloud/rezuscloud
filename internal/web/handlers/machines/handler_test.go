@@ -28,7 +28,6 @@ func (s *stubHost) AuthRequired(next http.HandlerFunc) http.HandlerFunc {
 }
 func (s *stubHost) CanMutate(_ *http.Request) bool { return true }
 func (s *stubHost) ClusterNames() []string         { return []string{"prod"} }
-func (s *stubHost) MachineLinkEndpoint() string    { return "machinelink.test:50001" }
 func (s *stubHost) BusPresent() bool               { return true }
 
 // --- helpers ---
@@ -314,7 +313,7 @@ func TestIsValidKernelArg(t *testing.T) {
 		want bool
 	}{
 		{"talos.platform=metal", true},
-		{"siderolink.api=https://foo", true},
+		{"talos.config=.siderolink", true},
 		{"console=ttyS0", true},
 		{"reboot=k", true},
 		{"mitigations=off", true},

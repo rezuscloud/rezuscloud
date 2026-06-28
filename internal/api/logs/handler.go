@@ -1,5 +1,5 @@
 // Package logs provides HTTP handlers for streaming machine logs.
-// Logs are streamed from machines via MachineLink tunnel.
+// Logs are surfaced from machines via the Talos API (read-only, ADR 0015).
 // The LogProvider interface abstracts the log source for testability.
 package logs
 
@@ -21,7 +21,7 @@ type LogEntry struct {
 }
 
 // LogProvider streams log entries for a given machine.
-// Implementations may connect to MachineLink, read from a buffer,
+// Implementations may read from the Talos API, a buffer,
 // or return mock data for testing.
 type LogProvider interface {
 	// StreamLogs returns a channel of log entries for the given machine.

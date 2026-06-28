@@ -43,7 +43,6 @@ type Host interface {
 	AuthRequired(next http.HandlerFunc) http.HandlerFunc
 	CanMutate(r *http.Request) bool
 	ClusterNames() []string
-	MachineLinkEndpoint() string
 	BusPresent() bool
 }
 
@@ -592,7 +591,7 @@ type patchWithMeta struct {
 }
 
 func isValidKernelArg(arg string) bool {
-	allowed := []string{"talos.", "siderolink.", "console=", "reboot=", "mitigations=", "ip="}
+	allowed := []string{"talos.", "console=", "reboot=", "mitigations=", "ip="}
 	for _, p := range allowed {
 		if strings.HasPrefix(arg, p) {
 			return true

@@ -34,7 +34,6 @@ func (s *stubHost) AuthRequired(next http.HandlerFunc) http.HandlerFunc {
 func (s *stubHost) CanMutate(_ *http.Request) bool { return true }
 func (s *stubHost) IsAdmin(_ *http.Request) bool   { return true }
 func (s *stubHost) TenantNames() []string          { return []string{"prod"} }
-func (s *stubHost) MachineLinkEndpoint() string    { return "machinelink.test:50001" }
 func (s *stubHost) RedirectAction(w http.ResponseWriter, _ *http.Request, target string) {
 	s.redirectTarget = target
 	s.redirectStatus = http.StatusSeeOther

@@ -24,9 +24,9 @@ type KubeconfigRequest struct {
 
 // TalosconfigRequest contains the parameters for generating a talosconfig.
 type TalosconfigRequest struct {
-	ClusterName     string
-	MachineLinkAddr string // e.g. "192.168.1.5:50180"
-	Bundle          *secrets.Bundle
+	ClusterName string
+	Endpoint    string // Talos API endpoint, e.g. "192.168.1.5:50000"
+	Bundle      *secrets.Bundle
 }
 
 // GenerateKubeconfig generates an admin kubeconfig from the secrets bundle.
@@ -78,7 +78,7 @@ func GenerateTalosconfig(req TalosconfigRequest) ([]byte, error) {
 	}
 
 	// Determine endpoint.
-	endpoint := req.MachineLinkAddr
+	endpoint := req.Endpoint
 	if endpoint == "" {
 		endpoint = "127.0.0.1:50000"
 	}

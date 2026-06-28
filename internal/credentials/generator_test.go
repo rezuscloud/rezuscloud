@@ -114,9 +114,9 @@ func TestGenerateTalosconfig(t *testing.T) {
 	}
 
 	talosconfig, err := GenerateTalosconfig(TalosconfigRequest{
-		ClusterName:     "test-cluster",
-		MachineLinkAddr: "192.168.1.5:50180",
-		Bundle:          bundle,
+		ClusterName: "test-cluster",
+		Endpoint:    "192.168.1.5:50000",
+		Bundle:      bundle,
 	})
 	if err != nil {
 		t.Fatalf("GenerateTalosconfig: %v", err)
@@ -127,7 +127,7 @@ func TestGenerateTalosconfig(t *testing.T) {
 	if !strings.Contains(talosconfigStr, "test-cluster") {
 		t.Error("talosconfig should contain cluster name")
 	}
-	if !strings.Contains(talosconfigStr, "192.168.1.5:50180") {
+	if !strings.Contains(talosconfigStr, "192.168.1.5:50000") {
 		t.Error("talosconfig should contain endpoint")
 	}
 }

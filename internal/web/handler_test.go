@@ -213,14 +213,6 @@ func TestBusPresent(t *testing.T) {
 	}
 }
 
-// TestMachineLinkEndpoint verifies the placeholder endpoint.
-func TestMachineLinkEndpoint(t *testing.T) {
-	h, _ := newTestHandler(t)
-	if ep := h.MachineLinkEndpoint(); ep == "" {
-		t.Error("MachineLinkEndpoint should not be empty")
-	}
-}
-
 // TestTenantSummaries_EmptyStore verifies the summary loader on an empty store.
 func TestTenantSummaries_EmptyStore(t *testing.T) {
 	h, _ := newTestHandler(t)

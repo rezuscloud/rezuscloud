@@ -635,7 +635,7 @@ func KernelArgs(data KernelArgsData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "</textarea><div class=\"ds-input-hint\">Allowed prefixes: <code>talos.</code>, <code>siderolink.</code>, <code>console=</code>, <code>reboot=</code>, <code>mitigations=</code>, <code>ip=</code>. No whitespace inside individual args.</div></div><div class=\"ds-form-actions\"><button type=\"submit\" class=\"ds-btn\">Save</button></div></form>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "</textarea><div class=\"ds-input-hint\">Allowed prefixes: <code>talos.</code>, <code>console=</code>, <code>reboot=</code>, <code>mitigations=</code>, <code>ip=</code>. No whitespace inside individual args.</div></div><div class=\"ds-form-actions\"><button type=\"submit\" class=\"ds-btn\">Save</button></div></form>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -652,7 +652,7 @@ func KernelArgs(data KernelArgsData) templ.Component {
 				var templ_7745c5c3_Var35 string
 				templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(data.Existing)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/machine_deepdive.templ`, Line: 220, Col: 65}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/machine_deepdive.templ`, Line: 219, Col: 65}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 				if templ_7745c5c3_Err != nil {
