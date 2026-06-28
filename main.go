@@ -151,7 +151,6 @@ type config struct {
 	Addr          string // HTTP listen address
 	DataDir       string // Persistent data directory
 	Mode          string // "standalone" or "cluster"
-	JoinToken     string // Global join token for machine authentication
 	JWTSecret     string // JWT signing secret
 	AdminPassword string // Initial admin password
 	PrometheusURL string // Prometheus query endpoint (e.g. http://prometheus:9090)
@@ -163,7 +162,6 @@ func loadConfig() config {
 		Addr:          envOr("REZUSCLOUD_ADDR", ":8080"),
 		DataDir:       envOr("REZUSCLOUD_DATA_DIR", "/data"),
 		Mode:          envOr("REZUSCLOUD_MODE", "standalone"),
-		JoinToken:     os.Getenv("REZUSCLOUD_JOIN_TOKEN"),
 		JWTSecret:     envOr("REZUSCLOUD_JWT_SECRET", ""),
 		AdminPassword: os.Getenv("REZUSCLOUD_ADMIN_PASSWORD"),
 		PrometheusURL: os.Getenv("REZUSCLOUD_PROMETHEUS_URL"),

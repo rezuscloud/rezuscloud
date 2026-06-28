@@ -243,17 +243,6 @@ func TestProvidersPage_Renders(t *testing.T) {
 	}
 }
 
-// TestManualJoinPage_Renders renders the manual join page with no tokens.
-func TestManualJoinPage_Renders(t *testing.T) {
-	h, _, host := newHandler(t)
-	req := httptest.NewRequest(http.MethodGet, "/machines/join-manual", nil)
-	w := httptest.NewRecorder()
-	h.ManualJoinPage(w, req)
-	if host.lastProps.Title != "Manual Join" {
-		t.Errorf("Title = %q, want Manual Join", host.lastProps.Title)
-	}
-}
-
 // TestRegisterRoutes verifies all settings routes are wired.
 func TestRegisterRoutes(t *testing.T) {
 	h, _, _ := newHandler(t)
@@ -272,7 +261,6 @@ func TestRegisterRoutes(t *testing.T) {
 		{http.MethodGet, "/settings/api-tokens"},
 		{http.MethodGet, "/settings/audit"},
 		{http.MethodGet, "/providers"},
-		{http.MethodGet, "/machines/join-manual"},
 	}
 	for _, r := range routes {
 		req := httptest.NewRequest(r.method, r.path, nil)
@@ -301,20 +289,6 @@ func TestRpoEstimate_EdgeCases(t *testing.T) {
 				t.Errorf("rpoEstimate(%q) = %q, want %q", c.input, got, c.want)
 			}
 		})
-	}
-}
-
-// TestKernelArgsPreview verifies the helper renders the correct kernel args.
-func TestKernelArgsPreview(t *testing.T) {
-	got := kernelArgsPreview("abc", "endpoint:50001")
-	if !strings.Contains(got, "endpoint:50001") {
-		t.Errorf("missing endpoint: %s", got)
-	}
-	if !strings.Contains(got, "jointoken=abc") {
-		t.Errorf("missing jointoken: %s", got)
-	}
-	if !strings.Contains(got, "talos.platform=metal") {
-		t.Errorf("missing platform: %s", got)
 	}
 }
 

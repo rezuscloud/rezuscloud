@@ -3,7 +3,6 @@ package controller
 import (
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/rezuscloud/rezuscloud/internal/state"
 )
@@ -78,34 +77,6 @@ func TestFinalizer_TenantNoDeletionTimestamp_Skips(t *testing.T) {
 	tenant, _ := store.GetTenant("prod")
 	if tenant == nil {
 		t.Error("tenant should still exist")
-	}
-}
-
-func TestFinalizer_TenantCleansUpTokens(t *testing.T) {
-	store, ctrl := setupControllerTest(t)
-
-	_, _ = store.CreateTenant("prod", state.TenantSpec{KubernetesVersion: "1.35.0"}, nil, nil)
-	_ = store.AddFinalizer("tenant", "prod", "rezuscloud.io/tokens")
-
-	// Create join tokens.
-	_, _ = store.CreateJoinToken("tok-1", state.JoinTokenSpec{
-		NodeGroup: "workers",
-		ExpiresAt: time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC),
-	}, "prod", "workers")
-	_, _ = store.CreateJoinToken("tok-2", state.JoinTokenSpec{
-		NodeGroup: "cp",
-		ExpiresAt: time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC),
-	}, "prod", "cp")
-
-	// Delete and reconcile.
-	_, _ = store.DeleteResource("tenant", "prod")
-	_ = ctrl.ReconcileTenant("prod")
-
-	// Tokens should be gone.
-	opts := state.ListOptions{LabelSelector: "rezuscloud.io/tenant=prod"}
-	_, _, _, total, _ := store.ListResources("jointoken", opts)
-	if total != 0 {
-		t.Errorf("tokens remaining = %d, want 0", total)
 	}
 }
 

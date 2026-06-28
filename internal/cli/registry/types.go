@@ -76,13 +76,6 @@ func builtinTypes() []ResourceType {
 			Verbs: []string{"get", "list"},
 		},
 		{
-			Kind:  "JoinToken",
-			Names: []string{"jointoken", "jt", "jointokens"},
-			Path:  "api/v1/tenants/{cluster}/join-tokens",
-			Scope: ScopeClusterRequired,
-			Verbs: []string{"get", "list", "create", "delete"},
-		},
-		{
 			Kind:  "ConfigPatch",
 			Names: []string{"patch", "patches", "configpatch"},
 			Path:  "api/v1/tenants/{cluster}/patches",

@@ -5,8 +5,6 @@
 //
 //   - GET    /machines                       — machines fleet
 //   - GET    /machines/pending               — pending machines
-//   - GET    /machines/jointokens            — join tokens list
-//   - POST   /machines/jointokens            — create join token
 //   - GET    /machines/{id}                  — machine detail
 //   - GET    /machines/{id}/logs             — logs viewer
 //   - GET    /machines/{id}/logs/poll        — HTMX logs partial
@@ -23,8 +21,6 @@ package machines
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -69,8 +65,6 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	auth := h.host.AuthRequired
 
 	mux.HandleFunc("GET /machines", auth(h.MachinesList))
-	mux.HandleFunc("GET /machines/jointokens", auth(h.JoinTokensList))
-	mux.HandleFunc("POST /machines/jointokens", auth(h.JoinTokenCreate))
 	mux.HandleFunc("GET /machines/pending", auth(h.MachinesPending))
 	mux.HandleFunc("GET /machines/{id}", auth(h.MachineDetail))
 	mux.HandleFunc("GET /machines/{id}/logs", auth(h.MachineLogs))
@@ -694,101 +688,6 @@ func (h *Handler) MachineDelete(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/machines?toast=machine+removed&toast-type=success", http.StatusSeeOther)
 }
 
-// --- Join tokens ---
-
-func (h *Handler) JoinTokensList(w http.ResponseWriter, r *http.Request) {
-	tokens, _, err := h.store.ListJoinTokens()
-	if err != nil {
-		http.Error(w, "Failed to list tokens: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	rows := make([]pages.JoinTokenRow, 0, len(tokens))
-	for _, jt := range tokens {
-		rows = append(rows, joinTokenRow(jt))
-	}
-
-	data := pages.JoinTokensListData{
-		Tokens:       rows,
-		ClusterNames: h.host.ClusterNames(),
-		CanMutate:    h.host.CanMutate(r),
-	}
-
-	if tok := r.URL.Query().Get("new_token"); tok != "" {
-		jt, _ := h.store.GetJoinToken(tok)
-		if jt != nil {
-			data.NewToken = tok
-			data.NewTokenExp = jt.Spec.ExpiresAt
-			data.NewTokenCluster = jt.Metadata.Labels["rezuscloud.io/tenant"]
-			data.NewTokenArgs = kernelArgsPreview(tok, h.host.MachineLinkEndpoint())
-		}
-	}
-
-	h.host.Render(w, r, layout.BaseProps{
-		Title:   "Join Tokens",
-		Page:    "jointokens",
-		Content: pages.JoinTokensList(data),
-		Breadcrumb: []layout.BreadcrumbItem{
-			{Name: "Machines", URL: "/machines"},
-			{Name: "Join Tokens", Current: true},
-		},
-	})
-}
-
-func (h *Handler) JoinTokenCreate(w http.ResponseWriter, r *http.Request) {
-	if !h.host.CanMutate(r) {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
-	}
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "invalid form: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	cluster := strings.TrimSpace(r.FormValue("cluster"))
-	nodeGroup := strings.TrimSpace(r.FormValue("nodegroup"))
-	ttlStr := strings.TrimSpace(r.FormValue("ttl"))
-	singleUse := r.FormValue("single_use") == "true"
-
-	if cluster == "" || nodeGroup == "" {
-		http.Error(w, "cluster and nodegroup are required", http.StatusBadRequest)
-		return
-	}
-	t, _ := h.store.GetTenant(cluster)
-	if t == nil {
-		http.Error(w, "cluster not found", http.StatusNotFound)
-		return
-	}
-
-	ttl := 24 * time.Hour
-	if ttlStr != "" && ttlStr != "0" {
-		if parsed, err := time.ParseDuration(ttlStr); err == nil {
-			ttl = parsed
-		}
-	}
-
-	token, err := generateJoinTokenValue()
-	if err != nil {
-		http.Error(w, "token generation failed", http.StatusInternalServerError)
-		return
-	}
-
-	spec := state.JoinTokenSpec{
-		SingleUse: singleUse,
-		NodeGroup: nodeGroup,
-	}
-	if ttl > 0 {
-		spec.ExpiresAt = time.Now().UTC().Add(ttl)
-	}
-
-	if _, err := h.store.CreateJoinToken(token, spec, cluster, nodeGroup); err != nil {
-		http.Error(w, "failed to create token: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	http.Redirect(w, r, "/machines/jointokens?new_token="+url.QueryEscape(token), http.StatusSeeOther)
-}
-
 // --- helpers ---
 
 // machineFleetRow converts a Machine to a fleet-table row.
@@ -801,28 +700,6 @@ func machineFleetRow(m *state.Machine) pages.MachineFleetRow {
 		Connected: m.Spec.Connected,
 		NodeGroup: m.Metadata.Labels["rezuscloud.io/node-group"],
 		LastSeen:  formatAge(m.Metadata.UpdatedAt),
-	}
-}
-
-// joinTokenRow converts a JoinToken to a list-table row.
-func joinTokenRow(jt *state.JoinToken) pages.JoinTokenRow {
-	status := "active"
-	if jt.Status.Used {
-		status = "used"
-	} else if !jt.Spec.ExpiresAt.IsZero() && time.Now().UTC().After(jt.Spec.ExpiresAt) {
-		status = "expired"
-	}
-	expires := "never"
-	if !jt.Spec.ExpiresAt.IsZero() {
-		expires = jt.Spec.ExpiresAt.Format("2006-01-02 15:04 MST")
-	}
-	return pages.JoinTokenRow{
-		Token:     shortDisplayID(jt.Metadata.Name),
-		Cluster:   jt.Metadata.Labels["rezuscloud.io/tenant"],
-		NodeGroup: jt.Spec.NodeGroup,
-		Status:    status,
-		ExpiresAt: expires,
-		CreatedAt: jt.Metadata.CreatedAt.Format("2006-01-02 15:04 MST"),
 	}
 }
 
@@ -891,23 +768,6 @@ func hardwareDiskTotal(h *state.HardwareInfo) int64 {
 		total += d.Size
 	}
 	return total
-}
-
-// kernelArgsPreview renders the kernel args a machine should boot with.
-func kernelArgsPreview(token, endpoint string) string {
-	return fmt.Sprintf(
-		"siderolink.api=https://%s?jointoken=%s\ntalos.platform=metal\ntalos.config=.siderolink",
-		endpoint, token,
-	)
-}
-
-// generateJoinTokenValue returns a 32-byte hex token.
-func generateJoinTokenValue() (string, error) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b), nil
 }
 
 // machineStages is the list of known machine stages for the filter dropdown.

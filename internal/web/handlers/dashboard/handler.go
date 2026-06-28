@@ -207,7 +207,7 @@ func (h *Handler) EventsStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resourceTypes := []string{"tenant", "machine", "nodegroup", "provider", "jointoken", "configpatch"}
+	resourceTypes := []string{"tenant", "machine", "nodegroup", "provider", "configpatch"}
 	type subscription struct {
 		typ    string
 		ch     <-chan watch.Event

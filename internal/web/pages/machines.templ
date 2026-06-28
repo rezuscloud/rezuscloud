@@ -32,15 +32,14 @@ type MachineFleetRow struct {
 templ MachinesList(data MachinesListData) {
 	<div class="ds-page-header-row">
 		<h1 class="ds-page-title">Machines</h1>
-		<a href="/machines/jointokens" class="ds-btn ds-btn--secondary">Join Tokens</a>
 	</div>
 	@machinesFilters(data)
 	if len(data.Machines) == 0 {
 		<div class="ds-empty">
 			<p>No machines registered yet.</p>
 			<p class="ds-empty-hint">
-				Create a join token, then boot a Talos machine with the
-				<code>siderolink.api</code> kernel arg pointing here.
+				Provision a machine through a provider module; config is delivered via
+				<code>user_data</code> (cloud) or Talos API push (bare metal).
 			</p>
 		</div>
 	} else {
