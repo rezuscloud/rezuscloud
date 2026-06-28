@@ -3,7 +3,6 @@
 package controller
 
 import (
-	"encoding/json"
 	"log"
 
 	"github.com/rezuscloud/rezuscloud/internal/state"
@@ -34,15 +33,7 @@ func (c *FinalizerController) ReconcileTenant(name string) error {
 
 	log.Printf("reconciling tenant %q deletion", name)
 
-	// Step 1: Revoke all join tokens.
-	if hasFinalizer(tenant.Metadata, "rezuscloud.io/tokens") {
-		if err := c.cleanupTenantTokens(name); err != nil {
-			return err
-		}
-		_, _ = c.store.RemoveFinalizer("tenant", name, "rezuscloud.io/tokens")
-	}
-
-	// Step 2: Deprovision all machines.
+	// Step 1: Deprovision all machines.
 	if hasFinalizer(tenant.Metadata, "rezuscloud.io/machines") {
 		if err := c.cleanupTenantMachines(name); err != nil {
 			return err
@@ -50,7 +41,7 @@ func (c *FinalizerController) ReconcileTenant(name string) error {
 		_, _ = c.store.RemoveFinalizer("tenant", name, "rezuscloud.io/machines")
 	}
 
-	// Step 3: Remove secrets bundle.
+	// Step 2: Remove secrets bundle.
 	if hasFinalizer(tenant.Metadata, "rezuscloud.io/secrets") {
 		// Secrets cleanup is a no-op for now (secrets stored in resource table).
 		_, _ = c.store.RemoveFinalizer("tenant", name, "rezuscloud.io/secrets")
@@ -123,21 +114,6 @@ func (c *FinalizerController) ReconcileNodeGroup(tenant, name string) error {
 	return nil
 }
 
-// cleanupTenantTokens revokes all join tokens for a tenant.
-func (c *FinalizerController) cleanupTenantTokens(tenant string) error {
-	items, _, err := state.ListTypedByTenant(c.store, "jointoken", tenant,
-		func(meta state.Metadata, _, _ json.RawMessage) (state.Metadata, error) {
-			return meta, nil
-		})
-	if err != nil {
-		return err
-	}
-	for _, md := range items {
-		_ = c.store.RemoveResource("jointoken", md.Name)
-	}
-	return nil
-}
-
 // cleanupTenantMachines removes all tenant machines permanently.
 func (c *FinalizerController) cleanupTenantMachines(tenant string) error {
 	machines, _, err := c.store.ListMachinesByTenant(tenant)
@@ -167,7 +143,7 @@ func hasFinalizer(md state.Metadata, finalizer string) bool {
 
 // DefaultTenantFinalizers returns the standard finalizers for a tenant.
 func DefaultTenantFinalizers() []string {
-	return []string{"rezuscloud.io/machines", "rezuscloud.io/secrets", "rezuscloud.io/tokens"}
+	return []string{"rezuscloud.io/machines", "rezuscloud.io/secrets"}
 }
 
 // DefaultMachineFinalizers returns the standard finalizers for a machine.
