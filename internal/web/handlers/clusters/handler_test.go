@@ -10,7 +10,6 @@ import (
 
 	"github.com/rezuscloud/rezuscloud/internal/auth"
 	"github.com/rezuscloud/rezuscloud/internal/state"
-	"github.com/rezuscloud/rezuscloud/internal/statemachine"
 	"github.com/rezuscloud/rezuscloud/internal/web/layout"
 	"github.com/rezuscloud/rezuscloud/internal/web/pages"
 )
@@ -34,8 +33,8 @@ func (s *stubHost) CanMutate(_ *http.Request) bool { return true }
 func (s *stubHost) TenantSummaries() []pages.TenantSummary {
 	return []pages.TenantSummary{{Name: "prod", Phase: "active"}}
 }
-func (s *stubHost) NodeGroupSummaries(_ string) []statemachine.NodeGroupSummary { return nil }
-func (s *stubHost) BusPresent() bool                                            { return true }
+func (s *stubHost) NodeGroupSummaries(_ string) []state.NodeGroupSummary { return nil }
+func (s *stubHost) BusPresent() bool                                     { return true }
 func (s *stubHost) RedirectAction(w http.ResponseWriter, _ *http.Request, target string) {
 	s.redirectTarget = target
 	s.redirectStatus = http.StatusSeeOther
@@ -392,7 +391,7 @@ func (r *recordingHost) AuthRequired(next http.HandlerFunc) http.HandlerFunc {
 }
 func (r *recordingHost) CanMutate(req *http.Request) bool       { return r.inner.CanMutate(req) }
 func (r *recordingHost) TenantSummaries() []pages.TenantSummary { return r.inner.TenantSummaries() }
-func (r *recordingHost) NodeGroupSummaries(t string) []statemachine.NodeGroupSummary {
+func (r *recordingHost) NodeGroupSummaries(t string) []state.NodeGroupSummary {
 	return r.inner.NodeGroupSummaries(t)
 }
 func (r *recordingHost) BusPresent() bool { return r.inner.BusPresent() }
