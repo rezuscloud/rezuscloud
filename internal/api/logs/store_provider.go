@@ -8,7 +8,7 @@ import (
 )
 
 // StoreLogProvider provides log entries from the state store.
-// In production, this will be replaced by a MachineLink tunnel provider.
+// In production, this reads machine bootstrap logs via the Talos API.
 // For now, it generates synthetic logs from machine status changes.
 type StoreLogProvider struct {
 	store *state.Store
@@ -20,7 +20,7 @@ func NewStoreLogProvider(store *state.Store) *StoreLogProvider {
 }
 
 // StreamLogs returns synthetic log entries for the given machine.
-// Until MachineLink is implemented, this produces bootstrap log messages
+// Until live log streaming is implemented, this produces bootstrap log messages
 // based on the machine's current stage.
 func (p *StoreLogProvider) StreamLogs(machineID string, opts LogOptions) (<-chan LogEntry, error) {
 	// Check if machine exists.
@@ -40,7 +40,7 @@ func (p *StoreLogProvider) StreamLogs(machineID string, opts LogOptions) (<-chan
 		// Generate synthetic log entries based on machine state.
 		now := time.Now().UTC()
 		entries := []LogEntry{
-			{Timestamp: now.Add(-5 * time.Minute), Message: "MachineLink connection established", Level: "info", Source: "machinelink"},
+			{Timestamp: now.Add(-5 * time.Minute), Message: "Talos API connection established", Level: "info", Source: "talos"},
 			{Timestamp: now.Add(-4 * time.Minute), Message: fmt.Sprintf("Machine role: %s", spec.Role), Level: "info", Source: "config"},
 			{Timestamp: now.Add(-3 * time.Minute), Message: "Talos config applied successfully", Level: "info", Source: "config"},
 			{Timestamp: now.Add(-2 * time.Minute), Message: "Services starting...", Level: "info", Source: "machined"},

@@ -11,22 +11,18 @@ type SettingsIndexPageData struct {
 
 // OperationalConfig is the read-only env+helm summary.
 type OperationalConfig struct {
-	JWTSessions          string
-	BcryptCost           string
-	AuditRetentionDays   string
-	BackupDirectory      string
-	MachineLinkEndpoint  string
-	ProviderGRPCEndpoint string
+	JWTSessions        string
+	BcryptCost         string
+	AuditRetentionDays string
+	BackupDirectory    string
 }
 
 // ClusterSummary lists listener endpoints observed from configuration.
 type ClusterSummary struct {
-	HTTPAddr        string
-	MachineLinkAddr string
-	ProviderAddr    string
+	HTTPAddr string
 }
 
-// SettingsIndex renders the settings landing page (minimal, per ADR 17).
+// SettingsIndex renders the settings landing page.
 templ SettingsIndex(data SettingsIndexPageData) {
 	<h1 class="ds-page-title">Settings</h1>
 	<p class="ds-text-muted">Operational configuration and quick links to settings sections.</p>
@@ -44,7 +40,6 @@ templ SettingsIndex(data SettingsIndexPageData) {
 			<ul class="ds-link-list">
 				<li><a href="/settings/backups">Backups</a> — snapshots, retention, restore</li>
 				<li><a href="/providers">Providers</a> — registered provider adapters</li>
-				<li><a href="/machines/join-manual">Manual join</a> — boot-from-media kernel args helper</li>
 			</ul>
 		</div>
 	</div>
@@ -55,10 +50,6 @@ templ SettingsIndex(data SettingsIndexPageData) {
 			<dl class="ds-kv-list">
 				<dt>HTTP</dt>
 				<dd class="ds-table-mono">{ data.ClusterSummary.HTTPAddr }</dd>
-				<dt>MachineLink</dt>
-				<dd class="ds-table-mono">{ data.ClusterSummary.MachineLinkAddr }</dd>
-				<dt>Provider gRPC</dt>
-				<dd class="ds-table-mono">{ data.ClusterSummary.ProviderAddr }</dd>
 			</dl>
 		</div>
 		<div class="ds-section-card">
@@ -72,10 +63,6 @@ templ SettingsIndex(data SettingsIndexPageData) {
 				<dd class="ds-table-mono">{ data.OperationalConfig.AuditRetentionDays }</dd>
 				<dt>Backup directory</dt>
 				<dd class="ds-table-mono">{ data.OperationalConfig.BackupDirectory }</dd>
-				<dt>MachineLink public</dt>
-				<dd class="ds-table-mono">{ data.OperationalConfig.MachineLinkEndpoint }</dd>
-				<dt>Provider gRPC public</dt>
-				<dd class="ds-table-mono">{ data.OperationalConfig.ProviderGRPCEndpoint }</dd>
 			</dl>
 			<p class="ds-text-muted ds-text-small">Configuration is read from environment variables at startup. To change a value, update the deployment (Helm values or env var) and restart.</p>
 		</div>
