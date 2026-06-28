@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/rezuscloud/rezuscloud/internal/state"
-	"github.com/rezuscloud/rezuscloud/internal/statemachine"
 )
 
 // Posture is the set of cards rendered on the dashboard.
@@ -119,7 +118,7 @@ type UpgradeRun struct {
 // NodeGroupReader is an optional override for loading node groups.
 // If nil, Builder falls back to ListResources on the store.
 type NodeGroupReader interface {
-	NodeGroupSummaries(tenant string) []statemachine.NodeGroupSummary
+	NodeGroupSummaries(tenant string) []state.NodeGroupSummary
 }
 
 // Builder computes Posture from a single snapshot of state.
@@ -166,7 +165,7 @@ func (b *Builder) Build(ctx context.Context) Posture {
 	for _, t := range tenants {
 		tenantMachines := byTenant[t.Metadata.Name]
 		ngSums := b.nodeGroups(t.Metadata.Name)
-		status := statemachine.ComputeTenantStatus(t, tenantMachines, ngSums)
+		status := state.ComputeTenantStatus(t, tenantMachines, ngSums)
 		phase := string(status.Phase)
 		switch phase {
 		case string(state.TenantActive):
@@ -228,7 +227,7 @@ func (b *Builder) Build(ctx context.Context) Posture {
 	return p
 }
 
-func (b *Builder) nodeGroups(tenant string) []statemachine.NodeGroupSummary {
+func (b *Builder) nodeGroups(tenant string) []state.NodeGroupSummary {
 	if b.deps.NodeGroup != nil {
 		return b.deps.NodeGroup.NodeGroupSummaries(tenant)
 	}
@@ -239,11 +238,11 @@ func (b *Builder) nodeGroups(tenant string) []statemachine.NodeGroupSummary {
 	if err != nil {
 		return nil
 	}
-	out := make([]statemachine.NodeGroupSummary, 0, len(mds))
+	out := make([]state.NodeGroupSummary, 0, len(mds))
 	for i := range mds {
 		var spec state.NodeGroupSpec
 		_ = json.Unmarshal(specs[i], &spec)
-		out = append(out, statemachine.NodeGroupSummary{
+		out = append(out, state.NodeGroupSummary{
 			Name:  mds[i].Name,
 			Count: spec.Count,
 		})
@@ -321,7 +320,7 @@ func isFailedStage(s state.MachineStage) bool {
 	return false
 }
 
-func sumNodeGroupCounts(groups []statemachine.NodeGroupSummary) int {
+func sumNodeGroupCounts(groups []state.NodeGroupSummary) int {
 	total := 0
 	for _, g := range groups {
 		total += g.Count

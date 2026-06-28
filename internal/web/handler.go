@@ -24,7 +24,6 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/backup"
 	"github.com/rezuscloud/rezuscloud/internal/dashboard"
 	"github.com/rezuscloud/rezuscloud/internal/state"
-	"github.com/rezuscloud/rezuscloud/internal/statemachine"
 	"github.com/rezuscloud/rezuscloud/internal/upgrade"
 	"github.com/rezuscloud/rezuscloud/internal/watch"
 	"github.com/rezuscloud/rezuscloud/internal/web/handlers/authn"
@@ -264,7 +263,7 @@ func (h *Handler) tenantSummaries() []pages.TenantSummary {
 		if current == nil {
 			current = t
 		}
-		status := statemachine.ComputeTenantStatus(current, machines, nodeGroups)
+		status := state.ComputeTenantStatus(current, machines, nodeGroups)
 
 		summary := pages.TenantSummary{
 			Name:  t.Metadata.Name,
@@ -281,7 +280,7 @@ func (h *Handler) tenantSummaries() []pages.TenantSummary {
 }
 
 // expectedMachineCount sums node group counts (for forming tenants with no machines yet).
-func expectedMachineCount(nodeGroups []statemachine.NodeGroupSummary) int {
+func expectedMachineCount(nodeGroups []state.NodeGroupSummary) int {
 	total := 0
 	for _, ng := range nodeGroups {
 		total += ng.Count
@@ -295,22 +294,22 @@ func (h *Handler) TenantSummaries() []pages.TenantSummary {
 }
 
 // nodeGroupSummaries loads node groups for a tenant and returns the
-// statemachine summary view.
-func (h *Handler) nodeGroupSummaries(tenantName string) []statemachine.NodeGroupSummary {
+// summary view used for status derivation.
+func (h *Handler) nodeGroupSummaries(tenantName string) []state.NodeGroupSummary {
 	items, _, _ := state.ListTypedByTenant(h.store, "nodegroup", tenantName,
-		func(meta state.Metadata, specRaw, _ json.RawMessage) (statemachine.NodeGroupSummary, error) {
+		func(meta state.Metadata, specRaw, _ json.RawMessage) (state.NodeGroupSummary, error) {
 			var ng struct {
 				Name  string `json:"name"`
 				Count int    `json:"count"`
 			}
 			err := json.Unmarshal(specRaw, &ng)
-			return statemachine.NodeGroupSummary{Name: ng.Name, Count: ng.Count}, err
+			return state.NodeGroupSummary{Name: ng.Name, Count: ng.Count}, err
 		})
 	return items
 }
 
 // NodeGroupSummaries satisfies the web/handlers/* Host interface.
-func (h *Handler) NodeGroupSummaries(tenantName string) []statemachine.NodeGroupSummary {
+func (h *Handler) NodeGroupSummaries(tenantName string) []state.NodeGroupSummary {
 	return h.nodeGroupSummaries(tenantName)
 }
 
