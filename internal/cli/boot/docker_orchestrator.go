@@ -11,10 +11,10 @@ import (
 	"time"
 
 	"github.com/rezuscloud/rezuscloud/internal/cli/helm"
-	"github.com/rezuscloud/rezuscloud/internal/cli/platform"
-	"github.com/rezuscloud/rezuscloud/internal/cli/platform/docker"
 	"github.com/rezuscloud/rezuscloud/internal/cli/installer"
 	"github.com/rezuscloud/rezuscloud/internal/cli/installer/cilium"
+	"github.com/rezuscloud/rezuscloud/internal/cli/platform"
+	"github.com/rezuscloud/rezuscloud/internal/cli/platform/docker"
 	"github.com/rezuscloud/rezuscloud/internal/cli/state"
 	"github.com/rezuscloud/rezuscloud/internal/cli/talosconfig"
 )

@@ -34,8 +34,8 @@ import (
 	"k8s.io/client-go/tools/clientcmd/api"
 
 	"github.com/rezuscloud/rezuscloud/internal/cli/helm"
-	"github.com/rezuscloud/rezuscloud/internal/cli/platform/qemu"
 	"github.com/rezuscloud/rezuscloud/internal/cli/installer"
+	"github.com/rezuscloud/rezuscloud/internal/cli/platform/qemu"
 	"github.com/rezuscloud/rezuscloud/internal/cli/talosconfig"
 )
 
