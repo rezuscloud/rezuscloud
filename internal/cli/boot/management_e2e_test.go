@@ -41,9 +41,9 @@ import (
 	siderx509 "github.com/siderolabs/crypto/x509"
 
 	"github.com/rezuscloud/rezuscloud/internal/cli/helm"
+	"github.com/rezuscloud/rezuscloud/internal/cli/installer"
 	"github.com/rezuscloud/rezuscloud/internal/cli/platform"
 	"github.com/rezuscloud/rezuscloud/internal/cli/platform/docker"
-	"github.com/rezuscloud/rezuscloud/internal/cli/provider"
 	"github.com/rezuscloud/rezuscloud/internal/cli/talosconfig"
 )
 
@@ -139,7 +139,7 @@ func TestManagementCluster_KamajiWithCSRSigner(t *testing.T) {
 	// Phase 2: Install Kamaji (etcd + controller)
 	// ================================================================
 	t.Log("=== Phase 2: Install cert-manager + Kamaji ===")
-	installer, err := helm.NewInstallerFromBytes(mgmtKubeconfig)
+	helmInstaller, err := helm.NewInstallerFromBytes(mgmtKubeconfig)
 	if err != nil {
 		t.Fatalf("helm installer: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestManagementCluster_KamajiWithCSRSigner(t *testing.T) {
 	// Install cert-manager with cainjector disabled (Docker networking limitation).
 	// The cainjector uses webhooks that require reliable pod-to-pod routing.
 	// Without it, cert-manager still issues certs via its controller.
-	err = installer.Install(ctx, provider.ChartConfig{
+	err = helmInstaller.Install(ctx, installer.ChartConfig{
 		Name: "cert-manager", Repository: "https://charts.jetstack.io",
 		Chart: "cert-manager", Version: "v1.20.2", Namespace: "cert-manager",
 		Values: map[string]interface{}{
@@ -165,7 +165,7 @@ func TestManagementCluster_KamajiWithCSRSigner(t *testing.T) {
 	t.Log("cert-manager installed")
 
 	// Install Kamaji controller (needs cert-manager CRDs).
-	err = installer.Install(ctx, provider.ChartConfig{
+	err = helmInstaller.Install(ctx, installer.ChartConfig{
 		Name: "kamaji", Repository: "https://clastix.github.io/charts",
 		Chart: "kamaji", Version: "1.0.0", Namespace: "kamaji-system",
 		Values: map[string]interface{}{
@@ -179,7 +179,7 @@ func TestManagementCluster_KamajiWithCSRSigner(t *testing.T) {
 	t.Log("kamaji controller installed")
 
 	// Then install etcd (creates DataStore CR which needs Kamaji CRDs).
-	err = installer.Install(ctx, provider.ChartConfig{
+	err = helmInstaller.Install(ctx, installer.ChartConfig{
 		Name: "kamaji-etcd", Repository: "https://clastix.github.io/charts",
 		Chart: "kamaji-etcd", Version: "0.15.0", Namespace: "kamaji-system",
 		Values: map[string]interface{}{}, Wait: true, Timeout: 300,

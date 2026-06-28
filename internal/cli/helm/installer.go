@@ -21,12 +21,12 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
-	"github.com/rezuscloud/rezuscloud/internal/cli/provider"
+	"github.com/rezuscloud/rezuscloud/internal/cli/installer"
 )
 
 const defaultHelmDriver = "secret"
 
-// HelmInstaller implements provider.ChartInstaller using the Helm Go SDK.
+// HelmInstaller implements installer.ChartInstaller using the Helm Go SDK.
 type HelmInstaller struct {
 	settings *cli.EnvSettings
 }
@@ -110,7 +110,7 @@ func (h *HelmInstaller) newActionConfig(namespace string) (*action.Configuration
 }
 
 // Install installs or upgrades a Helm chart.
-func (h *HelmInstaller) Install(ctx context.Context, config provider.ChartConfig, out io.Writer) error {
+func (h *HelmInstaller) Install(ctx context.Context, config installer.ChartConfig, out io.Writer) error {
 	actionConfig, err := h.newActionConfig(config.Namespace)
 	if err != nil {
 		return err
@@ -142,7 +142,7 @@ func (h *HelmInstaller) Install(ctx context.Context, config provider.ChartConfig
 	return h.install(ctx, actionConfig, config, chartObj)
 }
 
-func (h *HelmInstaller) install(ctx context.Context, actionConfig *action.Configuration, config provider.ChartConfig, chartObj *chart.Chart) error {
+func (h *HelmInstaller) install(ctx context.Context, actionConfig *action.Configuration, config installer.ChartConfig, chartObj *chart.Chart) error {
 	inst := action.NewInstall(actionConfig)
 	inst.ReleaseName = config.Name
 	inst.Namespace = config.Namespace
@@ -159,7 +159,7 @@ func (h *HelmInstaller) install(ctx context.Context, actionConfig *action.Config
 	return nil
 }
 
-func (h *HelmInstaller) upgrade(ctx context.Context, actionConfig *action.Configuration, config provider.ChartConfig, chartObj *chart.Chart) error {
+func (h *HelmInstaller) upgrade(ctx context.Context, actionConfig *action.Configuration, config installer.ChartConfig, chartObj *chart.Chart) error {
 	upg := action.NewUpgrade(actionConfig)
 	upg.Namespace = config.Namespace
 	upg.Version = config.Version
@@ -224,7 +224,7 @@ func (h *HelmInstaller) IsInstalled(ctx context.Context, releaseName, namespace 
 	return true, nil
 }
 
-func (h *HelmInstaller) locateChart(config provider.ChartConfig) (string, error) {
+func (h *HelmInstaller) locateChart(config installer.ChartConfig) (string, error) {
 	// Use an isolated temp directory for Helm settings to avoid picking up
 	// local chart directories (e.g. a cilium/ fork checkout in the CWD).
 	repoDir, err := os.MkdirTemp("", "rezusctl-helm-repo-*")

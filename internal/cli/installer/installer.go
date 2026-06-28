@@ -1,6 +1,7 @@
-// Package provider defines interfaces for platform component providers.
+// Package installer defines interfaces for boot-time platform component
+// installation (CNI, DNS, TLS, Helm charts).
 // CNI, DNS, TLS, and other infrastructure components implement these interfaces.
-package provider
+package installer
 
 import (
 	"context"

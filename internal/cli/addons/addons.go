@@ -7,7 +7,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/rezuscloud/rezuscloud/internal/cli/provider"
+	"github.com/rezuscloud/rezuscloud/internal/cli/installer"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -17,13 +17,13 @@ import (
 
 // Addons manages platform add-on installation.
 type Addons struct {
-	installer provider.ChartInstaller
+	installer installer.ChartInstaller
 	dynClient dynamic.Interface
 	out       io.Writer
 }
 
 // New creates a new Addons manager.
-func New(restCfg *rest.Config, installer provider.ChartInstaller, out io.Writer) (*Addons, error) {
+func New(restCfg *rest.Config, installer installer.ChartInstaller, out io.Writer) (*Addons, error) {
 	if restCfg == nil {
 		return nil, fmt.Errorf("rest config is required")
 	}
@@ -41,7 +41,7 @@ func New(restCfg *rest.Config, installer provider.ChartInstaller, out io.Writer)
 // InstallCertManager installs cert-manager with CRDs.
 func (a *Addons) InstallCertManager(ctx context.Context) error {
 	fprintf(a.out, "  Installing cert-manager...\n")
-	return a.installer.Install(ctx, provider.ChartConfig{
+	return a.installer.Install(ctx, installer.ChartConfig{
 		Name:       "cert-manager",
 		Chart:      "cert-manager",
 		Repository: "https://charts.jetstack.io",
@@ -94,7 +94,7 @@ func (a *Addons) InstallExternalDNS(ctx context.Context, domain, secretRef strin
 		}
 	}
 
-	return a.installer.Install(ctx, provider.ChartConfig{
+	return a.installer.Install(ctx, installer.ChartConfig{
 		Name:       "external-dns",
 		Chart:      "external-dns",
 		Repository: "https://kubernetes-sigs.github.io/external-dns",
