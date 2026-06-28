@@ -19,7 +19,6 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/credentials"
 	"github.com/rezuscloud/rezuscloud/internal/state"
 	"github.com/rezuscloud/rezuscloud/internal/watch"
-	"github.com/rezuscloud/rezuscloud/internal/watchbus"
 	"github.com/rezuscloud/rezuscloud/internal/web"
 )
 
@@ -48,7 +47,7 @@ func newWebUIServer(t *testing.T) *webuiServer {
 	t.Cleanup(func() { _ = store.Close() })
 
 	bus := watch.NewBus()
-	store.SetBus(watchbus.New(bus))
+	store.SetBus(watch.NewAdapter(bus))
 
 	jwtManager := auth.NewJWTManager("webui-test-secret")
 	handler := web.NewHandler(store, jwtManager, bus)

@@ -23,7 +23,6 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/tfbackend"
 	"github.com/rezuscloud/rezuscloud/internal/upgrade"
 	"github.com/rezuscloud/rezuscloud/internal/watch"
-	"github.com/rezuscloud/rezuscloud/internal/watchbus"
 	"github.com/rezuscloud/rezuscloud/internal/web"
 	"github.com/rezuscloud/rezuscloud/version"
 )
@@ -57,7 +56,7 @@ func main() {
 
 	// Initialize watch bus + wire into store mutations.
 	bus := watch.NewBus()
-	store.SetBus(watchbus.New(bus))
+	store.SetBus(watch.NewAdapter(bus))
 
 	// Initialize auth.
 	jwtManager := auth.NewJWTManager(cfg.JWTSecret)
