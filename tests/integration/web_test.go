@@ -429,7 +429,7 @@ func TestWebUI_Sidebar_HasAllNavEntries(t *testing.T) {
 	}
 	expectedLinks := []string{
 		`href="/"`, `href="/clusters"`, `href="/machines"`,
-		`href="/machines/jointokens"`, `href="/providers"`,
+		`href="/providers"`,
 		`href="/settings/users"`, `href="/settings/api-tokens"`,
 		`href="/settings/audit"`, `href="/settings/backups"`,
 	}
@@ -806,47 +806,6 @@ func TestW4_MachineDetail(t *testing.T) {
 	}
 	if !strings.Contains(body, "1.12.0") {
 		t.Error("talos version missing")
-	}
-}
-
-func TestW4_JoinTokenCreate_FullFlow(t *testing.T) {
-	s := newWebUIServer(t)
-	s.createUser(t, "admin", "secret", auth.RoleAdmin)
-	cookie := s.login(t, "admin", "secret")
-
-	// Create tenant.
-	_, _ = s.store.CreateTenant("gamma", state.TenantSpec{KubernetesVersion: "1.35.0"}, nil, nil)
-
-	// GET — empty state.
-	status, body, _ := s.getWithCookieHeaders(t, "/machines/jointokens", cookie)
-	if status != http.StatusOK {
-		t.Fatalf("GET list status = %d", status)
-	}
-	if !strings.Contains(body, "No join tokens") {
-		t.Error("empty state should render")
-	}
-
-	// POST create.
-	form := "cluster=gamma&nodegroup=workers&ttl=24h"
-	status, _, hdr := s.postFormWithCookie(t, "/machines/jointokens", form, cookie)
-	if status != http.StatusSeeOther {
-		t.Fatalf("POST status = %d, want 303", status)
-	}
-	loc := hdr.Get("Location")
-	if !strings.HasPrefix(loc, "/machines/jointokens?new_token=") {
-		t.Fatalf("Location = %q", loc)
-	}
-
-	// GET with new_token — show-once display.
-	status, body, _ = s.getWithCookieHeaders(t, loc, cookie)
-	if status != http.StatusOK {
-		t.Fatalf("GET with token status = %d", status)
-	}
-	if !strings.Contains(body, "Token created") {
-		t.Error("Token created banner missing")
-	}
-	if !strings.Contains(body, "siderolink.api") {
-		t.Error("kernel args preview missing")
 	}
 }
 

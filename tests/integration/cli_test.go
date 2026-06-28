@@ -80,8 +80,8 @@ func TestCLI_RegistryResolvesAllTypes(t *testing.T) {
 	reg := registry.New()
 	types := reg.All()
 
-	if len(types) != 7 {
-		t.Fatalf("expected 7 resource types, got %d", len(types))
+	if len(types) != 6 {
+		t.Fatalf("expected 6 resource types, got %d", len(types))
 	}
 
 	for _, rt := range types {
@@ -104,7 +104,6 @@ func TestCLI_RegistryShortNames(t *testing.T) {
 	shortNames := map[string]string{
 		"clusters": "Cluster",
 		"ng":       "NodeGroup",
-		"jt":       "JoinToken",
 		"machines": "Machine",
 		"patch":    "ConfigPatch",
 	}
@@ -327,49 +326,6 @@ func TestCLI_MachineList(t *testing.T) {
 }
 
 // ============================================================
-// JoinToken via apiclient
-// ============================================================
-
-func TestCLI_JoinTokenCreateAndList(t *testing.T) {
-	client, store, _ := cliTestEnv(t)
-
-	// Create tenant + nodegroup.
-	_, _ = client.Create(t.Context(), "api/v1/tenants", &apiclient.Resource{
-		Kind:     "Cluster",
-		Metadata: &apiclient.ObjectMeta{Name: "prod"},
-		Spec:     map[string]any{"kubernetesVersion": "1.35.0"},
-	})
-	_, _ = store.CreateResource("nodegroup", "workers", state.NodeGroupSpec{
-		Name: "workers", Role: "worker", Count: 3,
-	}, nil, map[string]string{
-		"rezuscloud.io/tenant": "prod",
-		"rezuscloud.io/role":   "worker",
-	}, nil)
-
-	// Create token.
-	created, err := client.Create(t.Context(), "api/v1/tenants/prod/join-tokens", &apiclient.Resource{
-		Spec: map[string]any{"nodeGroup": "workers", "singleUse": true},
-	})
-	if err != nil {
-		t.Fatalf("Create jointoken: %v", err)
-	}
-	// JoinToken create returns {token: ..., expiresAt: ..., spec: ...} — not standard resource shape.
-	// Verify the response is non-empty (token field is at top level).
-	if created.Spec == nil && created.Metadata == nil {
-		t.Error("expected non-empty response from jointoken create")
-	}
-
-	// List tokens.
-	list, err := client.List(t.Context(), "api/v1/tenants/prod/join-tokens", apiclient.ListOptions{})
-	if err != nil {
-		t.Fatalf("List jointokens: %v", err)
-	}
-	if list.Total != 1 {
-		t.Errorf("total = %d, want 1", list.Total)
-	}
-}
-
-// ============================================================
 // ConfigPatch via apiclient
 // ============================================================
 
@@ -518,7 +474,6 @@ func TestCLI_RegistryPathsMatchAPI(t *testing.T) {
 		{"cluster", "", "api/v1/tenants"},
 		{"machine", "", "api/v1/machines"},
 		{"ng", "prod", "api/v1/tenants/prod/node-groups"},
-		{"jt", "prod", "api/v1/tenants/prod/join-tokens"},
 		{"patch", "prod", "api/v1/tenants/prod/patches"},
 		{"provider", "", "api/v1/providers"},
 		{"user", "", "api/v1/users"},
@@ -675,42 +630,6 @@ func TestCLI_UserCreateAndLogin(t *testing.T) {
 	}
 	if u.Spec.Role != "view" {
 		t.Errorf("role = %q, want view", u.Spec.Role)
-	}
-}
-
-// TestCLI_JointokenCreatePath verifies the jointoken create path
-// that the CLI uses: POST /api/v1/tenants/{c}/join-tokens.
-func TestCLI_JointokenCreatePath(t *testing.T) {
-	client, store, _ := cliTestEnv(t)
-
-	// Setup: tenant + nodegroup.
-	_, _ = client.Create(t.Context(), "api/v1/tenants", &apiclient.Resource{
-		Kind:     "Cluster",
-		Metadata: &apiclient.ObjectMeta{Name: "staging"},
-		Spec:     map[string]any{"kubernetesVersion": "1.34.0"},
-	})
-	_, _ = store.CreateResource("nodegroup", "workers", state.NodeGroupSpec{
-		Name: "workers", Role: "worker", Count: 2,
-	}, nil, map[string]string{
-		"rezuscloud.io/tenant": "staging",
-		"rezuscloud.io/role":   "worker",
-	}, nil)
-
-	// Create token via the path the CLI jointoken create command uses.
-	_, err := client.Create(t.Context(), "api/v1/tenants/staging/join-tokens", &apiclient.Resource{
-		Spec: map[string]any{"nodeGroup": "workers", "singleUse": true},
-	})
-	if err != nil {
-		t.Fatalf("Create jointoken: %v", err)
-	}
-
-	// List tokens via the path the CLI jointoken list command uses.
-	list, err := client.List(t.Context(), "api/v1/tenants/staging/join-tokens", apiclient.ListOptions{})
-	if err != nil {
-		t.Fatalf("List jointokens: %v", err)
-	}
-	if list.Total != 1 {
-		t.Errorf("total = %d, want 1", list.Total)
 	}
 }
 
