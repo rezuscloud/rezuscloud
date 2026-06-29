@@ -64,7 +64,7 @@ Delete a resource.
 
 ```bash
 rezusctl delete cluster prod
-rezusctl delete jointoken abc123 -c prod
+rezusctl delete machine <id> -c prod
 ```
 
 #### `rezusctl describe <type> <name>`
@@ -111,14 +111,6 @@ rezusctl kubeconfig prod -o ~/kubeconfigs/prod.yaml
 
 Fetch talosconfig for a tenant cluster.
 
-#### `rezusctl jointoken`
-
-```bash
-rezusctl jointoken create -c prod --node-group workers
-rezusctl jointoken list -c prod
-rezusctl jointoken delete <name> -c prod
-```
-
 #### `rezusctl user`
 
 ```bash
@@ -154,7 +146,6 @@ Print version information.
 | `cluster` | Cluster | No |
 | `machines` | Machine | No |
 | `ng` | NodeGroup | Yes (requires -c) |
-| `jt` | JoinToken | Yes (requires -c) |
 | `patch` | ConfigPatch | Yes (requires -c) |
 | `provider` | Provider | No |
 | `user` | User | No |

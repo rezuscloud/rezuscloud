@@ -1,5 +1,17 @@
 # Home Assistant Integration
 
+> **⚠ Partially stale.** The deployment topology and HA addon blueprint below
+> describe the pre-pivot architecture (MachineLink port 50180, WireGuard
+> capabilities, Provider gRPC port 50190, join tokens). Under the current
+> architecture (TF-state model), the management plane needs only the HTTP port
+> (8080) — there is no MachineLink, no Provider gRPC, and no join token.
+> Authoritative current architecture:
+> [`CONTEXT.md`](../../CONTEXT.md) + [`docs/adr/`](../adr/README.md).
+> A full rewrite of this guide is tracked as a follow-up; until then, disregard
+> the MachineLink/Provider-gRPC/join-token specifics below and expose only
+> `REZUSCLOUD_ADDR` (HTTP :8080) plus the standard env vars from
+> [`AGENTS.md`](../../AGENTS.md).
+
 Running the RezusCloud management plane as a **Home Assistant add-on** — turning an always-on HA device into a personal cloud control plane with a sidebar panel.
 
 > **This document defines the contract between two repos.**
