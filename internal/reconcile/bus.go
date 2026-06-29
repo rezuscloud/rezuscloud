@@ -35,6 +35,12 @@ func NewEnqueueBus(queue Enqueuer) *EnqueueBus {
 // node group (and other tenant-scoped) mutations carry the tenant in the
 // rezuscloud.io/tenant label.
 func (b *EnqueueBus) Publish(resourceType string, ev state.ResourceEvent) {
+	// Reconciliation/status writes must NOT feed back into the queue, or the
+	// queue will enqueue itself forever. Only create/spec/delete mutations are
+	// drift signals for the spec plane.
+	if ev.Mutation == state.MutationStatus {
+		return
+	}
 	tenant := tenantOf(resourceType, ev)
 	if tenant == "" {
 		return

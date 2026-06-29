@@ -90,16 +90,26 @@ const (
 	TenantRemoving  TenantPhase = "removing"
 )
 
+// ReconciliationStatus tracks the async apply queue's position for a resource.
+// This is operational state (queued/applying/applied/failed), separate from a
+// resource's lifecycle phase (forming/active/shrinking/removing).
+type ReconciliationStatus struct {
+	Phase     string     `json:"phase,omitempty"`
+	LastError string     `json:"lastError,omitempty"`
+	UpdatedAt *time.Time `json:"updatedAt,omitempty"`
+}
+
 // TenantStatus is the system-observed actual state of a tenant.
 type TenantStatus struct {
-	Phase             TenantPhase   `json:"phase"`
-	Available         bool          `json:"available"`
-	Ready             bool          `json:"ready"`
-	APIReady          bool          `json:"apiReady"`
-	ControlPlaneReady bool          `json:"controlPlaneReady"`
-	Machines          MachineCounts `json:"machines"`
-	KubernetesVersion string        `json:"kubernetesVersion,omitempty"`
-	TalosVersion      string        `json:"talosVersion,omitempty"`
+	Phase             TenantPhase           `json:"phase"`
+	Available         bool                  `json:"available"`
+	Ready             bool                  `json:"ready"`
+	APIReady          bool                  `json:"apiReady"`
+	ControlPlaneReady bool                  `json:"controlPlaneReady"`
+	Machines          MachineCounts         `json:"machines"`
+	KubernetesVersion string                `json:"kubernetesVersion,omitempty"`
+	TalosVersion      string                `json:"talosVersion,omitempty"`
+	Reconciliation    *ReconciliationStatus `json:"reconciliation,omitempty"`
 }
 
 // MachineCounts tracks machine health counts.
@@ -253,11 +263,19 @@ type UserStatus struct {
 // store run without a bus in tests.
 type ResourceEvent struct {
 	Type         string // "ADDED", "MODIFIED", "DELETED"
+	Mutation     string // "create", "spec", "status", "delete"
 	ResourceType string // "tenant", "machine", ...
 	Metadata     Metadata
 	Spec         json.RawMessage
 	Status       json.RawMessage
 }
+
+const (
+	MutationCreate = "create"
+	MutationSpec   = "spec"
+	MutationStatus = "status"
+	MutationDelete = "delete"
+)
 
 // EventBus is the observer interface the store notifies on mutations.
 // Implementations must be safe for concurrent use.
@@ -301,12 +319,13 @@ func (s *Store) SetBus(bus EventBus) {
 }
 
 // publish notifies the bus if attached. Best-effort — errors are swallowed.
-func (s *Store) publish(eventType, resourceType string, md Metadata, spec, status json.RawMessage) {
+func (s *Store) publish(eventType, mutation, resourceType string, md Metadata, spec, status json.RawMessage) {
 	if s.bus == nil {
 		return
 	}
 	s.bus.Publish(resourceType, ResourceEvent{
 		Type:         eventType,
+		Mutation:     mutation,
 		ResourceType: resourceType,
 		Metadata:     md,
 		Spec:         spec,
@@ -464,7 +483,7 @@ func (s *Store) CreateResource(resourceType, name string, spec, status any, labe
 
 	// Reload so the returned Metadata.ResourceVersion matches the persisted
 	// `version` column (which optimistic concurrency checks), not SQLite's rowid.
-	return s.updateResourceMetadataAndPublish("ADDED", resourceType, name)
+	return s.updateResourceMetadataAndPublish("ADDED", MutationCreate, resourceType, name)
 }
 
 // GetResource reads a single resource.
@@ -606,7 +625,7 @@ func (s *Store) ListResources(resourceType string, opts ListOptions) ([]Metadata
 
 // updateResourceMetadataAndPublish reloads a row after a mutation and publishes a bus event.
 // Centralizes the reload+publish pattern used by UpdateResource/UpdateStatus/DeleteResource.
-func (s *Store) updateResourceMetadataAndPublish(eventType, resourceType, name string) (Metadata, error) {
+func (s *Store) updateResourceMetadataAndPublish(eventType, mutation, resourceType, name string) (Metadata, error) {
 	var (
 		md                                          Metadata
 		finalizersJSON, labelsJSON, annotationsJSON string
@@ -633,7 +652,7 @@ func (s *Store) updateResourceMetadataAndPublish(eventType, resourceType, name s
 		md.DeletionTimestamp = &t
 	}
 
-	s.publish(eventType, resourceType, md, json.RawMessage(specJSON), json.RawMessage(statusJSON))
+	s.publish(eventType, mutation, resourceType, md, json.RawMessage(specJSON), json.RawMessage(statusJSON))
 
 	return md, nil
 }
@@ -672,7 +691,7 @@ func (s *Store) UpdateResource(resourceType, name string, currentVersion int64, 
 		return Metadata{}, ErrConflict
 	}
 
-	return s.updateResourceMetadataAndPublish("MODIFIED", resourceType, name)
+	return s.updateResourceMetadataAndPublish("MODIFIED", MutationSpec, resourceType, name)
 }
 
 // UpdateStatus updates only the status section of a resource.
@@ -698,7 +717,7 @@ func (s *Store) UpdateStatus(resourceType, name string, status any) (Metadata, e
 		return Metadata{}, ErrNotFound
 	}
 
-	return s.updateResourceMetadataAndPublish("MODIFIED", resourceType, name)
+	return s.updateResourceMetadataAndPublish("MODIFIED", MutationStatus, resourceType, name)
 }
 
 // DeleteResource sets deletionTimestamp on a resource (finalizer-controlled deletion).
@@ -719,7 +738,7 @@ func (s *Store) DeleteResource(resourceType, name string) (Metadata, error) {
 		return Metadata{}, ErrNotFound
 	}
 
-	return s.updateResourceMetadataAndPublish("DELETED", resourceType, name)
+	return s.updateResourceMetadataAndPublish("DELETED", MutationDelete, resourceType, name)
 }
 
 // RemoveResource permanently deletes a resource from the database.
@@ -737,7 +756,7 @@ func (s *Store) RemoveResource(resourceType, name string) error {
 	}
 
 	if md.Name != "" {
-		s.publish("DELETED", resourceType, md, nil, nil)
+		s.publish("DELETED", MutationDelete, resourceType, md, nil, nil)
 	}
 	return nil
 }
