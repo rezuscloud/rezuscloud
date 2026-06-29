@@ -170,6 +170,96 @@ func TestNodeGroup_CRUD(t *testing.T) {
 	}
 }
 
+func TestNodeGroup_UpdateRequiresResourceVersion(t *testing.T) {
+	_, api := setupTest(t)
+
+	// Seed a node group.
+	body := map[string]any{
+		"metadata": map[string]any{"name": "workers"},
+		"spec":     map[string]any{"role": "worker", "count": 2},
+	}
+	b, _ := json.Marshal(body)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/test-tenant/node-groups", bytes.NewReader(b))
+	req.SetPathValue("tenant", "test-tenant")
+	w := httptest.NewRecorder()
+	api.Create(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create: status = %d", w.Code)
+	}
+
+	// Update without metadata.resourceVersion.
+	updateBody := map[string]any{
+		"metadata": map[string]any{},
+		"spec": map[string]any{
+			"role":  "worker",
+			"count": 3,
+		},
+	}
+	b, _ = json.Marshal(updateBody)
+
+	req = httptest.NewRequest(http.MethodPut, "/api/v1/tenants/test-tenant/node-groups/workers", bytes.NewReader(b))
+	req.SetPathValue("tenant", "test-tenant")
+	req.SetPathValue("name", "workers")
+	w = httptest.NewRecorder()
+	api.Update(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("update missing rv: status = %d, want %d, body = %s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+}
+
+func TestNodeGroup_UpdateConflictOnStaleResourceVersion(t *testing.T) {
+	_, api := setupTest(t)
+
+	// Seed a node group.
+	body := map[string]any{
+		"metadata": map[string]any{"name": "workers"},
+		"spec":     map[string]any{"role": "worker", "count": 2},
+	}
+	b, _ := json.Marshal(body)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/test-tenant/node-groups", bytes.NewReader(b))
+	req.SetPathValue("tenant", "test-tenant")
+	w := httptest.NewRecorder()
+	api.Create(w, req)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create: status = %d", w.Code)
+	}
+
+	var created NodeGroup
+	_ = json.NewDecoder(w.Body).Decode(&created)
+
+	// First update advances the resource version.
+	updateBody := map[string]any{
+		"metadata": map[string]any{"resourceVersion": created.Metadata.ResourceVersion},
+		"spec": map[string]any{
+			"role":  "worker",
+			"count": 3,
+		},
+	}
+	b, _ = json.Marshal(updateBody)
+	req = httptest.NewRequest(http.MethodPut, "/api/v1/tenants/test-tenant/node-groups/workers", bytes.NewReader(b))
+	req.SetPathValue("tenant", "test-tenant")
+	req.SetPathValue("name", "workers")
+	w = httptest.NewRecorder()
+	api.Update(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("first update: status = %d, body = %s", w.Code, w.Body.String())
+	}
+
+	// Reuse the stale resource version from the original create.
+	req = httptest.NewRequest(http.MethodPut, "/api/v1/tenants/test-tenant/node-groups/workers", bytes.NewReader(b))
+	req.SetPathValue("tenant", "test-tenant")
+	req.SetPathValue("name", "workers")
+	w = httptest.NewRecorder()
+	api.Update(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("stale update: status = %d, want %d, body = %s", w.Code, http.StatusConflict, w.Body.String())
+	}
+}
+
 func TestNodeGroup_CreateDuplicate(t *testing.T) {
 	_, api := setupTest(t)
 
