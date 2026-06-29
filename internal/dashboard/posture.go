@@ -77,7 +77,7 @@ type UpgradePosture struct {
 // Deps is the set of optional dependencies Builder uses. Nil fields are
 // skipped silently — their posture card reports zero/empty values.
 type Deps struct {
-	Store     *state.Store
+	Store     state.StoreAPI
 	Backup    BackupReader
 	Upgrades  UpgradeReader
 	NodeGroup NodeGroupReader // optional; if nil, Expected machine count falls back to per-tenant ListMachines

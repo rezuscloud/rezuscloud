@@ -20,11 +20,11 @@ import (
 // response body and (for browser flows) via a flash query parameter on the
 // redirect target.
 type APITokenHandlers struct {
-	store *state.Store
+	store state.StoreAPI
 }
 
 // NewAPITokenHandlers creates API token handlers.
-func NewAPITokenHandlers(store *state.Store) *APITokenHandlers {
+func NewAPITokenHandlers(store state.StoreAPI) *APITokenHandlers {
 	return &APITokenHandlers{store: store}
 }
 
@@ -289,7 +289,7 @@ func (h *APITokenHandlers) Delete(w http.ResponseWriter, r *http.Request) {
 // VerifyAPIToken looks up a plaintext API token and returns the associated user
 // (resolved fresh from the user store) plus a boolean indicating whether the
 // token is currently valid (not expired). On any failure it returns (nil, false).
-func VerifyAPIToken(store *state.Store, plaintext string) (*state.User, *state.APIToken, bool) {
+func VerifyAPIToken(store state.StoreAPI, plaintext string) (*state.User, *state.APIToken, bool) {
 	plaintext = strings.TrimSpace(plaintext)
 	if plaintext == "" {
 		return nil, nil, false

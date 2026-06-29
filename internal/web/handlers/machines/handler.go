@@ -48,14 +48,14 @@ type Host interface {
 
 // Handler serves the machines routes.
 type Handler struct {
-	store *state.Store
+	store state.StoreAPI
 	bus   *watch.Bus // optional — enables /machines/{id}/events SSE
 	host  Host
 }
 
 // New creates a machines Handler. bus may be nil — the events endpoint
 // returns 503 in that case.
-func New(store *state.Store, bus *watch.Bus, host Host) *Handler {
+func New(store state.StoreAPI, bus *watch.Bus, host Host) *Handler {
 	return &Handler{store: store, bus: bus, host: host}
 }
 

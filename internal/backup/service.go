@@ -64,11 +64,11 @@ type RestoreResult struct {
 // Service performs backup and restore operations.
 type Service struct {
 	manager *Manager
-	store   *state.Store
+	store   state.StoreAPI
 }
 
 // NewService creates a backup service.
-func NewService(manager *Manager, store *state.Store) *Service {
+func NewService(manager *Manager, store state.StoreAPI) *Service {
 	return &Service{manager: manager, store: store}
 }
 

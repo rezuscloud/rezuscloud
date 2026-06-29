@@ -141,7 +141,7 @@ func TestGenerateMachineConfig_WithExplicitPatches(t *testing.T) {
 	_, _ = store.UpdateMachineStatus("m1", state.MachineStatus{Role: "controlplane", Stage: state.StageReady, Ready: true})
 
 	called := false
-	resolver := func(store *state.Store, tenant, role string) ([]string, error) {
+	resolver := func(store state.StoreAPI, tenant, role string) ([]string, error) {
 		called = true
 		return nil, nil
 	}
@@ -170,7 +170,7 @@ func TestGenerateMachineConfig_InvokesResolver(t *testing.T) {
 	_, _ = store.UpdateMachineStatus("m1", state.MachineStatus{Role: "controlplane", Stage: state.StageReady, Ready: true})
 
 	called := false
-	resolver := func(store *state.Store, tenant, role string) ([]string, error) {
+	resolver := func(store state.StoreAPI, tenant, role string) ([]string, error) {
 		called = true
 		if tenant != "prod" {
 			t.Errorf("resolver tenant = %q, want prod", tenant)

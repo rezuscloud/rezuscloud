@@ -36,7 +36,7 @@ type Run struct {
 
 // Manager orchestrates upgrade runs and persists their state in Store resources.
 type Manager struct {
-	store *state.Store
+	store state.StoreAPI
 
 	mu      sync.Mutex
 	running map[string]context.CancelFunc
@@ -44,7 +44,7 @@ type Manager struct {
 
 // NewManager creates an upgrade Manager bound to the given store.
 // Construct one per process in main.go and pass it to whoever needs it.
-func NewManager(store *state.Store) *Manager {
+func NewManager(store state.StoreAPI) *Manager {
 	return &Manager{store: store, running: map[string]context.CancelFunc{}}
 }
 

@@ -9,12 +9,12 @@ import (
 
 // AuthHandlers provides HTTP handlers for authentication.
 type AuthHandlers struct {
-	store      *state.Store
+	store      state.StoreAPI
 	jwtManager *JWTManager
 }
 
 // NewAuthHandlers creates auth handlers.
-func NewAuthHandlers(store *state.Store, jwtManager *JWTManager) *AuthHandlers {
+func NewAuthHandlers(store state.StoreAPI, jwtManager *JWTManager) *AuthHandlers {
 	return &AuthHandlers{store: store, jwtManager: jwtManager}
 }
 

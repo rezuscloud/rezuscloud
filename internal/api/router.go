@@ -22,7 +22,7 @@ import (
 // auditComponent is required — the API runs audit middleware on every mutation.
 // backupComponent may be nil — if nil, /api/v1/backups/* is not registered.
 // upgradeManager is required — owns upgrade run lifecycle.
-func Router(store *state.Store, jwtManager *auth.JWTManager, auditComponent *audit.Component, backupComponent *backup.Component, upgradeManager *upgrade.Manager) http.Handler {
+func Router(store state.StoreAPI, jwtManager *auth.JWTManager, auditComponent *audit.Component, backupComponent *backup.Component, upgradeManager *upgrade.Manager) http.Handler {
 	mux := http.NewServeMux()
 
 	// Public endpoints (no auth required).
@@ -98,7 +98,7 @@ func Router(store *state.Store, jwtManager *auth.JWTManager, auditComponent *aud
 }
 
 // RegisterSystemRoutes registers system status routes.
-func RegisterSystemRoutes(mux *http.ServeMux, _ *state.Store) {
+func RegisterSystemRoutes(mux *http.ServeMux, _ state.StoreAPI) {
 	mux.HandleFunc("GET /api/v1/status", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{

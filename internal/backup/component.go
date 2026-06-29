@@ -38,7 +38,7 @@ type ComponentOptions struct {
 // Returns (nil, err) if the root cannot be created — callers should treat
 // a nil Component as "backups disabled" and surface 503 to the user,
 // which matches the prior behaviour.
-func NewComponent(store *state.Store, opts ComponentOptions) (*Component, error) {
+func NewComponent(store state.StoreAPI, opts ComponentOptions) (*Component, error) {
 	root := opts.Root
 	if root == "" {
 		root = filepath.Join(os.TempDir(), "rezuscloud-backups")

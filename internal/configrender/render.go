@@ -4,7 +4,7 @@
 // into this module so the pipeline exists in exactly one place.
 //
 // The module is testable in isolation: callers pass a StoreReader
-// implementation (typically *state.Store in production, a fake in tests).
+// implementation (typically state.StoreAPI in production, a fake in tests).
 package configrender
 
 import (
@@ -16,7 +16,7 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/talosconfig"
 )
 
-// StoreReader is the subset of *state.Store the render pipeline needs.
+// StoreReader is the subset of state.StoreAPI the render pipeline needs.
 // Defined as an interface so this package doesn't import state for the
 // concrete type and tests can substitute a fake.
 type StoreReader interface {
@@ -28,9 +28,9 @@ type StoreReader interface {
 // PatchResolver resolves the ConfigPatch list for a tenant + role.
 // api/patch.ResolvePatches satisfies this signature.
 //
-// Note: takes *state.Store because patch.ResolvePatches uses the concrete
+// Note: takes state.StoreAPI because patch.ResolvePatches uses the concrete
 // store type today. Future refactors of patch/ may switch this to StoreReader.
-type PatchResolver func(store *state.Store, tenant, role string) ([]string, error)
+type PatchResolver func(store state.StoreAPI, tenant, role string) ([]string, error)
 
 // MachineConfigRequest identifies a machine for which to render a Talos config.
 type MachineConfigRequest struct {
@@ -60,7 +60,7 @@ var ErrNotFound = errors.New("configrender: resource not found")
 //
 // All I/O uses ctx.Discard() — the store's LoadTenantSecrets is sync today,
 // but the context is preserved for a future async store.
-func GenerateMachineConfig(ctx context.Context, store StoreReader, stateStore *state.Store, resolver PatchResolver, req MachineConfigRequest) (*MachineConfigResult, error) {
+func GenerateMachineConfig(ctx context.Context, store StoreReader, stateStore state.StoreAPI, resolver PatchResolver, req MachineConfigRequest) (*MachineConfigResult, error) {
 	_ = ctx
 
 	m, err := store.GetMachine(req.MachineID)

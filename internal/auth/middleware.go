@@ -53,7 +53,7 @@ func Authenticate(jwtManager *JWTManager, next http.Handler) http.Handler {
 }
 
 // AuthenticateWithTokens returns an Authenticate middleware that also accepts
-// API tokens via the supplied verifier (typically *state.Store wrapped in an
+// API tokens via the supplied verifier (typically state.StoreAPI wrapped in an
 // adapter implementing VerifyAPIToken).
 func AuthenticateWithTokens(jwtManager *JWTManager, verifier APITokenVerifier, next http.Handler) http.Handler {
 	return authenticateWith(jwtManager, verifier, next)

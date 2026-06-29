@@ -64,7 +64,7 @@ type Filter struct {
 	Offset   int       // ?offset=
 }
 
-// Store is the subset of *state.Store the audit package needs. Defining it
+// Store is the subset of state.StoreAPI the audit package needs. Defining it
 // here keeps the audit package free of the state import.
 type Store interface {
 	InsertEvent(ctx context.Context, ev Event) error

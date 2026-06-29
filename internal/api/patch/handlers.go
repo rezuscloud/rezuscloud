@@ -51,11 +51,11 @@ var validTargetRoles = map[string]bool{
 
 // API provides HTTP handlers for ConfigPatch CRUD.
 type API struct {
-	store *state.Store
+	store state.StoreAPI
 }
 
 // NewAPI creates a ConfigPatch API handler.
-func NewAPI(store *state.Store) *API {
+func NewAPI(store state.StoreAPI) *API {
 	return &API{store: store}
 }
 
