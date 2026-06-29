@@ -265,6 +265,30 @@ type EventBus interface {
 	Publish(resourceType string, event ResourceEvent)
 }
 
+// MultiBus fans out store events to multiple EventBus implementations. Use it
+// when more than one subsystem needs to observe mutations (e.g. the watch
+// SSE adapter AND the reconcile enqueue bus).
+type MultiBus struct {
+	buses []EventBus
+}
+
+// NewMultiBus returns a MultiBus that forwards every Publish to all buses in
+// order. A nil entry is skipped.
+func NewMultiBus(buses ...EventBus) *MultiBus {
+	return &MultiBus{buses: buses}
+}
+
+// Publish forwards to every registered bus. Errors/panics in one bus do not
+// stop delivery to the others.
+func (m *MultiBus) Publish(resourceType string, event ResourceEvent) {
+	for _, b := range m.buses {
+		if b == nil {
+			continue
+		}
+		b.Publish(resourceType, event)
+	}
+}
+
 // Store is the persistent state store for the management plane.
 type Store struct {
 	db  *sql.DB
@@ -315,6 +339,17 @@ func Open(path string) (*Store, error) {
 // Close closes the database.
 func (s *Store) Close() error {
 	return s.db.Close()
+}
+
+// NewFromDB wraps an existing *sql.DB as a Store, running migrations. Used by
+// integration tests that share a single in-memory DB between the state store
+// and the TF backend (both must see the same connection pool for ":memory:").
+func NewFromDB(db *sql.DB) (*Store, error) {
+	s := &Store{db: db}
+	if err := s.migrate(); err != nil {
+		return nil, fmt.Errorf("migrate: %w", err)
+	}
+	return s, nil
 }
 
 // DB returns the underlying database (for advanced queries).
