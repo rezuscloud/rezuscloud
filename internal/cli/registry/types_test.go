@@ -18,8 +18,6 @@ func TestRegistry_Resolve(t *testing.T) {
 		{"ng", "NodeGroup", false},
 		{"nodegroup", "NodeGroup", false},
 		{"provider", "Provider", false},
-		{"jt", "JoinToken", false},
-		{"jointoken", "JoinToken", false},
 		{"patch", "ConfigPatch", false},
 		{"user", "User", false},
 		{"unknown", "", true},
@@ -122,7 +120,7 @@ func TestResourceType_SupportsVerb(t *testing.T) {
 func TestRegistry_All(t *testing.T) {
 	reg := New()
 	all := reg.All()
-	if len(all) != 7 {
-		t.Errorf("expected 7 resource types, got %d", len(all))
+	if len(all) != 6 {
+		t.Errorf("expected 6 resource types, got %d", len(all))
 	}
 }

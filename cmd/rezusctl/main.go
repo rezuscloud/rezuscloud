@@ -41,7 +41,6 @@ func main() {
 	root.AddCommand(newLogsCmd())
 	root.AddCommand(newKubeconfigCmd())
 	root.AddCommand(newTalosconfigCmd())
-	root.AddCommand(newJointokenCmd())
 	root.AddCommand(newUserCmd())
 	root.AddCommand(newAPITokenCmd())
 

@@ -165,7 +165,7 @@ type exportEntry struct {
 }
 
 func (s *Service) resourceSnapshot() ([]byte, error) {
-	kinds := []string{"tenant", "nodegroup", "machine", "provider", "configpatch", "jointoken"}
+	kinds := []string{"tenant", "nodegroup", "machine", "provider", "configpatch"}
 	entries := make([]exportEntry, 0)
 	for _, kind := range kinds {
 		mds, specs, statuses, _, err := s.store.ListResources(kind, state.ListOptions{})

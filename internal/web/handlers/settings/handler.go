@@ -25,7 +25,6 @@
 package settings
 
 import (
-	"fmt"
 	"net/http"
 	"net/url"
 	"os"
@@ -50,7 +49,6 @@ type Host interface {
 	IsAdmin(r *http.Request) bool
 	RedirectAction(w http.ResponseWriter, r *http.Request, target string)
 	TenantNames() []string
-	MachineLinkEndpoint() string
 }
 
 // Handler serves the settings + providers + manual-join routes.
@@ -90,7 +88,6 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 
 	// Settings-adjacent.
 	mux.HandleFunc("GET /providers", auth(h.ProvidersPage))
-	mux.HandleFunc("GET /machines/join-manual", auth(h.ManualJoinPage))
 }
 
 // --- Settings index ---
@@ -100,17 +97,13 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 func (h *Handler) SettingsIndexPage(w http.ResponseWriter, r *http.Request) {
 	data := pages.SettingsIndexPageData{
 		OperationalConfig: pages.OperationalConfig{
-			JWTSessions:          envDefault("REZUSCLOUD_JWT_SESSIONS", "24h (default)"),
-			BcryptCost:           envDefault("REZUSCLOUD_BCRYPT_COST", "12 (default)"),
-			AuditRetentionDays:   envDefault("REZUSCLOUD_AUDIT_RETENTION_DAYS", "90 (default)"),
-			BackupDirectory:      envDefault("REZUSCLOUD_BACKUP_DIR", "(tmpdir default)"),
-			MachineLinkEndpoint:  envDefault("REZUSCLOUD_MACHINELINK_PUBLIC_ENDPOINT", "machinelink.rezus.cloud:50001"),
-			ProviderGRPCEndpoint: envDefault("REZUSCLOUD_PROVIDER_PUBLIC_ENDPOINT", "provider.rezus.cloud:50190"),
+			JWTSessions:        envDefault("REZUSCLOUD_JWT_SESSIONS", "24h (default)"),
+			BcryptCost:         envDefault("REZUSCLOUD_BCRYPT_COST", "12 (default)"),
+			AuditRetentionDays: envDefault("REZUSCLOUD_AUDIT_RETENTION_DAYS", "90 (default)"),
+			BackupDirectory:    envDefault("REZUSCLOUD_BACKUP_DIR", "(tmpdir default)"),
 		},
 		ClusterSummary: pages.ClusterSummary{
-			HTTPAddr:        envDefault("REZUSCLOUD_ADDR", ":8080"),
-			MachineLinkAddr: envDefault("REZUSCLOUD_MACHINELINK_ADDR", ":50180"),
-			ProviderAddr:    envDefault("REZUSCLOUD_PROVIDER_ADDR", ":50190"),
+			HTTPAddr: envDefault("REZUSCLOUD_ADDR", ":8080"),
 		},
 		CanMutate: h.host.CanMutate(r),
 	}
@@ -704,79 +697,4 @@ func (h *Handler) ProvidersPage(w http.ResponseWriter, r *http.Request) {
 		},
 		Toast: h.host.PopToast(r),
 	})
-}
-
-// ManualJoinPage renders /machines/join-manual.
-func (h *Handler) ManualJoinPage(w http.ResponseWriter, r *http.Request) {
-	endpoint := os.Getenv("REZUSCLOUD_MACHINELINK_PUBLIC_ENDPOINT")
-	if endpoint == "" {
-		endpoint = h.host.MachineLinkEndpoint()
-	}
-
-	jtRecords, _, err := h.store.ListJoinTokens()
-	if err != nil {
-		http.Error(w, "list join tokens failed", http.StatusInternalServerError)
-		return
-	}
-
-	rows := make([]pages.ManualJoinToken, 0, len(jtRecords))
-	for _, jt := range jtRecords {
-		if jt.Status.Used {
-			continue
-		}
-		if !jt.Spec.ExpiresAt.IsZero() && time.Now().UTC().After(jt.Spec.ExpiresAt) {
-			continue
-		}
-		tokenPreview := jt.Metadata.Name
-		if len(tokenPreview) > 8 {
-			tokenPreview = tokenPreview[:8] + "…"
-		}
-		cluster := jt.Metadata.Labels["rezuscloud.io/tenant"]
-		expires := ""
-		if !jt.Spec.ExpiresAt.IsZero() {
-			expires = jt.Spec.ExpiresAt.Format(time.RFC3339)
-		}
-		rows = append(rows, pages.ManualJoinToken{
-			Token:      tokenPreview,
-			Cluster:    cluster,
-			NodeGroup:  jt.Spec.NodeGroup,
-			KernelArgs: kernelArgsPreview(jt.Metadata.Name, endpoint),
-			ExpiresAt:  expires,
-		})
-	}
-
-	data := pages.ManualJoinPageData{
-		ClusterNames: h.host.TenantNames(),
-		JoinTokens:   rows,
-		CanMutate:    h.host.CanMutate(r),
-	}
-	if u := os.Getenv("REZUSCLOUD_IMAGE_FACTORY_URL"); u != "" {
-		data.HelperURL = u
-		data.HelperText = "Generate a Talos installation image that boots with your kernel args."
-	} else {
-		data.HelperURL = "https://factory.talos.dev/"
-		data.HelperText = "Use Image Factory to generate a Talos ISO or raw image; boot it with the kernel args below."
-	}
-
-	h.host.Render(w, r, layout.BaseProps{
-		Title:   "Manual Join",
-		Page:    "machines",
-		Content: pages.ManualJoinPage(data),
-		Breadcrumb: []layout.BreadcrumbItem{
-			{Name: "Machines", URL: "/machines"},
-			{Name: "Manual Join", Current: true},
-		},
-		Toast: h.host.PopToast(r),
-	})
-}
-
-// kernelArgsPreview renders the kernel args a machine should boot with.
-// Duplicated from the root web.Handler because the machines section (which
-// also uses it) is still in the root package; #56 will move the original
-// here and remove the duplicate.
-func kernelArgsPreview(token, endpoint string) string {
-	return fmt.Sprintf(
-		"siderolink.api=https://%s?jointoken=%s\ntalos.platform=metal\ntalos.config=.siderolink",
-		endpoint, token,
-	)
 }

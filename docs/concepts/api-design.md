@@ -3,6 +3,7 @@
 REST API for the RezusCloud management plane. Follows the Kubernetes API model:
 metadata/spec/status on every resource, label-based selection, finalizer-controlled
 deletion, optimistic concurrency, sub-resource endpoints for non-CRUD operations.
+See [ADR 0003](../adr/0003-rest-api-kubernetes-model.md).
 
 ## Resource Types
 
@@ -10,10 +11,9 @@ deletion, optimistic concurrency, sub-resource endpoints for non-CRUD operations
 |------|-------|---------|
 | Tenant | Cluster-wide | A tenant cluster (desired K8s + Talos version, plugins, node groups) |
 | NodeGroup | Tenant-scoped | A set of machines with the same role and provider |
-| Machine | Cluster-wide | A physical/virtual machine that has phoned home |
-| Provider | Cluster-wide | A registered infrastructure provider |
-| JoinToken | Tenant-scoped | Maps a booting machine to a node group |
-| ConfigPatch | Tenant-scoped | User-defined Talos config overlay |
+| Machine | Cluster-wide | A physical/virtual machine managed by a provider module |
+| Provider | Cluster-wide | A RezusCloud-side TF provider module (oci, openstack, metal, …) |
+| ConfigPatch | Tenant-scoped | User-defined Talos config overlay (tenant-wide scope, ADR 0014) |
 | User | Cluster-wide | Auth identity with role (view/edit/admin) |
 | APIToken | User-scoped | Long-lived token for automation |
 
@@ -38,6 +38,10 @@ Every resource follows the three-section pattern:
   "status": { "...system-observed actual state (read-only)..." }
 }
 ```
+
+The two never mix: `spec` comes from TF state (the source of truth for declared
+infrastructure, [ADR 0005](../adr/0005-tf-state-single-source-of-truth.md));
+`status` is best-effort observation ([ADR 0010](../adr/0010-status-plane-best-effort.md)).
 
 ### Tenant
 
@@ -87,11 +91,7 @@ Every resource follows the three-section pattern:
       "connected": 5
     },
     "kubernetesVersion": "1.35.0",
-    "talosVersion": "1.12.6",
-    "bootstrapStatus": {
-      "bootstrapped": true,
-      "initMachine": "uuid-abc-123"
-    }
+    "talosVersion": "1.12.6"
   }
 }
 ```
@@ -134,10 +134,10 @@ Role is expressed as a well-known label.
   },
   "spec": {
     "count": 3,
-    "providerClass": "hetzner",
+    "providerClass": "oci",
     "providerConfig": {
-      "machineType": "cx22",
-      "region": "fsn1"
+      "shape": "VM.Standard.A1.Flex",
+      "image": "talos-1.12.6"
     },
     "talosVersion": "1.12.6",
     "configPatches": [
@@ -174,27 +174,24 @@ shrinking → removing excess machines
 removing  → teardown in progress
 ```
 
-`providerConfig` is opaque JSON — each provider interprets it according to its own schema:
+`providerClass` names the RezusCloud provider module (`oci`, `openstack`,
+`metal`, …). `providerConfig` is opaque JSON — each provider module interprets
+it according to its own schema and uses it to generate the `.tf.json`:
 
-**Cloud provider (e.g., Hetzner):**
+**Cloud provider (e.g., OCI):**
 ```json
-{"machineType": "cx22", "region": "fsn1"}
+{"shape": "VM.Standard.A1.Flex", "image": "talos-1.12.6"}
 ```
 
-**Metal provider (PXE/IPMI):**
+**Metal provider (bare metal):**
 ```json
-{"pxe": true, "ipmi": {"address": "192.168.1.50", "userRef": "secret/ipmi-creds"}}
-```
-
-**Static provider (already booted):**
-```json
-{"alreadyBooted": true}
+{"address": "192.168.1.50:50000"}
 ```
 
 ### Machine
 
-A machine is created when it phones home via MachineLink and reports its hardware UUID.
-The ID is the hardware UUID, not provider-assigned.
+A Machine represents a physical or virtual machine managed by a provider module.
+Its identity comes from the TF state produced by `tofu apply`.
 
 ```json
 {
@@ -203,7 +200,7 @@ The ID is the hardware UUID, not provider-assigned.
     "labels": {
       "rezuscloud.io/tenant": "production",
       "rezuscloud.io/node-group": "production-control-plane",
-      "rezuscloud.io/provider": "hetzner"
+      "rezuscloud.io/provider": "oci"
     }
   },
   "spec": {
@@ -251,68 +248,40 @@ updating      → Talos or K8s upgrade in progress
 removing      → being destroyed/cleaned
 ```
 
-Unassigned machines (no `rezuscloud.io/tenant` label) sit in a pending pool
-waiting for manual assignment or join token matching.
+Machine `spec` and identity are projections of TF state; `status` (stage,
+health, hardware, network) is observed best-effort and may lag.
 
 ### Provider
 
-```json
-{
-  "metadata": {
-    "name": "hetzner"
-  },
-  "spec": {
-    "endpoint": "grpc.provider-hetzner.rezuscloud.local:50190"
-  },
-  "status": {
-    "connected": true,
-    "lastHeartbeat": "2026-05-28T10:00:00Z",
-    "schema": {
-      "machineTypes": ["cx22", "cx32", "cx42"],
-      "regions": ["fsn1", "nbg1", "hel1"]
-    },
-    "error": ""
-  }
-}
-```
-
-### JoinToken
+A Provider resource represents a RezusCloud-side TF provider module
+([ADR 0007](../adr/0007-provider-as-tf-wrapper.md)). It is **not** a registered
+live process — there is no gRPC server, no heartbeat, no `endpoint` field. The
+resource carries the provider's declared schema (which TF resource types it
+maps to which RezusCloud resources) so the projection layer
+([ADR 0005](../adr/0005-tf-state-single-source-of-truth.md)) can translate TF
+state into API resources.
 
 ```json
 {
   "metadata": {
-    "name": "jt-a8f3b2c1",
-    "labels": {
-      "rezuscloud.io/tenant": "production",
-      "rezuscloud.io/node-group": "production-control-plane"
-    }
+    "name": "oci"
   },
   "spec": {
-    "expiresAt": "2026-06-04T10:00:00Z",
-    "singleUse": true
+    "type": "oci"
   },
   "status": {
-    "used": false,
-    "usedBy": "",
-    "usedAt": null
+    "mappings": [
+      {"tfType": "oci_core_instance", "resource": "Machine"}
+    ]
   }
 }
 ```
-
-Flow:
-1. Provider requests a join token for a node group: `POST /api/v1/tenants/{name}/join-tokens`
-2. Token value is returned once (not stored in plaintext — only a hash)
-3. Provider injects token into machine kernel args (via MachineLink schematic or PXE)
-4. Machine phones home, presents token
-5. Management plane validates token, maps machine to the labeled node group
-6. Role is determined from the node group's `rezuscloud.io/role` label
-7. Talos config is generated using `input.Config(machine.Type)`:
-   - `controlplane` label → first machine gets `TypeInit`, rest get `TypeControlPlane`
-   - `worker` label → `TypeWorker`
-8. Config delivered over MachineLink
-9. Token consumed (if single-use)
 
 ### ConfigPatch
+
+A ConfigPatch is a user-defined Talos config overlay applied during config
+generation. It has a single tenant-wide scope, optionally filtered by role
+([ADR 0014](../adr/0014-configpatch-single-scope.md)).
 
 ```json
 {
@@ -323,6 +292,7 @@ Flow:
     }
   },
   "spec": {
+    "targetRole": "controlplane",
     "patch": "...yaml string..."
   }
 }
@@ -409,7 +379,6 @@ GET    /api/v1/tenants/{name}/events           # watch (chunked ?watch=true, SSE
 
 GET    /api/v1/tenants/{name}/kubeconfig       # generate admin kubeconfig
 GET    /api/v1/tenants/{name}/talosconfig      # generate talosconfig
-GET    /api/v1/tenants/{name}/join-config      # kernel args + schematic for machines
 ```
 
 ### NodeGroups
@@ -433,7 +402,7 @@ GET    /api/v1/tenants/{name}/machines/{id}
 PUT    /api/v1/tenants/{name}/machines/{id}/status
 DELETE /api/v1/tenants/{name}/machines/{id}     # teardown with finalizers
 GET    /api/v1/tenants/{name}/machines/{id}/config    # generated Talos config
-GET    /api/v1/tenants/{name}/machines/{id}/logs      # streaming Talos logs
+GET    /api/v1/tenants/{name}/machines/{id}/logs      # streaming Talos logs (read-only, ADR 0015)
 POST   /api/v1/tenants/{name}/machines/{id}/restart   # restart machine
 ```
 
@@ -442,14 +411,6 @@ Cluster-wide (includes unassigned):
 GET    /api/v1/machines                        # all machines
 GET    /api/v1/machines/{id}                   # single machine
 GET    /api/v1/machines/events                 # watch all machines
-```
-
-### JoinTokens
-
-```
-GET    /api/v1/tenants/{name}/join-tokens
-POST   /api/v1/tenants/{name}/join-tokens      # create token for a node group
-DELETE /api/v1/tenants/{name}/join-tokens/{id}
 ```
 
 ### ConfigPatches
@@ -465,9 +426,8 @@ DELETE /api/v1/tenants/{name}/patches/{name}
 ### Providers
 
 ```
-GET    /api/v1/providers
-GET    /api/v1/providers/{type}
-PUT    /api/v1/providers/{type}/status          # provider heartbeat updates status
+GET    /api/v1/providers                        # list provider modules + mappings
+GET    /api/v1/providers/{type}                 # single provider module
 GET    /api/v1/providers/{type}/events
 ```
 
@@ -520,6 +480,9 @@ Event format (both):
 {"type": "DELETED", "object": {...}}
 ```
 
+Under the hood, events flow through the event bus (NATS, planned in
+[ADR 0009](../adr/0009-event-bus-nats.md)); the HTTP watch surface is unchanged.
+
 ### Optimistic Concurrency
 
 Every resource has `metadata.resourceVersion`. On PUT, client must send the current
@@ -544,7 +507,7 @@ perform cleanup, and remove their finalizer:
 DELETE /api/v1/tenants/prod
 → 200 OK: {metadata: {deletionTimestamp: "2026-05-28T10:00:00Z", finalizers: ["rezuscloud.io/machines", "rezuscloud.io/secrets"]}}
 
-Controller deprovisions machines → removes "rezuscloud.io/machines"
+Controller runs tofu destroy, deprovisions machines → removes "rezuscloud.io/machines"
 Controller cleans up secrets → removes "rezuscloud.io/secrets"
 
 All finalizers cleared → record deleted from SQLite
@@ -574,48 +537,41 @@ Standard reasons: `NotFound`, `Conflict`, `BadRequest`, `Forbidden`,
    → status: {phase: "forming", available: false}
 
 2. User creates node groups
-   POST /api/v1/tenants/prod/node-groups {metadata: {labels: {rezuscloud.io/role: "controlplane"}}, spec: {count: 3, ...}}
-   POST /api/v1/tenants/prod/node-groups {metadata: {labels: {rezuscloud.io/role: "worker"}}, spec: {count: 5, ...}}
+   POST /api/v1/tenants/prod/node-groups {metadata: {labels: {rezuscloud.io/role: "controlplane"}}, spec: {count: 3, providerClass: "oci", ...}}
+   POST /api/v1/tenants/prod/node-groups {metadata: {labels: {rezuscloud.io/role: "worker"}}, spec: {count: 5, providerClass: "oci", ...}}
 
-3. User or provider requests join tokens
-   POST /api/v1/tenants/prod/join-tokens {nodeGroup: "prod-cp"}
-   → returns token value (stored as hash)
+3. Apply queue debounces the spec changes and runs a single tofu apply
+   → provider modules generate .tf.json (oci_core_instance + talos config)
+   → tofu provisions cloud VMs; config delivered via user_data
+   → bare metal (provider-metal) gets config via Talos API push
+   → tofu writes state to the TF HTTP backend (source of truth)
 
-4. Provider provisions hardware, injects join token into kernel args
+4. Nodes boot fully configured and join the tenant cluster
+   → etcd bootstraps on the first control-plane node
+   → worker nodes join
 
-5. Machine boots Talos, phones home via MachineLink
-   → Machine resource created with hardware UUID as ID
-   → Join token validated → machine assigned to node group
-   → Role label from node group determines Talos config type
-   → First controlplane machine gets TypeInit config
-   → Subsequent controlplane machines get TypeControlPlane config
-   → Worker machines get TypeWorker config
-   → Config delivered over MachineLink
-
-6. Machine transitions through stages
-   initializing → installing → configuring → ready
-
-7. Tenant phase derived from machine states
+5. Tenant phase derived from machine states
    forming → active (all machines ready)
 
-8. User retrieves kubeconfig
-   GET /api/v1/tenants/prod/kubeconfig → admin kubeconfig derived from encrypted secrets bundle
+6. User retrieves kubeconfig
+   GET /api/v1/tenants/prod/kubeconfig → admin kubeconfig derived from the tenant secrets bundle
 
-9. User deletes tenant
+7. User deletes tenant
    DELETE /api/v1/tenants/prod
    → deletionTimestamp set, finalizers block removal
-   → Machines controller deprovisions each machine, removes finalizer
-   → Secrets controller deletes secrets bundle, removes finalizer
+   → TenantReconciler runs tofu destroy, deprovisions each machine, removes finalizer
+   → Secrets cleaned up, finalizer removed
    → All finalizers cleared → record removed
 ```
 
 ## State Backend
 
-### MVP: SQLite (single writer)
+### SQLite (single writer)
 
-SQLite is the sole state backend for the initial release. It handles tens of
-thousands of operations per second — more than sufficient for a personal cloud
-with tens of machines across a handful of tenants.
+SQLite is the sole state backend for the initial release
+([ADR 0004](../adr/0004-sqlite-state-store.md)). It handles tens of thousands
+of operations per second — more than sufficient for a personal cloud with tens
+of machines across a handful of tenants.
 
 - **Standalone**: binary + SQLite file on disk
 - **Cluster (Helm)**: same binary in a K8s Deployment, SQLite on a PVC, single replica
@@ -623,47 +579,17 @@ with tens of machines across a handful of tenants.
 
 ### Future: Pluggable Backend
 
-The Store interface is designed for future backend swaps:
-
-```go
-type Store interface {
-    // Tenant CRUD
-    CreateTenant(ctx context.Context, t *Tenant) error
-    GetTenant(ctx context.Context, name string) (*Tenant, error)
-    ListTenants(ctx context.Context, opts ListOptions) ([]*Tenant, int, error)
-    UpdateTenant(ctx context.Context, t *Tenant) error
-    DeleteTenant(ctx context.Context, name string) error
-    // ... same pattern for all resource types
-}
-```
-
-Planned backends (in priority order):
-
-| Backend | When | Why |
-|---------|------|-----|
-| **SQLite** | MVP | Zero dependencies, single-writer, fast enough |
-| **PostgreSQL** | Growth | Multi-writer, streaming replication, no K8s dependency |
-| **etcd** | Scale | Native K8s distribution, multi-node HA |
-
-The backend is selected at startup via `REZUSCLOUD_STORE` env var. Default: `sqlite`.
-No backend switch at runtime — pick one at deploy time.
+The Store interface is designed for future backend swap. The backend is selected
+at startup; no backend switch at runtime — pick one at deploy time.
 
 ## Secrets Management
 
-Tenant secrets (CA certs, etcd certs, admin keys) are stored as an encrypted blob
-in the state backend. The management plane holds an encryption key in memory (generated on
-first boot, persisted to a separate file).
-
-```go
-type SecretStore interface {
-    GetBundle(ctx context.Context, tenant string) (*secrets.Bundle, error)
-    SetBundle(ctx context.Context, tenant string, bundle *secrets.Bundle) error
-    DeleteBundle(ctx context.Context, tenant string) error
-}
-```
-
-Default implementation: encrypted column in the state backend. Future extension:
-Bitwarden, Vault, AWS Secrets Manager via plugin.
+Tenant secrets (CA certs, etcd certs, admin keys) are stored as an encrypted
+blob. OpenTofu owns all crypto — state is encrypted by `tofu` via `pbkdf2`+
+`aes_gcm` config embedded in the generated `.tf.json`; RezusCloud's HTTP backend
+stores opaque blobs and never implements crypto itself. The reconciler runs
+`tofu state pull` (with `TF_ENCRYPTION` set) after each apply to extract
+`client_configuration`, which it caches in memory.
 
 The raw secrets bundle is never exposed via the API. Only derived artifacts
 (kubeconfig, talosconfig) are returned through sub-resource endpoints.

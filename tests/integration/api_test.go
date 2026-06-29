@@ -501,50 +501,6 @@ func TestProvider_ListAndGet(t *testing.T) {
 }
 
 // ============================================================
-// JoinToken CRUD
-// ============================================================
-
-func TestJoinToken_CreateAndList(t *testing.T) {
-	ts := newTestServer(t)
-	token := ts.createUser(t, "admin", "admin", "pass")
-
-	// Create tenant + node group.
-	ts.doRequest(http.MethodPost, "/api/v1/tenants", map[string]any{
-		"metadata": map[string]string{"name": "prod"},
-		"spec":     map[string]string{"kubernetesVersion": "1.35.0"},
-	}, token)
-	_, _ = ts.store.CreateResource("nodegroup", "workers", state.NodeGroupSpec{
-		Name: "workers", Role: "worker", Count: 3,
-	}, nil, map[string]string{
-		"rezuscloud.io/tenant": "prod",
-		"rezuscloud.io/role":   "worker",
-	}, nil)
-
-	// Create token.
-	resp, result := ts.doRequest(http.MethodPost, "/api/v1/tenants/prod/join-tokens", map[string]any{
-		"spec": map[string]any{"nodeGroup": "workers", "singleUse": true},
-	}, token)
-
-	if resp.StatusCode != http.StatusCreated {
-		t.Fatalf("create token: status = %d, body = %v", resp.StatusCode, result)
-	}
-
-	tokenValue, _ := result["token"].(string)
-	if len(tokenValue) != 64 {
-		t.Errorf("token length = %d, want 64", len(tokenValue))
-	}
-
-	// List tokens.
-	resp, result = ts.doRequest(http.MethodGet, "/api/v1/tenants/prod/join-tokens", nil, token)
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("list tokens: status = %d", resp.StatusCode)
-	}
-	if total, _ := result["total"].(float64); total != 1 {
-		t.Errorf("total = %v, want 1", total)
-	}
-}
-
-// ============================================================
 // User CRUD (admin only)
 // ============================================================
 

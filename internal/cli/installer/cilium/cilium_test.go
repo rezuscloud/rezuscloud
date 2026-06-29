@@ -5,7 +5,7 @@ import (
 	"io"
 	"testing"
 
-	"github.com/rezuscloud/rezuscloud/internal/cli/provider"
+	"github.com/rezuscloud/rezuscloud/internal/cli/installer"
 )
 
 func TestCiliumProvider_Name(t *testing.T) {
@@ -16,7 +16,7 @@ func TestCiliumProvider_Name(t *testing.T) {
 }
 
 func TestBuildValues_Defaults(t *testing.T) {
-	spec := provider.CNISpec{
+	spec := installer.CNISpec{
 		Type:    "cilium",
 		Version: "1.19.3",
 	}
@@ -49,7 +49,7 @@ func TestBuildValues_Defaults(t *testing.T) {
 }
 
 func TestBuildValues_CustomMTU(t *testing.T) {
-	spec := provider.CNISpec{
+	spec := installer.CNISpec{
 		Type: "cilium",
 		MTU:  1360,
 	}
@@ -63,7 +63,7 @@ func TestBuildValues_CustomMTU(t *testing.T) {
 }
 
 func TestBuildValues_CustomTunnel(t *testing.T) {
-	spec := provider.CNISpec{
+	spec := installer.CNISpec{
 		Type:       "cilium",
 		TunnelType: "vxlan",
 	}
@@ -76,7 +76,7 @@ func TestBuildValues_CustomTunnel(t *testing.T) {
 }
 
 func TestBuildValues_IPv6CIDR(t *testing.T) {
-	spec := provider.CNISpec{
+	spec := installer.CNISpec{
 		Type:                  "cilium",
 		IPv6NativeRoutingCIDR: "fd00:10:244::/48",
 	}
@@ -89,7 +89,7 @@ func TestBuildValues_IPv6CIDR(t *testing.T) {
 }
 
 func TestBuildValues_GatewayAPI(t *testing.T) {
-	spec := provider.CNISpec{Type: "cilium"}
+	spec := installer.CNISpec{Type: "cilium"}
 	values := buildValues(spec, defaultMTU)
 
 	gw, ok := values["gatewayAPI"].(map[string]interface{})
@@ -102,7 +102,7 @@ func TestBuildValues_GatewayAPI(t *testing.T) {
 }
 
 func TestBuildValues_Operator(t *testing.T) {
-	spec := provider.CNISpec{Type: "cilium"}
+	spec := installer.CNISpec{Type: "cilium"}
 	values := buildValues(spec, defaultMTU)
 
 	op, ok := values["operator"].(map[string]interface{})
@@ -115,7 +115,7 @@ func TestBuildValues_Operator(t *testing.T) {
 }
 
 func TestBuildValues_DockerSpecific(t *testing.T) {
-	spec := provider.CNISpec{
+	spec := installer.CNISpec{
 		Type:          "cilium",
 		APIServerHost: "10.5.0.1",
 		APIServerPort: 6443,
@@ -166,7 +166,7 @@ func TestBuildValues_DockerSpecific(t *testing.T) {
 }
 
 func TestBuildValues_NoDockerDefaults(t *testing.T) {
-	spec := provider.CNISpec{Type: "cilium"}
+	spec := installer.CNISpec{Type: "cilium"}
 
 	values := buildValues(spec, defaultMTU)
 
@@ -190,7 +190,7 @@ type mockInstaller struct {
 	installErr error
 }
 
-func (m *mockInstaller) Install(_ context.Context, _ provider.ChartConfig, _ io.Writer) error {
+func (m *mockInstaller) Install(_ context.Context, _ installer.ChartConfig, _ io.Writer) error {
 	return m.installErr
 }
 

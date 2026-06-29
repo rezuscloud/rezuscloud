@@ -339,12 +339,12 @@ func Base(props BaseProps) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var18 = []any{templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "jointokens"))}
+			var templ_7745c5c3_Var18 = []any{templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "providers"))}
 			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var18...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<a href=\"/machines/jointokens\" class=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "<a href=\"/providers\" class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -357,16 +357,16 @@ func Base(props BaseProps) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "\"><svg class=\"ds-sidebar-icon\" viewBox=\"0 0 16 16\" fill=\"currentColor\"><path d=\"M8 1l2 4 4 .5-3 3 .5 4-3.5-2-3.5 2 .5-4-3-3 4-.5z\"></path></svg> Join Tokens</a> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 24, "\"><svg class=\"ds-sidebar-icon\" viewBox=\"0 0 16 16\" fill=\"currentColor\"><path d=\"M2 4h12v8H2V4zm0-2h12v1H2V2zm0 11h12v1H2v-1z\"></path></svg> Providers</a><div class=\"ds-sidebar-section-label\">Settings</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var20 = []any{templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "providers"))}
+			var templ_7745c5c3_Var20 = []any{templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "settings"))}
 			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var20...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "<a href=\"/providers\" class=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 25, "<a href=\"/settings\" class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -379,16 +379,16 @@ func Base(props BaseProps) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "\"><svg class=\"ds-sidebar-icon\" viewBox=\"0 0 16 16\" fill=\"currentColor\"><path d=\"M2 4h12v8H2V4zm0-2h12v1H2V2zm0 11h12v1H2v-1z\"></path></svg> Providers</a><div class=\"ds-sidebar-section-label\">Settings</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "\"><svg class=\"ds-sidebar-icon\" viewBox=\"0 0 16 16\" fill=\"currentColor\"><path d=\"M8 4.5a2 2 0 100 4 2 2 0 000-4zm0 6a4 4 0 110-8 4 4 0 010 8zM1 8a7 7 0 1014 0A7 7 0 001 8z\"></path></svg> Overview</a> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var22 = []any{templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "settings"))}
+			var templ_7745c5c3_Var22 = []any{templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "users"))}
 			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var22...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "<a href=\"/settings\" class=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 27, "<a href=\"/settings/users\" class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -401,16 +401,16 @@ func Base(props BaseProps) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "\"><svg class=\"ds-sidebar-icon\" viewBox=\"0 0 16 16\" fill=\"currentColor\"><path d=\"M8 4.5a2 2 0 100 4 2 2 0 000-4zm0 6a4 4 0 110-8 4 4 0 010 8zM1 8a7 7 0 1014 0A7 7 0 001 8z\"></path></svg> Overview</a> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 28, "\">> <svg class=\"ds-sidebar-icon\" viewBox=\"0 0 16 16\" fill=\"currentColor\"><path d=\"M8 8a3 3 0 100-6 3 3 0 000 6zm-5 7c0-2.8 2.2-5 5-5s5 2.2 5 5H3z\"></path></svg> Users</a> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var24 = []any{templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "users"))}
+			var templ_7745c5c3_Var24 = []any{templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "api-tokens"))}
 			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var24...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "<a href=\"/settings/users\" class=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "<a href=\"/settings/api-tokens\" class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -423,16 +423,16 @@ func Base(props BaseProps) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "\">> <svg class=\"ds-sidebar-icon\" viewBox=\"0 0 16 16\" fill=\"currentColor\"><path d=\"M8 8a3 3 0 100-6 3 3 0 000 6zm-5 7c0-2.8 2.2-5 5-5s5 2.2 5 5H3z\"></path></svg> Users</a> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "\"><svg class=\"ds-sidebar-icon\" viewBox=\"0 0 16 16\" fill=\"currentColor\"><path d=\"M11 2l3 3-8 8H3v-3l8-8z\"></path></svg> API Tokens</a> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var26 = []any{templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "api-tokens"))}
+			var templ_7745c5c3_Var26 = []any{templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "audit"))}
 			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var26...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<a href=\"/settings/api-tokens\" class=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 31, "<a href=\"/settings/audit\" class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -445,16 +445,16 @@ func Base(props BaseProps) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "\"><svg class=\"ds-sidebar-icon\" viewBox=\"0 0 16 16\" fill=\"currentColor\"><path d=\"M11 2l3 3-8 8H3v-3l8-8z\"></path></svg> API Tokens</a> ")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "\"><svg class=\"ds-sidebar-icon\" viewBox=\"0 0 16 16\" fill=\"currentColor\"><path d=\"M2 2h12v12H2V2zm2 2v8h8V4H4zm1 1h6v1H5V5zm0 2h6v1H5V7zm0 2h4v1H5V9z\"></path></svg> Audit Log</a> ")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			var templ_7745c5c3_Var28 = []any{templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "audit"))}
+			var templ_7745c5c3_Var28 = []any{templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "backups"))}
 			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var28...)
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "<a href=\"/settings/audit\" class=\"")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "<a href=\"/settings/backups\" class=\"")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -467,52 +467,30 @@ func Base(props BaseProps) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "\"><svg class=\"ds-sidebar-icon\" viewBox=\"0 0 16 16\" fill=\"currentColor\"><path d=\"M2 2h12v12H2V2zm2 2v8h8V4H4zm1 1h6v1H5V5zm0 2h6v1H5V7zm0 2h4v1H5V9z\"></path></svg> Audit Log</a> ")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var30 = []any{templ.Classes("ds-sidebar-link", templ.KV("ds-sidebar-link--active", props.Page == "backups"))}
-			templ_7745c5c3_Err = templ.RenderCSSItems(ctx, templ_7745c5c3_Buffer, templ_7745c5c3_Var30...)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "<a href=\"/settings/backups\" class=\"")
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			var templ_7745c5c3_Var31 string
-			templ_7745c5c3_Var31, templ_7745c5c3_Err = templ.ResolveAttributeValue(templ.CSSClasses(templ_7745c5c3_Var30).String())
-			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/layout.templ`, Line: 1, Col: 0}
-			}
-			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var31)
-			if templ_7745c5c3_Err != nil {
-				return templ_7745c5c3_Err
-			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "\"><svg class=\"ds-sidebar-icon\" viewBox=\"0 0 16 16\" fill=\"currentColor\"><path d=\"M2 3h12v10H2V3zm6 2v6h4V5H8z\"></path></svg> Backups</a></nav><div class=\"ds-sidebar-footer\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "\"><svg class=\"ds-sidebar-icon\" viewBox=\"0 0 16 16\" fill=\"currentColor\"><path d=\"M2 3h12v10H2V3zm6 2v6h4V5H8z\"></path></svg> Backups</a></nav><div class=\"ds-sidebar-footer\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if props.User != "" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "<div class=\"ds-sidebar-user\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 35, "<div class=\"ds-sidebar-user\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				var templ_7745c5c3_Var32 string
-				templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(props.User)
+				var templ_7745c5c3_Var30 string
+				templ_7745c5c3_Var30, templ_7745c5c3_Err = templ.JoinStringErrs(props.User)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/layout.templ`, Line: 211, Col: 48}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/layout/layout.templ`, Line: 207, Col: 48}
 				}
-				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
+				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var30))
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "</div><a href=\"/logout\" class=\"ds-sidebar-logout\">Sign Out</a>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 36, "</div><a href=\"/logout\" class=\"ds-sidebar-logout\">Sign Out</a>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "</div></aside><main class=\"ds-main\"><div class=\"ds-topbar\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 37, "</div></aside><main class=\"ds-main\"><div class=\"ds-topbar\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -524,12 +502,12 @@ func Base(props BaseProps) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 			if props.Toast.Message != "" {
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "<div class=\"ds-toast-container\" x-data=\"{ show: true }\" x-init=\"setTimeout(() => show = false, 5000)\" x-show=\"show\">")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "<div class=\"ds-toast-container\" x-data=\"{ show: true }\" x-init=\"setTimeout(() => show = false, 5000)\" x-show=\"show\">")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -537,7 +515,7 @@ func Base(props BaseProps) templ.Component {
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "</div>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "</div>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
@@ -546,12 +524,12 @@ func Base(props BaseProps) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "</main>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "</main>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "<div class=\"ds-floating-top-right\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "<div class=\"ds-floating-top-right\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -559,7 +537,7 @@ func Base(props BaseProps) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -568,7 +546,7 @@ func Base(props BaseProps) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 46, "</body></html>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "</body></html>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

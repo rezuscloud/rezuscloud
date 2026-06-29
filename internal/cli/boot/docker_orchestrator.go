@@ -11,10 +11,10 @@ import (
 	"time"
 
 	"github.com/rezuscloud/rezuscloud/internal/cli/helm"
+	"github.com/rezuscloud/rezuscloud/internal/cli/installer"
+	"github.com/rezuscloud/rezuscloud/internal/cli/installer/cilium"
 	"github.com/rezuscloud/rezuscloud/internal/cli/platform"
 	"github.com/rezuscloud/rezuscloud/internal/cli/platform/docker"
-	"github.com/rezuscloud/rezuscloud/internal/cli/provider"
-	"github.com/rezuscloud/rezuscloud/internal/cli/provider/cilium"
 	"github.com/rezuscloud/rezuscloud/internal/cli/state"
 	"github.com/rezuscloud/rezuscloud/internal/cli/talosconfig"
 )
@@ -323,18 +323,18 @@ func (o *DockerBootOrchestrator) stepInstallCNI(ctx context.Context) error {
 		return fmt.Errorf("get kubeconfig: %w", err)
 	}
 
-	installer, err := helm.NewInstallerFromBytes(kubeconfig)
+	helmInstaller, err := helm.NewInstallerFromBytes(kubeconfig)
 	if err != nil {
 		return fmt.Errorf("create helm installer: %w", err)
 	}
 
-	cniProvider := cilium.NewWithInstaller(installer)
+	cniProvider := cilium.NewWithInstaller(helmInstaller)
 
 	// Docker-specific Cilium values: no encryption, no IPv6, no host firewall,
 	// MTU 1500, kube-proxy replacement. Docker containers run privileged with
 	// all capabilities, so eBPF and netadmin work.
 	gatewayIP := o.docker.GatewayIP()
-	spec := provider.CNISpec{
+	spec := installer.CNISpec{
 		Type:          "cilium",
 		Version:       o.spec.CiliumVersion,
 		MTU:           1500,

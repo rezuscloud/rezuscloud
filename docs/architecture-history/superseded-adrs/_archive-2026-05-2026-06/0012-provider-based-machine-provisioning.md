@@ -1,8 +1,10 @@
-# ADR 12: Provider-Based Machine Provisioning via Outbound gRPC
+# ADR 12: Provider-Based Machine Provisioning
 
-> **Amended by [ADR 13](0013-siderolink-config-pull.md)**: The provider interface is simplified to `Provision` and `Destroy` only. Config delivery uses SideroLink (pull model) instead of provider push.
+> **Superseded by the TF-state model (see CONTEXT.md Architecture).** Providers are now RezusCloud-side orchestration modules (`internal/provider/<name>/`) that render UI, optionally discover nodes (metal only), and generate standard `.tf.json` config using off-the-shelf TF providers (oci, openstack, talos). **No custom `terraform-provider-rezuscloud-*` plugins exist.** RezusCloud exec's `tofu apply`, which calls the standard providers. Config delivery uses `user_data` (cloud VMs) and the Talos API (bare metal) — see [ADR 13](0013-siderolink-config-pull.md) (SideroLink rejected).
+>
+> **Credential isolation reversed.** This ADR's central property — "each provider holds own creds locally, management plane never sees cloud keys" — no longer holds. RezusCloud holds bootstrap credentials and exec's tofu directly, because RezusCloud must be the **only component** needed to run the personal cloud (e.g. packaged as a Home Assistant container). See CONTEXT.md "Bootstrap Credentials".
 
-## Status: Accepted (Amended by ADR 13)
+## Status: Accepted (Superseded by TF-state model)
 
 ## Context
 

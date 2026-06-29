@@ -1,26 +1,25 @@
-// Package watchbus bridges state mutations to the watch event bus.
-// It implements state.EventBus and translates state.ResourceEvent into watch.Event.
-package watchbus
+// Adapter bridges state mutations to the watch event bus.
+// It implements state.EventBus and translates state.ResourceEvent into Event.
+package watch
 
 import (
 	"encoding/json"
 
 	"github.com/rezuscloud/rezuscloud/internal/state"
-	"github.com/rezuscloud/rezuscloud/internal/watch"
 )
 
-// Adapter is a state.EventBus implementation that republishes events on a watch.Bus.
+// Adapter is a state.EventBus implementation that republishes events on a Bus.
 type Adapter struct {
-	bus *watch.Bus
+	bus *Bus
 }
 
-// New creates a new adapter wrapping the given watch bus.
-func New(bus *watch.Bus) *Adapter {
+// NewAdapter creates a new adapter wrapping the given watch bus.
+func NewAdapter(bus *Bus) *Adapter {
 	return &Adapter{bus: bus}
 }
 
 // Publish is called by the store on every mutation. It re-loads the resource
-// snapshot and emits a watch.Event suitable for HTTP streaming.
+// snapshot and emits an Event suitable for HTTP streaming.
 func (a *Adapter) Publish(resourceType string, ev state.ResourceEvent) {
 	obj := map[string]any{
 		"metadata": ev.Metadata,
@@ -34,8 +33,8 @@ func (a *Adapter) Publish(resourceType string, ev state.ResourceEvent) {
 		obj["status"] = (json.RawMessage)(ev.Status)
 	}
 
-	a.bus.Publish(resourceType, watch.Event{
-		Type:   watch.EventType(ev.Type),
+	a.bus.Publish(resourceType, Event{
+		Type:   EventType(ev.Type),
 		Object: obj,
 	})
 }

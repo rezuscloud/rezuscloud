@@ -56,10 +56,16 @@ func (a *execApplier) Apply(ctx context.Context, tenant string) error {
 func TestIntegration_QueueDrivesRealTofuApply(t *testing.T) {
 	skipWithoutTofu(t)
 
+	// Pin the pool to a single connection. With modernc.org/sqlite, ":memory:"
+	// creates a SEPARATE database per connection — migrate() runs on one connection
+	// but tofu's concurrent HTTP requests open others that see an empty DB
+	// ("no such table: tf_state"). SetMaxOpenConns(1) guarantees every query
+	// (migrate + all handler calls) shares the same in-memory database.
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
 		t.Fatal(err)
 	}
+	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = db.Close() })
 	store, err := tfbackend.New(db)
 	if err != nil {

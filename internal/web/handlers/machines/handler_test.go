@@ -28,7 +28,6 @@ func (s *stubHost) AuthRequired(next http.HandlerFunc) http.HandlerFunc {
 }
 func (s *stubHost) CanMutate(_ *http.Request) bool { return true }
 func (s *stubHost) ClusterNames() []string         { return []string{"prod"} }
-func (s *stubHost) MachineLinkEndpoint() string    { return "machinelink.test:50001" }
 func (s *stubHost) BusPresent() bool               { return true }
 
 // --- helpers ---
@@ -234,47 +233,6 @@ func TestMachineDelete_Success(t *testing.T) {
 	}
 }
 
-// TestJoinTokensList_Renders verifies the join tokens list renders.
-func TestJoinTokensList_Renders(t *testing.T) {
-	h, _, host := newHandler(t)
-	req := httptest.NewRequest(http.MethodGet, "/machines/jointokens", nil)
-	w := httptest.NewRecorder()
-	h.JoinTokensList(w, req)
-	if host.lastProps.Title != "Join Tokens" {
-		t.Errorf("Title = %q, want Join Tokens", host.lastProps.Title)
-	}
-}
-
-// TestJoinTokenCreate_Success verifies token creation flow.
-func TestJoinTokenCreate_Success(t *testing.T) {
-	h, store, _ := newHandler(t)
-	_, _ = store.CreateTenant("prod", state.TenantSpec{KubernetesVersion: "1.35.0"}, nil, nil)
-	body := strings.NewReader("cluster=prod&nodegroup=workers&ttl=1h")
-	req := httptest.NewRequest(http.MethodPost, "/machines/jointokens", body)
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	w := httptest.NewRecorder()
-	h.JoinTokenCreate(w, req)
-	if w.Code != http.StatusSeeOther {
-		t.Errorf("status = %d, want 303", w.Code)
-	}
-	if !strings.Contains(w.Header().Get("Location"), "new_token=") {
-		t.Errorf("Location = %q, missing new_token", w.Header().Get("Location"))
-	}
-}
-
-// TestJoinTokenCreate_MissingFields verifies validation.
-func TestJoinTokenCreate_MissingFields(t *testing.T) {
-	h, _, _ := newHandler(t)
-	body := strings.NewReader("cluster=")
-	req := httptest.NewRequest(http.MethodPost, "/machines/jointokens", body)
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	w := httptest.NewRecorder()
-	h.JoinTokenCreate(w, req)
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want 400", w.Code)
-	}
-}
-
 // TestRegisterRoutes verifies all routes are wired.
 func TestRegisterRoutes(t *testing.T) {
 	h, store, _ := newHandler(t)
@@ -286,7 +244,6 @@ func TestRegisterRoutes(t *testing.T) {
 
 	routes := []struct{ method, path string }{
 		{http.MethodGet, "/machines"},
-		{http.MethodGet, "/machines/jointokens"},
 		{http.MethodGet, "/machines/pending"},
 		{http.MethodDelete, "/machines/m1"},
 	}
@@ -356,7 +313,7 @@ func TestIsValidKernelArg(t *testing.T) {
 		want bool
 	}{
 		{"talos.platform=metal", true},
-		{"siderolink.api=https://foo", true},
+		{"talos.config=.siderolink", true},
 		{"console=ttyS0", true},
 		{"reboot=k", true},
 		{"mitigations=off", true},
@@ -385,32 +342,6 @@ func TestBuildKernelArgsPatch(t *testing.T) {
 	}
 	if !strings.Contains(got, "talos.platform=metal") {
 		t.Error("missing first arg")
-	}
-}
-
-// TestKernelArgsPreview verifies the kernel args preview format.
-func TestKernelArgsPreview(t *testing.T) {
-	got := kernelArgsPreview("abc", "endpoint:50001")
-	if !strings.Contains(got, "endpoint:50001") {
-		t.Error("missing endpoint")
-	}
-	if !strings.Contains(got, "jointoken=abc") {
-		t.Error("missing token")
-	}
-}
-
-// TestGenerateJoinTokenValue verifies token generation.
-func TestGenerateJoinTokenValue(t *testing.T) {
-	tok, err := generateJoinTokenValue()
-	if err != nil {
-		t.Fatalf("generateJoinTokenValue: %v", err)
-	}
-	if len(tok) != 64 {
-		t.Errorf("token len = %d, want 64 (32 hex bytes)", len(tok))
-	}
-	tok2, _ := generateJoinTokenValue()
-	if tok == tok2 {
-		t.Error("tokens should be unique")
 	}
 }
 

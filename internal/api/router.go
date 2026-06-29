@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/rezuscloud/rezuscloud/internal/api/jointoken"
 	"github.com/rezuscloud/rezuscloud/internal/api/logs"
 	"github.com/rezuscloud/rezuscloud/internal/api/machine"
 	"github.com/rezuscloud/rezuscloud/internal/api/middleware"
@@ -48,10 +47,6 @@ func Router(store *state.Store, jwtManager *auth.JWTManager, auditComponent *aud
 	// Provider endpoints.
 	providerAPI := provider.NewAPI(store)
 	providerAPI.RegisterRoutes(protected)
-
-	// JoinToken endpoints — nested under tenants.
-	jtAPI := jointoken.NewAPI(store)
-	jtAPI.RegisterRoutes(protected)
 
 	// ConfigPatch endpoints — nested under tenants.
 	patchAPI := patch.NewAPI(store)
@@ -107,9 +102,8 @@ func RegisterSystemRoutes(mux *http.ServeMux, _ *state.Store) {
 	mux.HandleFunc("GET /api/v1/status", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
-			"status":      "ok",
-			"machinelink": "listening",
-			"provider":    "listening",
+			"status":   "ok",
+			"provider": "listening",
 		})
 	})
 }

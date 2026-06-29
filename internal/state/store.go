@@ -225,29 +225,6 @@ type ProviderSchema struct {
 	Regions      []string `json:"regions,omitempty"`
 }
 
-// --- JoinToken ---
-
-// JoinToken maps a booting machine to a tenant node group.
-type JoinToken struct {
-	Metadata Metadata        `json:"metadata"`
-	Spec     JoinTokenSpec   `json:"spec"`
-	Status   JoinTokenStatus `json:"status"`
-}
-
-// JoinTokenSpec is the configuration of a join token.
-type JoinTokenSpec struct {
-	ExpiresAt time.Time `json:"expiresAt,omitempty"`
-	SingleUse bool      `json:"singleUse"`
-	NodeGroup string    `json:"nodeGroup,omitempty"`
-}
-
-// JoinTokenStatus tracks token usage.
-type JoinTokenStatus struct {
-	Used   bool       `json:"used"`
-	UsedBy string     `json:"usedBy,omitempty"`
-	UsedAt *time.Time `json:"usedAt,omitempty"`
-}
-
 // --- User ---
 
 // User represents an authenticated identity.
@@ -893,7 +870,6 @@ func (s *Store) DeleteTenant(name string) error {
 	// Add finalizers for controlled teardown.
 	_ = s.AddFinalizer("tenant", name, "rezuscloud.io/machines")
 	_ = s.AddFinalizer("tenant", name, "rezuscloud.io/secrets")
-	_ = s.AddFinalizer("tenant", name, "rezuscloud.io/tokens")
 
 	return nil
 }
@@ -1084,133 +1060,6 @@ func (s *Store) ListProviders() ([]*Provider, error) {
 	}
 
 	return providers, nil
-}
-
-// --- JoinToken-Specific Operations ---
-
-// ListJoinTokens returns all join tokens. Use ListOption label selectors
-// to filter by tenant or node group.
-func (s *Store) ListJoinTokens(opts ...ListOption) ([]*JoinToken, int, error) {
-	o := newListOptions(opts...)
-	mds, specs, statuses, total, err := s.ListResources("jointoken", o)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	items := make([]*JoinToken, 0, len(mds))
-	for i := range mds {
-		var spec JoinTokenSpec
-		var status JoinTokenStatus
-		_ = json.Unmarshal(specs[i], &spec)
-		_ = json.Unmarshal(statuses[i], &status)
-		items = append(items, &JoinToken{
-			Metadata: mds[i],
-			Spec:     spec,
-			Status:   status,
-		})
-	}
-
-	return items, total, nil
-}
-
-// ListJoinTokensByTenant returns join tokens for a specific tenant.
-func (s *Store) ListJoinTokensByTenant(tenantName string, opts ...ListOption) ([]*JoinToken, int, error) {
-	opts = append(opts, WithLabelSelector("rezuscloud.io/tenant="+tenantName))
-	return s.ListJoinTokens(opts...)
-}
-
-// GetJoinToken returns a join token by its value. Returns nil if not found.
-// Unlike LookupJoinToken, this does not auto-remove expired tokens.
-func (s *Store) GetJoinToken(token string) (*JoinToken, error) {
-	var spec JoinTokenSpec
-	var status JoinTokenStatus
-
-	md, err := s.GetResource("jointoken", token, &spec, &status)
-	if err == ErrNotFound {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	return &JoinToken{Metadata: md, Spec: spec, Status: status}, nil
-}
-
-// DeleteJoinToken removes a join token from the store.
-func (s *Store) DeleteJoinToken(token string) error {
-	return s.RemoveResource("jointoken", token)
-}
-
-// CreateJoinToken creates a join token.
-func (s *Store) CreateJoinToken(token string, spec JoinTokenSpec, tenantName, nodeGroup string) (*JoinToken, error) {
-	labels := map[string]string{
-		"rezuscloud.io/tenant":     tenantName,
-		"rezuscloud.io/node-group": nodeGroup,
-	}
-
-	status := JoinTokenStatus{}
-
-	md, err := s.CreateResource("jointoken", token, spec, status, labels, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return &JoinToken{Metadata: md, Spec: spec, Status: status}, nil
-}
-
-// LookupJoinToken finds a token by value.
-func (s *Store) LookupJoinToken(token string) (*JoinToken, error) {
-	var spec JoinTokenSpec
-	var status JoinTokenStatus
-
-	md, err := s.GetResource("jointoken", token, &spec, &status)
-	if err == ErrNotFound {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	// Check expiry.
-	if !spec.ExpiresAt.IsZero() && time.Now().UTC().After(spec.ExpiresAt) {
-		_ = s.RemoveResource("jointoken", token)
-		return nil, nil
-	}
-
-	return &JoinToken{Metadata: md, Spec: spec, Status: status}, nil
-}
-
-// ConsumeJoinToken looks up and deletes a single-use token.
-func (s *Store) ConsumeJoinToken(token string) (*JoinToken, error) {
-	jt, err := s.LookupJoinToken(token)
-	if err != nil {
-		return nil, err
-	}
-	if jt == nil {
-		return nil, nil
-	}
-
-	if jt.Spec.SingleUse {
-		_ = s.RemoveResource("jointoken", token)
-	}
-
-	now := time.Now().UTC()
-	jt.Status.Used = true
-	jt.Status.UsedAt = &now
-
-	return jt, nil
-}
-
-// CleanupExpiredTokens removes expired join tokens.
-func (s *Store) CleanupExpiredTokens() (int, error) {
-	result, err := s.db.Exec(
-		`DELETE FROM resources WHERE type = 'jointoken' AND json_extract(spec, '$.expiresAt') IS NOT NULL AND json_extract(spec, '$.expiresAt') != '' AND datetime(json_extract(spec, '$.expiresAt')) < datetime('now')`,
-	)
-	if err != nil {
-		return 0, err
-	}
-	n, _ := result.RowsAffected()
-	return int(n), nil
 }
 
 // --- User Operations ---

@@ -1,15 +1,14 @@
-package watchbus
+package watch
 
 import (
 	"testing"
 
 	"github.com/rezuscloud/rezuscloud/internal/state"
-	"github.com/rezuscloud/rezuscloud/internal/watch"
 )
 
 func TestAdapter_TranslatesAddedEvent(t *testing.T) {
-	bus := watch.NewBus()
-	adapter := New(bus)
+	bus := NewBus()
+	adapter := NewAdapter(bus)
 
 	ch, cancel := bus.Subscribe("tenant")
 	defer cancel()
@@ -24,7 +23,7 @@ func TestAdapter_TranslatesAddedEvent(t *testing.T) {
 
 	select {
 	case ev := <-ch:
-		if ev.Type != watch.EventAdded {
+		if ev.Type != EventAdded {
 			t.Errorf("type = %s, want ADDED", ev.Type)
 		}
 		obj, ok := ev.Object.(map[string]any)
@@ -50,8 +49,8 @@ func TestAdapter_TranslatesAddedEvent(t *testing.T) {
 }
 
 func TestAdapter_TranslatesModifiedEvent(t *testing.T) {
-	bus := watch.NewBus()
-	adapter := New(bus)
+	bus := NewBus()
+	adapter := NewAdapter(bus)
 
 	ch, cancel := bus.Subscribe("machine")
 	defer cancel()
@@ -64,7 +63,7 @@ func TestAdapter_TranslatesModifiedEvent(t *testing.T) {
 
 	select {
 	case ev := <-ch:
-		if ev.Type != watch.EventModified {
+		if ev.Type != EventModified {
 			t.Errorf("type = %s, want MODIFIED", ev.Type)
 		}
 	default:
@@ -73,8 +72,8 @@ func TestAdapter_TranslatesModifiedEvent(t *testing.T) {
 }
 
 func TestAdapter_TranslatesDeletedEvent(t *testing.T) {
-	bus := watch.NewBus()
-	adapter := New(bus)
+	bus := NewBus()
+	adapter := NewAdapter(bus)
 
 	ch, cancel := bus.Subscribe("provider")
 	defer cancel()
@@ -87,7 +86,7 @@ func TestAdapter_TranslatesDeletedEvent(t *testing.T) {
 
 	select {
 	case ev := <-ch:
-		if ev.Type != watch.EventDeleted {
+		if ev.Type != EventDeleted {
 			t.Errorf("type = %s, want DELETED", ev.Type)
 		}
 	default:
@@ -97,9 +96,9 @@ func TestAdapter_TranslatesDeletedEvent(t *testing.T) {
 
 func TestAdapter_DroppedEvents(t *testing.T) {
 	// Verify that the adapter itself doesn't block when the bus is full
-	// (watch.Bus already drops on slow watcher).
-	bus := watch.NewBus()
-	adapter := New(bus)
+	// (Bus already drops on slow watcher).
+	bus := NewBus()
+	adapter := NewAdapter(bus)
 
 	// Publish without subscribing — must not panic.
 	for i := 0; i < 100; i++ {
