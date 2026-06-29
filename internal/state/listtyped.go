@@ -22,7 +22,7 @@ import "encoding/json"
 //	        return p, nil
 //	    })
 func ListTyped[T any](
-	s *Store,
+	s StoreAPI,
 	resourceType string,
 	opts ListOptions,
 	build func(meta Metadata, specRaw, statusRaw json.RawMessage) (T, error),
@@ -45,7 +45,7 @@ func ListTyped[T any](
 // ListTypedByTenant is sugar over ListTyped for the most common case: list
 // resources with label `rezuscloud.io/tenant=<tenant>`.
 func ListTypedByTenant[T any](
-	s *Store,
+	s StoreAPI,
 	resourceType, tenant string,
 	build func(meta Metadata, specRaw, statusRaw json.RawMessage) (T, error),
 ) ([]T, int, error) {

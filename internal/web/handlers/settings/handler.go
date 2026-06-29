@@ -53,7 +53,7 @@ type Host interface {
 
 // Handler serves the settings + providers + manual-join routes.
 type Handler struct {
-	store      *state.Store
+	store      state.StoreAPI
 	backupSvc  *backup.Service // optional — nil disables backup routes
 	auditStore audit.Store     // optional — nil disables the audit page
 	host       Host
@@ -61,7 +61,7 @@ type Handler struct {
 
 // New creates a settings Handler. backupSvc and auditStore may be nil —
 // the corresponding pages degrade gracefully (503 / hidden).
-func New(store *state.Store, backupSvc *backup.Service, auditStore audit.Store, host Host) *Handler {
+func New(store state.StoreAPI, backupSvc *backup.Service, auditStore audit.Store, host Host) *Handler {
 	return &Handler{store: store, backupSvc: backupSvc, auditStore: auditStore, host: host}
 }
 

@@ -24,13 +24,13 @@ type Renderer interface {
 
 // Handler serves /login, POST /login, /logout.
 type Handler struct {
-	store      *state.Store
+	store      state.StoreAPI
 	jwtManager *auth.JWTManager
 	renderer   Renderer
 }
 
 // New creates an authn Handler.
-func New(store *state.Store, jwtManager *auth.JWTManager, renderer Renderer) *Handler {
+func New(store state.StoreAPI, jwtManager *auth.JWTManager, renderer Renderer) *Handler {
 	return &Handler{store: store, jwtManager: jwtManager, renderer: renderer}
 }
 

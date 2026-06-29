@@ -58,13 +58,13 @@ type Host interface {
 
 // Handler serves the clusters routes.
 type Handler struct {
-	store      *state.Store
+	store      state.StoreAPI
 	upgradeMgr *upgrade.Manager // optional
 	host       Host
 }
 
 // New creates a clusters Handler. upgradeMgr may be nil.
-func New(store *state.Store, upgradeMgr *upgrade.Manager, host Host) *Handler {
+func New(store state.StoreAPI, upgradeMgr *upgrade.Manager, host Host) *Handler {
 	return &Handler{store: store, upgradeMgr: upgradeMgr, host: host}
 }
 

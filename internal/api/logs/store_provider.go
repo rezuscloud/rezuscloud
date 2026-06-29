@@ -11,11 +11,11 @@ import (
 // In production, this reads machine bootstrap logs via the Talos API.
 // For now, it generates synthetic logs from machine status changes.
 type StoreLogProvider struct {
-	store *state.Store
+	store state.StoreAPI
 }
 
 // NewStoreLogProvider creates a log provider backed by the state store.
-func NewStoreLogProvider(store *state.Store) *StoreLogProvider {
+func NewStoreLogProvider(store state.StoreAPI) *StoreLogProvider {
 	return &StoreLogProvider{store: store}
 }
 
