@@ -253,6 +253,11 @@ func (a *API) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.Metadata.ResourceVersion == 0 {
+		writeError(w, "metadata.resourceVersion is required for updates", "BadRequest", http.StatusBadRequest)
+		return
+	}
+
 	if !validRoles[req.Spec.Role] {
 		writeError(w, "spec.role must be 'controlplane' or 'worker'", "BadRequest", http.StatusBadRequest)
 		return
@@ -281,7 +286,7 @@ func (a *API) Update(w http.ResponseWriter, r *http.Request) {
 	labels["rezuscloud.io/role"] = req.Spec.Role
 	labels["rezuscloud.io/tenant"] = tenant
 
-	meta, err := a.store.UpdateResource("nodegroup", name, existing.Metadata.ResourceVersion, req.Spec, labels, existing.Metadata.Annotations)
+	meta, err := a.store.UpdateResource("nodegroup", name, req.Metadata.ResourceVersion, req.Spec, labels, existing.Metadata.Annotations)
 	if err != nil {
 		if errors.Is(err, state.ErrConflict) {
 			writeError(w, "conflict: resource version mismatch", "Conflict", http.StatusConflict)

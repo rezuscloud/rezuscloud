@@ -25,6 +25,32 @@ func TestOpen_CreatesDatabase(t *testing.T) {
 	}
 }
 
+func TestCreateResource_ReturnsPersistedVersionNotRowID(t *testing.T) {
+	s := openTestStore(t)
+
+	// First insert consumes rowid=1.
+	_, err := s.CreateTenant("t1", TenantSpec{KubernetesVersion: "1.35.0"}, nil, nil)
+	if err != nil {
+		t.Fatalf("CreateTenant(t1): %v", err)
+	}
+
+	// Second insert gets rowid=2, but its optimistic-concurrency version column
+	// still starts at 1. The returned Metadata.ResourceVersion must reflect that
+	// persisted version, not the table-global rowid.
+	md, err := s.CreateResource("nodegroup", "workers", NodeGroupSpec{Role: "worker", Count: 2}, struct{}{}, map[string]string{"rezuscloud.io/tenant": "t1"}, nil)
+	if err != nil {
+		t.Fatalf("CreateResource(nodegroup): %v", err)
+	}
+	if md.ResourceVersion != 1 {
+		t.Fatalf("resourceVersion = %d, want 1 (persisted version column, not rowid)", md.ResourceVersion)
+	}
+
+	// A first update with the returned version must succeed immediately.
+	if _, err := s.UpdateResource("nodegroup", "workers", md.ResourceVersion, NodeGroupSpec{Role: "worker", Count: 3}, map[string]string{"rezuscloud.io/tenant": "t1"}, nil); err != nil {
+		t.Fatalf("first UpdateResource should succeed with returned resourceVersion: %v", err)
+	}
+}
+
 // --- Tenant Tests ---
 
 func TestTenant_CRUD(t *testing.T) {

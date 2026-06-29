@@ -418,7 +418,7 @@ func (s *Store) CreateResource(resourceType, name string, spec, status any, labe
 	now := time.Now().UTC()
 	uid := newUID()
 
-	result, err := s.db.Exec(
+	_, err = s.db.Exec(
 		`INSERT INTO resources (type, name, uid, spec, status, finalizers, labels, annotations, created_at, updated_at, version)
 		 VALUES (?, ?, ?, ?, ?, '[]', ?, ?, ?, ?, 1)`,
 		resourceType, name, uid, string(specJSON), string(statusJSON), string(labelsJSON), string(annotationsJSON), now, now,
@@ -427,21 +427,9 @@ func (s *Store) CreateResource(resourceType, name string, spec, status any, labe
 		return Metadata{}, fmt.Errorf("insert resource: %w", err)
 	}
 
-	version, _ := result.LastInsertId()
-
-	md := Metadata{
-		Name:            name,
-		UID:             uid,
-		ResourceVersion: version,
-		CreatedAt:       now,
-		UpdatedAt:       now,
-		Labels:          labels,
-		Annotations:     annotations,
-	}
-
-	s.publish("ADDED", resourceType, md, specJSON, statusJSON)
-
-	return md, nil
+	// Reload so the returned Metadata.ResourceVersion matches the persisted
+	// `version` column (which optimistic concurrency checks), not SQLite's rowid.
+	return s.updateResourceMetadataAndPublish("ADDED", resourceType, name)
 }
 
 // GetResource reads a single resource.
