@@ -40,6 +40,13 @@ jobs:
         run: |
           git fetch --force --prune --tags origin '+refs/heads/*:refs/remotes/origin/*'
           git fetch --force --prune --tags --unshallow || true
+          shallow_file="$(git rev-parse --git-path shallow)"
+          echo "shallow before cleanup: $(git rev-parse --is-shallow-repository)"
+          if [ -f "$shallow_file" ]; then
+            echo "removing stale shallow marker: $shallow_file"
+            rm -f "$shallow_file"
+          fi
+          echo "shallow after cleanup: $(git rev-parse --is-shallow-repository)"
           test "$(git rev-parse --is-shallow-repository)" = false
 
       - name: Setup .NET
@@ -156,6 +163,13 @@ jobs:
         run: |
           git fetch --force --prune --tags origin '+refs/heads/*:refs/remotes/origin/*'
           git fetch --force --prune --tags --unshallow || true
+          shallow_file="$(git rev-parse --git-path shallow)"
+          echo "shallow before cleanup: $(git rev-parse --is-shallow-repository)"
+          if [ -f "$shallow_file" ]; then
+            echo "removing stale shallow marker: $shallow_file"
+            rm -f "$shallow_file"
+          fi
+          echo "shallow after cleanup: $(git rev-parse --is-shallow-repository)"
           test "$(git rev-parse --is-shallow-repository)" = false
 
       - name: Setup .NET
