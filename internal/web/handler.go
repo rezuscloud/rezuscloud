@@ -40,7 +40,7 @@ import (
 // (store, JWT manager, watch bus, audit/backup/upgrade subsystems) and
 // implements the Host interface that section sub-packages call back into.
 type Handler struct {
-	store       *state.Store
+	store       state.StoreAPI
 	jwtManager  *auth.JWTManager
 	bus         *watch.Bus                    // optional — enables /events/stream
 	auditStore  audit.Store                   // optional — enables /settings/audit
@@ -52,7 +52,7 @@ type Handler struct {
 // NewHandler creates a WebUI handler.
 // jwtManager is required for login and cookie validation.
 // bus is optional — pass nil to disable the /events/stream endpoint.
-func NewHandler(store *state.Store, jwtManager *auth.JWTManager, bus *watch.Bus) *Handler {
+func NewHandler(store state.StoreAPI, jwtManager *auth.JWTManager, bus *watch.Bus) *Handler {
 	return &Handler{store: store, jwtManager: jwtManager, bus: bus}
 }
 

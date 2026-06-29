@@ -9,11 +9,11 @@ import (
 
 // UserHandlers provides HTTP handlers for user management.
 type UserHandlers struct {
-	store *state.Store
+	store state.StoreAPI
 }
 
 // NewUserHandlers creates user management handlers.
-func NewUserHandlers(store *state.Store) *UserHandlers {
+func NewUserHandlers(store state.StoreAPI) *UserHandlers {
 	return &UserHandlers{store: store}
 }
 

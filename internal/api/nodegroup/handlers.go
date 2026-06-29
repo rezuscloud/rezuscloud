@@ -50,11 +50,11 @@ var validRoles = map[string]bool{
 
 // API provides HTTP handlers for NodeGroup CRUD.
 type API struct {
-	store *state.Store
+	store state.StoreAPI
 }
 
 // NewAPI creates a NodeGroup API handler.
-func NewAPI(store *state.Store) *API {
+func NewAPI(store state.StoreAPI) *API {
 	return &API{store: store}
 }
 

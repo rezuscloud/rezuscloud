@@ -12,11 +12,11 @@ import (
 
 // TenantAPI handles tenant CRUD operations.
 type TenantAPI struct {
-	store *state.Store
+	store state.StoreAPI
 }
 
 // NewTenantAPI creates a tenant API handler.
-func NewTenantAPI(store *state.Store) *TenantAPI {
+func NewTenantAPI(store state.StoreAPI) *TenantAPI {
 	return &TenantAPI{store: store}
 }
 

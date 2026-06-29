@@ -11,7 +11,7 @@ import (
 // ResolvePatches returns all enabled config patches for a tenant, optionally
 // filtered by target role. Returns patch YAML strings ready for the Talos
 // config generator.
-func ResolvePatches(store *state.Store, tenant, role string) ([]string, error) {
+func ResolvePatches(store state.StoreAPI, tenant, role string) ([]string, error) {
 	items, _, err := state.ListTypedByTenant(store, "configpatch", tenant,
 		func(meta state.Metadata, specRaw, _ json.RawMessage) (PatchSpec, error) {
 			var ps PatchSpec
