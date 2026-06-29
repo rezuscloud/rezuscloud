@@ -30,9 +30,10 @@ type NodeGroupSpecAPI struct {
 
 // NodeGroupStatus tracks the observed state of a node group.
 type NodeGroupStatus struct {
-	Phase         string `json:"phase"`
-	ReadyMachines int    `json:"readyMachines"`
-	TotalMachines int    `json:"totalMachines"`
+	Phase          string                      `json:"phase"`
+	ReadyMachines  int                         `json:"readyMachines"`
+	TotalMachines  int                         `json:"totalMachines"`
+	Reconciliation *state.ReconciliationStatus `json:"reconciliation,omitempty"`
 }
 
 // NodeGroupPhase constants.

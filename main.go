@@ -105,8 +105,16 @@ func main() {
 		}
 		return names, nil
 	}
+	statusTracker := reconcile.NewStatusTracker(store)
+	statusTracker.Start(ctx)
+	defer statusTracker.Stop()
+	statusListener := statusTracker.Listener()
+	projectionListener := reconcile.ProjectionListener(projIndex)
 	queue := applyqueue.New(applier, tenantLister,
-		reconcile.ProjectionListener(projIndex),
+		func(tenant string, phase applyqueue.Phase, err error) {
+			statusListener(tenant, phase, err)
+			projectionListener(tenant, phase, err)
+		},
 		applyqueue.Config{},
 	)
 	queue.Start(ctx)
