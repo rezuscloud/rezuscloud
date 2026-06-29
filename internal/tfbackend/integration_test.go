@@ -34,6 +34,10 @@ func tofuBackendEnv(t *testing.T) (store *Store, workdir string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Pin the pool to one connection: ":memory:" is per-connection in modernc/sqlite,
+	// so concurrent tofu requests must not open a second connection that sees an
+	// empty database (cf. applyqueue integration test).
+	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = db.Close() })
 	store, err = New(db)
 	if err != nil {

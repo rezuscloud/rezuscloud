@@ -18,6 +18,9 @@ func newTestStore(t *testing.T) *Store {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
+	// ":memory:" is per-connection in modernc/sqlite; pin the pool so the
+	// handler (serving concurrent requests) shares one DB with migrate().
+	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = db.Close() })
 	s, err := New(db)
 	if err != nil {
