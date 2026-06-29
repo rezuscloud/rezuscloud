@@ -51,6 +51,7 @@ jobs:
         uses: gittools/actions/gitversion/execute@v4.5.0
         with:
           configFilePath: .github/GitVersion.yml
+          disableShallowCloneCheck: true
 
       - name: Display Version
         run: |
@@ -160,6 +161,7 @@ jobs:
         uses: gittools/actions/gitversion/execute@v4.5.0
         with:
           configFilePath: .github/GitVersion.yml
+          disableShallowCloneCheck: true
 
       - name: Display Version
         run: |
