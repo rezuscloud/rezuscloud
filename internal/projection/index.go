@@ -29,6 +29,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 
 	"github.com/rezuscloud/rezuscloud/internal/provider"
 )
@@ -96,6 +97,8 @@ type Index struct {
 	// serial[tenant] is the StateSerial of the last successful Rebuild. Lets
 	// readers detect a stale index (state bumped but Rebuild not yet run).
 	serial map[string]int64
+
+	mu sync.RWMutex // guards entries + serial (Rebuild writes, Lookup/List read)
 }
 
 // New returns an Index backed by source and the provider registry. Extractors
@@ -169,8 +172,10 @@ func (idx *Index) Rebuild(ctx context.Context, tenant string) (int, error) {
 		}
 	}
 
+	idx.mu.Lock()
 	idx.entries[tenant] = tenantIdx
 	idx.serial[tenant] = serial
+	idx.mu.Unlock()
 	return projected, nil
 }
 
@@ -193,6 +198,8 @@ func (idx *Index) extractorFor(tfType string) (Extractor, string, bool) {
 
 // Lookup returns one projected resource by TF type + name, or false.
 func (idx *Index) Lookup(tenant, tfType, name string) (Resource, bool) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
 	tenantIdx, ok := idx.entries[tenant]
 	if !ok {
 		return Resource{}, false
@@ -209,6 +216,8 @@ func (idx *Index) Lookup(tenant, tfType, name string) (Resource, bool) {
 // Kind. Order is stable (sorted by TFAddress). This is what the API GET/list
 // handlers call.
 func (idx *Index) List(tenant string, kindFilter string) []Resource {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
 	tenantIdx, ok := idx.entries[tenant]
 	if !ok {
 		return nil
@@ -229,12 +238,16 @@ func (idx *Index) List(tenant string, kindFilter string) []Resource {
 // Serial returns the state serial the tenant's index was last built from, or 0
 // if never built. Lets the API flag a stale read (state serial > index serial).
 func (idx *Index) Serial(tenant string) int64 {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
 	return idx.serial[tenant]
 }
 
 // Drop removes a tenant's index (e.g. on tenant deletion). The index is a cache;
 // dropping it loses nothing — Rebuild reproduces it from state.
 func (idx *Index) Drop(tenant string) {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
 	delete(idx.entries, tenant)
 	delete(idx.serial, tenant)
 }

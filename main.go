@@ -10,17 +10,26 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/rezuscloud/rezuscloud/internal/api"
+	"github.com/rezuscloud/rezuscloud/internal/applyqueue"
 	"github.com/rezuscloud/rezuscloud/internal/audit"
 	"github.com/rezuscloud/rezuscloud/internal/auth"
 	"github.com/rezuscloud/rezuscloud/internal/backup"
 	"github.com/rezuscloud/rezuscloud/internal/ingress"
 	"github.com/rezuscloud/rezuscloud/internal/metrics"
+	"github.com/rezuscloud/rezuscloud/internal/projection"
+	"github.com/rezuscloud/rezuscloud/internal/provider"
+	providermetal "github.com/rezuscloud/rezuscloud/internal/provider/metal"
+	provideroci "github.com/rezuscloud/rezuscloud/internal/provider/oci"
+	provideros "github.com/rezuscloud/rezuscloud/internal/provider/openstack"
+	"github.com/rezuscloud/rezuscloud/internal/reconcile"
 	"github.com/rezuscloud/rezuscloud/internal/state"
 	"github.com/rezuscloud/rezuscloud/internal/tfbackend"
+	"github.com/rezuscloud/rezuscloud/internal/tfexec"
 	"github.com/rezuscloud/rezuscloud/internal/upgrade"
 	"github.com/rezuscloud/rezuscloud/internal/watch"
 	"github.com/rezuscloud/rezuscloud/internal/web"
@@ -56,7 +65,60 @@ func main() {
 
 	// Initialize watch bus + wire into store mutations.
 	bus := watch.NewBus()
-	store.SetBus(watch.NewAdapter(bus))
+
+	// Provider registry: maps ProviderClass prefixes to renderer modules.
+	registry := provider.NewRegistry()
+	registry.Register(provideroci.New())
+	registry.Register(provideros.New())
+	registry.Register(providermetal.New())
+
+	// TF execution engine: runs tofu in per-tenant workdirs, reading/writing
+	// state through RezusCloud's own HTTP backend (started below).
+	backendURL := "http://127.0.0.1:" + portFromAddr(cfg.Addr) + "/tfstate"
+	tfExec, err := tfexec.New(filepath.Join(cfg.DataDir, "tfwork"),
+		tfexec.WithBackendURL(backendURL),
+	)
+	if err != nil {
+		log.Fatalf("tfexec init: %v", err)
+	}
+
+	// Apply queue: debounced per-tenant reconciliation scheduler (#87a). Driven
+	// by the production Applier (#87b/#99) which renders .tf.json + runs tofu.
+	applier := reconcile.NewApplier(tfExec, registry, store)
+
+	// Projection index: TF state → K8s-style resource read model (#91). Rebuilt
+	// after each successful apply by the queue's listener.
+	projIndex := projection.New(
+		projection.StateSourceFunc(tfExec.StatePull),
+		registry,
+	)
+	projIndex.RegisterExtractor("Machine", machineExtractor)
+
+	tenantLister := func() ([]string, error) {
+		tenants, _, err := store.ListTenants()
+		if err != nil {
+			return nil, err
+		}
+		names := make([]string, len(tenants))
+		for i, t := range tenants {
+			names[i] = t.Metadata.Name
+		}
+		return names, nil
+	}
+	queue := applyqueue.New(applier, tenantLister,
+		reconcile.ProjectionListener(projIndex),
+		applyqueue.Config{},
+	)
+	queue.Start(ctx)
+	defer queue.Stop()
+
+	// MultiBus: fan out store mutations to BOTH the watch SSE adapter AND the
+	// reconcile enqueue bus. A tenant/nodegroup mutation triggers a debounced
+	// apply via the queue.
+	store.SetBus(state.NewMultiBus(
+		watch.NewAdapter(bus),
+		reconcile.NewEnqueueBus(queue),
+	))
 
 	// Initialize auth.
 	jwtManager := auth.NewJWTManager(cfg.JWTSecret)
@@ -243,4 +305,33 @@ func atoiDefault(s string, fallback int) int {
 		return fallback
 	}
 	return v
+}
+
+// portFromAddr extracts the port from a ":PORT" or "HOST:PORT" listen address.
+// Falls back to "8080" if parsing fails.
+func portFromAddr(addr string) string {
+	// Handle ":PORT" (most common) and "HOST:PORT".
+	if i := strings.LastIndexByte(addr, ':'); i >= 0 {
+		return addr[i+1:]
+	}
+	return "8080"
+}
+
+// machineExtractor pulls Machine-relevant fields from a TF instance's
+// attributes for the projection index. Works across providers that expose
+// standard instance attributes (id, public_ip, private_ip, shape, display_name).
+func machineExtractor(tfType string, attrs map[string]interface{}) map[string]interface{} {
+	if attrs == nil {
+		return nil
+	}
+	spec := map[string]interface{}{}
+	for _, k := range []string{"id", "public_ip", "private_ip", "shape", "display_name", "state"} {
+		if v, ok := attrs[k]; ok {
+			spec[k] = v
+		}
+	}
+	if len(spec) == 0 {
+		return nil
+	}
+	return spec
 }
