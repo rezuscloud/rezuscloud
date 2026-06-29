@@ -1,10 +1,13 @@
 package reconcile
 
 import (
+	"context"
 	"encoding/json"
 	"path/filepath"
 	"testing"
+	"time"
 
+	"github.com/rezuscloud/rezuscloud/internal/applyqueue"
 	"github.com/rezuscloud/rezuscloud/internal/state"
 )
 
@@ -134,6 +137,68 @@ func TestEnqueueBus_UnrelatedEventSkipped(t *testing.T) {
 	if len(calls) != 0 {
 		t.Errorf("unrelated event enqueued %d tenants, want 0", len(calls))
 	}
+}
+
+func TestEnqueueBus_StatusMutationSkipped(t *testing.T) {
+	calls := make(chan string, 10)
+	bus := &testQueue{calls: calls}
+
+	eb := NewEnqueueBus(bus)
+	eb.Publish("tenant", state.ResourceEvent{
+		Type:         "MODIFIED",
+		Mutation:     state.MutationStatus,
+		ResourceType: "tenant",
+		Metadata:     state.Metadata{Name: "personal"},
+	})
+
+	if len(calls) != 0 {
+		t.Fatalf("status-only mutation enqueued %d tenants, want 0", len(calls))
+	}
+}
+
+func TestStatusTracker_PersistsReconciliationStatus(t *testing.T) {
+	store := openTestStore(t)
+
+	_, err := store.CreateTenant("t1", state.TenantSpec{KubernetesVersion: "1.35.0"}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(ngSpecJSON{Count: 2, Role: "worker", ProviderClass: "oci:test"})
+	_, err = store.CreateResource("nodegroup", "workers", json.RawMessage(raw), nodeGroupStatusJSON{Phase: "forming"},
+		map[string]string{"rezuscloud.io/tenant": "t1", "rezuscloud.io/role": "worker"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	tracker := NewStatusTracker(store)
+	tracker.Start(ctx)
+	defer func() {
+		cancel()
+		tracker.Stop()
+	}()
+	listener := tracker.Listener()
+
+	listener("t1", applyqueue.PhaseQueued, nil)
+	listener("t1", applyqueue.PhaseApplying, nil)
+	listener("t1", applyqueue.PhaseFailed, context.DeadlineExceeded)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		tenant, _ := store.GetTenant("t1")
+		if tenant != nil && tenant.Status.Reconciliation != nil && tenant.Status.Reconciliation.Phase == string(applyqueue.PhaseFailed) {
+			var ng nodeGroupStatusJSON
+			_, err := store.GetResource("nodegroup", "workers", &struct{}{}, &ng)
+			if err == nil && ng.Reconciliation != nil && ng.Reconciliation.Phase == string(applyqueue.PhaseFailed) {
+				if tenant.Status.Reconciliation.LastError == "" || ng.Reconciliation.LastError == "" {
+					t.Fatalf("expected lastError to be preserved on failure")
+				}
+				return
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("reconciliation status was not persisted to tenant and nodegroup")
 }
 
 func TestLoadNodeGroups(t *testing.T) {

@@ -37,15 +37,15 @@ rezuscloud binary (server)                       rezusctl binary (CLI)
 ├── HTTP API (REST, K8s-style) [built]            ├── boot (Docker/QEMU platforms) [built]
 ├── WebUI (templ + HTMX) [built]                  ├── tenant create/list/delete [built]
 ├── TF HTTP backend (state store) [built]         └── kubeconfig extraction [built]
-├── TF execution engine (exec tofu) [scaffolded]
-├── Apply Queue (debounced per-tenant) [scaffolded]
+├── TF execution engine (exec tofu) [built]
+├── Apply Queue (debounced per-tenant) [built]
 ├── Event Bus (NATS, embedded) [planned #TBD]
-├── Controllers (async reconciliation) [planned #87b/#99]
-│   ├── TenantReconciler          [planned]
-│   ├── NodeGroupReconciler       [planned]
+├── Controllers (async reconciliation) [built]
+│   ├── TenantReconciler          [built]
+│   ├── NodeGroupReconciler       [built]
 │   └── UpgradeReconciler         [planned]
-├── Providers (TF config generation) [scaffolded]
-├── State projection (TF state → API spec) [planned #91/#103]
+├── Providers (TF config generation) [built]
+├── State projection (TF state → API spec) [built]
 ├── Config generation (Talos) [built]
 └── Rolling upgrades [built]
 ```
@@ -78,7 +78,7 @@ channels), to be reworked onto NATS.
 
 ### Scheduling
 
-**Debounced per-tenant apply queue + optimistic concurrency [scaffolded].** The
+**Debounced per-tenant apply queue + optimistic concurrency [built].** The
 API layer uses `resourceVersion` (optimistic concurrency) so users can PUT
 resources concurrently without lost updates. The apply layer runs one debounced
 queue per tenant — rapid edits coalesce into a single `tofu apply` that
