@@ -40,6 +40,9 @@ func backendEnv(t *testing.T) (store *tfbackend.Store, endpoint string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// ":memory:" is per-connection in modernc/sqlite; pin the pool so concurrent
+	// tofu HTTP requests share one DB with migrate().
+	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = db.Close() })
 	store, err = tfbackend.New(db)
 	if err != nil {
