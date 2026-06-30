@@ -47,7 +47,7 @@ func newTestServer(t *testing.T) *testServer {
 	auditComponent := audit.NewComponent(store.DB(), audit.ComponentOptions{})
 	t.Cleanup(auditComponent.Close)
 
-	handler := api.Router(store, jwtManager, auditComponent, nil, upgrade.NewManager(store))
+	handler := api.Router(store, jwtManager, auditComponent, nil, upgrade.NewManager(store), nil)
 
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)

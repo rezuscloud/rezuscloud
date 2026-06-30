@@ -10,10 +10,12 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/api/middleware"
 	"github.com/rezuscloud/rezuscloud/internal/api/nodegroup"
 	"github.com/rezuscloud/rezuscloud/internal/api/patch"
+	apiproj "github.com/rezuscloud/rezuscloud/internal/api/projection"
 	"github.com/rezuscloud/rezuscloud/internal/api/provider"
 	"github.com/rezuscloud/rezuscloud/internal/audit"
 	"github.com/rezuscloud/rezuscloud/internal/auth"
 	"github.com/rezuscloud/rezuscloud/internal/backup"
+	"github.com/rezuscloud/rezuscloud/internal/projection"
 	"github.com/rezuscloud/rezuscloud/internal/state"
 	"github.com/rezuscloud/rezuscloud/internal/upgrade"
 )
@@ -22,7 +24,7 @@ import (
 // auditComponent is required — the API runs audit middleware on every mutation.
 // backupComponent may be nil — if nil, /api/v1/backups/* is not registered.
 // upgradeManager is required — owns upgrade run lifecycle.
-func Router(store state.StoreAPI, jwtManager *auth.JWTManager, auditComponent *audit.Component, backupComponent *backup.Component, upgradeManager *upgrade.Manager) http.Handler {
+func Router(store state.StoreAPI, jwtManager *auth.JWTManager, auditComponent *audit.Component, backupComponent *backup.Component, upgradeManager *upgrade.Manager, projectionIdx *projection.Index) http.Handler {
 	mux := http.NewServeMux()
 
 	// Public endpoints (no auth required).
@@ -55,6 +57,10 @@ func Router(store state.StoreAPI, jwtManager *auth.JWTManager, auditComponent *a
 	// Machine log streaming.
 	logHandler := logs.NewHandler(logs.NewStoreLogProvider(store))
 	logHandler.RegisterRoutes(protected)
+
+	// Projected TF-state read model (ADR 0005). Optional — returns 503 if the
+	// projection subsystem isn't configured.
+	apiproj.NewAPI(projectionIdx).RegisterRoutes(protected)
 
 	// Upgrade endpoints.
 	upgradeAPI := upgrade.NewAPI(store, nil, upgradeManager)
