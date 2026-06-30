@@ -19,6 +19,7 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/audit"
 	"github.com/rezuscloud/rezuscloud/internal/auth"
 	"github.com/rezuscloud/rezuscloud/internal/backup"
+	"github.com/rezuscloud/rezuscloud/internal/credentials"
 	"github.com/rezuscloud/rezuscloud/internal/ingress"
 	"github.com/rezuscloud/rezuscloud/internal/metrics"
 	"github.com/rezuscloud/rezuscloud/internal/projection"
@@ -113,12 +114,23 @@ func main() {
 	statusTracker := reconcile.NewStatusTracker(store)
 	statusTracker.Start(ctx)
 	defer statusTracker.Stop()
+
+	// Secrets cache: in-memory tenant credentials for status-plane probes
+	// (ADR 0016, #92). Refreshed after each successful apply.
+	secretsCache := credentials.NewSecretsCache(credentials.StoreSource(store))
+
 	statusListener := statusTracker.Listener()
 	projectionListener := reconcile.ProjectionListener(projIndex)
+	secretsListener := func(tenant string, phase applyqueue.Phase, err error) {
+		if phase == applyqueue.PhaseApplied {
+			secretsCache.Refresh(ctx, tenant)
+		}
+	}
 	queue := applyqueue.New(applier, tenantLister,
 		func(tenant string, phase applyqueue.Phase, err error) {
 			statusListener(tenant, phase, err)
 			projectionListener(tenant, phase, err)
+			secretsListener(tenant, phase, err)
 		},
 		applyqueue.Config{},
 	)
