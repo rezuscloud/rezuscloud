@@ -50,11 +50,11 @@ func setupMachine(t *testing.T, store *state.Store, tenant, id string) {
 // --- Test doubles ---
 
 type mockUpgrader struct {
-	mu         sync.Mutex
-	upgrades   []string // machine IDs whose UpgradeMachine was called
-	upgradeErr map[string]error
-	healthErr  map[string]error
-	rollback   []string // machine IDs whose RollbackMachine was called
+	mu          sync.Mutex
+	upgrades    []string // machine IDs whose UpgradeMachine was called
+	upgradeErr  map[string]error
+	healthErr   map[string]error
+	rollback    []string // machine IDs whose RollbackMachine was called
 	rollbackErr map[string]error
 }
 
