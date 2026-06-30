@@ -63,7 +63,7 @@ func Router(store state.StoreAPI, jwtManager *auth.JWTManager, auditComponent *a
 	apiproj.NewAPI(projectionIdx).RegisterRoutes(protected)
 
 	// Upgrade endpoints.
-	upgradeAPI := upgrade.NewAPI(store, nil, upgradeManager)
+	upgradeAPI := upgrade.NewAPI(store, upgradeManager)
 	upgradeAPI.RegisterRoutes(protected)
 
 	// Backup endpoints (optional — registered only if component is provided).
