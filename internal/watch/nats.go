@@ -41,7 +41,16 @@ func NewNATSBus() (*NATSBus, error) {
 	if err != nil {
 		return nil, fmt.Errorf("nats: find free port: %w", err)
 	}
-	port := ln.Addr().(*net.TCPAddr).Port
+	_, portStr, err := net.SplitHostPort(ln.Addr().String())
+	if err != nil {
+		_ = ln.Close()
+		return nil, fmt.Errorf("nats: parse listen addr: %w", err)
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		_ = ln.Close()
+		return nil, fmt.Errorf("nats: parse port: %w", err)
+	}
 	_ = ln.Close()
 
 	opts := &natsserver.Options{
@@ -55,9 +64,7 @@ func NewNATSBus() (*NATSBus, error) {
 	if err != nil {
 		return nil, fmt.Errorf("nats: create server: %w", err)
 	}
-	go func() {
-		_ = srv.Start()
-	}()
+	go srv.Start()
 
 	// Wait for server to be ready (client connections block until ready, but
 	// the server needs a moment to bind the listener).
