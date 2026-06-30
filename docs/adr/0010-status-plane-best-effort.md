@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (mechanism deferred)
+Accepted (mechanism decided in [ADR 0016](0016-status-plane-on-demand-probe.md))
 
 ## Context
 

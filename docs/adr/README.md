@@ -23,12 +23,13 @@ library, etc.) is preserved separately in
 | [0007](0007-provider-as-tf-wrapper.md) | Provider — The RezusCloud Module Wrapping a Real TF Provider | Accepted |
 | [0008](0008-config-delivery-user-data-and-talos-api.md) | Config Delivery via `user_data` and Talos API (No SideroLink) | Accepted |
 | [0009](0009-event-bus-nats.md) | NATS as the Event/Streaming Primitive | Accepted |
-| [0010](0010-status-plane-best-effort.md) | Status Plane — Best-Effort, Never Authoritative | Accepted (mechanism deferred) |
+| [0010](0010-status-plane-best-effort.md) | Status Plane — Best-Effort, Never Authoritative | Accepted (mechanism in [ADR 0016](0016-status-plane-on-demand-probe.md)) |
 | [0011](0011-webui-templ-htmx.md) | WebUI — templ + HTMX + Tailwind | Accepted |
 | [0012](0012-auth-local-jwt-and-api-tokens.md) | Auth — Local JWT Users and API Tokens | Accepted |
 | [0013](0013-audit-log-http-middleware.md) | Audit Log — HTTP Middleware Pattern | Accepted |
 | [0014](0014-configpatch-single-scope.md) | ConfigPatch — Single Tenant-Wide Scope | Accepted |
 | [0015](0015-read-only-surfacing.md) | Read-Only Surfacing of Lower-Layer State | Accepted |
+| [0016](0016-status-plane-on-demand-probe.md) | Status-Plane Gathering — On-Demand Probe with Short TTL | Accepted |
 
 ## Numbering
 
