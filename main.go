@@ -32,6 +32,7 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/tfbackend"
 	"github.com/rezuscloud/rezuscloud/internal/tfexec"
 	"github.com/rezuscloud/rezuscloud/internal/upgrade"
+	talosupgrade "github.com/rezuscloud/rezuscloud/internal/upgrade/talos"
 	"github.com/rezuscloud/rezuscloud/internal/watch"
 	"github.com/rezuscloud/rezuscloud/internal/web"
 	"github.com/rezuscloud/rezuscloud/version"
@@ -90,7 +91,11 @@ func main() {
 
 	// Upgrade engine: owns the rolling upgrade loop + run persistence. Injected
 	// as the pre-apply upgrade hook (#93) so machines converge before tofu apply.
-	upgradeMgr := upgrade.NewManager(store, upgrade.NoOpMachineUpgrader{}, upgrade.NewStoreMachineLister(store))
+	// The per-machine adapter (#134) uses the SecretsCache to reach each
+	// tenant's Talos API.
+	secretsCacheForUpgrade := credentials.NewSecretsCache(credentials.StoreSource(store))
+	machineUpgrader := talosupgrade.New(secretsCacheForUpgrade, store)
+	upgradeMgr := upgrade.NewManager(store, machineUpgrader, upgrade.NewStoreMachineLister(store))
 
 	// Apply queue: debounced per-tenant reconciliation scheduler (#87a). Driven
 	// by the production Applier (#87b/#99) which renders .tf.json + runs tofu.
