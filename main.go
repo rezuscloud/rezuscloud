@@ -161,7 +161,7 @@ func main() {
 	// Registered with explicit methods because the WebUI registers method-scoped
 	// routes ("GET /", "GET /tenants", ...) and Go 1.22+ ServeMux panics when
 	// method-scoped and method-less patterns share a path prefix.
-	apiRouter := api.Router(store, jwtManager, auditComponent, backupComponent, upgradeMgr)
+	apiRouter := api.Router(store, jwtManager, auditComponent, backupComponent, upgradeMgr, projIndex)
 	for _, method := range []string{"GET", "POST", "PUT", "DELETE", "PATCH"} {
 		mux.Handle(method+" /api/", apiRouter)
 	}

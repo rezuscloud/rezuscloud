@@ -252,6 +252,19 @@ func (idx *Index) Drop(tenant string) {
 	delete(idx.serial, tenant)
 }
 
+// Tenants returns the names of tenants that have a populated projection index
+// (i.e. have had at least one successful Rebuild). Order is not guaranteed.
+// Used by read paths that need to iterate every known tenant.
+func (idx *Index) Tenants() []string {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	out := make([]string, 0, len(idx.entries))
+	for t := range idx.entries {
+		out = append(out, t)
+	}
+	return out
+}
+
 // --- state parsing ---
 
 // parsedState is the subset of the TF state JSON the projection reads.
