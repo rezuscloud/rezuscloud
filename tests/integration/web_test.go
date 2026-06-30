@@ -31,7 +31,7 @@ func newTestJar() http.CookieJar {
 // webuiServer is a full WebUI stack: store + watch bus + handler + HTTP server.
 type webuiServer struct {
 	store   *state.Store
-	bus     *watch.Bus
+	bus     watch.Bus
 	handler *web.Handler
 	server  *httptest.Server
 }
