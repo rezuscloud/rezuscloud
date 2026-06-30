@@ -39,7 +39,7 @@ rezuscloud binary (server)                       rezusctl binary (CLI)
 ├── TF HTTP backend (state store) [built]         └── kubeconfig extraction [built]
 ├── TF execution engine (exec tofu) [built]
 ├── Apply Queue (debounced per-tenant) [built]
-├── Event Bus (NATS, embedded) [planned #TBD]
+├── Event Bus (NATS, embedded) [built #110]
 ├── Controllers (async reconciliation) [built]
 │   ├── TenantReconciler          [built]
 │   ├── NodeGroupReconciler       [built]
@@ -72,9 +72,9 @@ on an external observability stack and does not build one now.
 **NATS, embedded in-process** in the single-replica management plane (ADR 0009).
 The single event/streaming primitive: resource-change events (WebUI SSE) and
 async-controller events both flow through it. The REST watch/SSE HTTP surface is
-unchanged — it subscribes to NATS under the hood. *[planned]* — NATS is the
-decided backend; today the event bus is `internal/watch/bus.go` (in-process
-channels), to be reworked onto NATS.
+unchanged — it subscribes to NATS under the hood. **[built]** — `internal/watch/nats.go`
+runs an embedded NATS server; the `watch.Bus` interface abstracts the transport
+(`NATSBus` for production, `LocalBus` for tests).
 
 ### Scheduling
 
