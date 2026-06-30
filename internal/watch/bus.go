@@ -1,6 +1,12 @@
 // Package watch provides real-time resource change events via chunked JSON
 // and Server-Sent Events (SSE). Events are produced by store mutations
 // and consumed by HTTP watch endpoints.
+//
+// The Bus interface has two implementations:
+//   - LocalBus: in-process channels (tests, fallback)
+//   - NATSBus: NATS pub/sub backed by an embedded NATS server (production)
+//
+// Per ADR 0009, production uses NATS as the single event/streaming primitive.
 package watch
 
 import (
@@ -27,21 +33,34 @@ type Event struct {
 	Object any       `json:"object"`
 }
 
-// Bus distributes events to registered watchers.
-type Bus struct {
+// Bus is the event distribution interface. Implementations include LocalBus
+// (in-process channels) and NATSBus (embedded NATS server). Consumers depend
+// on this interface, not a concrete type, so the transport can change without
+// touching callers.
+type Bus interface {
+	// Publish sends an event to all subscribers of a resource type.
+	Publish(resourceType string, event Event)
+	// Subscribe registers a watcher for a resource type. Returns a channel
+	// that receives events and a cancel function (call to unsubscribe).
+	Subscribe(resourceType string) (<-chan Event, context.CancelFunc)
+}
+
+// LocalBus is the in-process channel implementation of Bus. Used in tests and
+// as a fallback when NATS is not configured.
+type LocalBus struct {
 	mu       sync.RWMutex
 	watchers map[string][]chan Event // key: resource type
 }
 
-// NewBus creates a new event bus.
-func NewBus() *Bus {
-	return &Bus{
+// NewBus creates a new in-process event bus.
+func NewBus() *LocalBus {
+	return &LocalBus{
 		watchers: make(map[string][]chan Event),
 	}
 }
 
 // Publish sends an event to all watchers of a resource type.
-func (b *Bus) Publish(resourceType string, event Event) {
+func (b *LocalBus) Publish(resourceType string, event Event) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
@@ -56,7 +75,7 @@ func (b *Bus) Publish(resourceType string, event Event) {
 
 // Subscribe registers a watcher for a resource type.
 // Returns a channel that receives events and a cancel function.
-func (b *Bus) Subscribe(resourceType string) (<-chan Event, context.CancelFunc) {
+func (b *LocalBus) Subscribe(resourceType string) (<-chan Event, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(context.Background())
 	ch := make(chan Event, 64)
 
@@ -137,10 +156,22 @@ func SendInitialState(ch chan<- Event, resources []any) {
 	}
 }
 
+func extractName(r any) string {
+	m, ok := r.(map[string]any)
+	if !ok {
+		return ""
+	}
+	meta, ok := m["metadata"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	name, _ := meta["name"].(string)
+	return name
+}
+
 // StartPolling starts a goroutine that polls the store for changes.
-// This is a simplified implementation — in production, use SQLite WAL hooks
-// or trigger-based notifications.
-func StartPolling(ctx context.Context, bus *Bus, resourceType string, interval time.Duration, listFn func() ([]any, error)) {
+// Deprecated: use Bus-based event publishing instead. Retained for compatibility.
+func StartPolling(ctx context.Context, bus Bus, resourceType string, interval time.Duration, listFn func() ([]any, error)) {
 	go func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
@@ -159,7 +190,6 @@ func StartPolling(ctx context.Context, bus *Bus, resourceType string, interval t
 
 				current := make(map[string]bool)
 				for _, r := range resources {
-					// Extract name from resource (assumes map with "metadata.name").
 					name := extractName(r)
 					current[name] = true
 
@@ -170,7 +200,6 @@ func StartPolling(ctx context.Context, bus *Bus, resourceType string, interval t
 					}
 				}
 
-				// Detect deletions.
 				for name := range previous {
 					if !current[name] {
 						bus.Publish(resourceType, Event{Type: EventDeleted, Object: map[string]string{"name": name}})
@@ -181,17 +210,4 @@ func StartPolling(ctx context.Context, bus *Bus, resourceType string, interval t
 			}
 		}
 	}()
-}
-
-func extractName(r any) string {
-	m, ok := r.(map[string]any)
-	if !ok {
-		return ""
-	}
-	meta, ok := m["metadata"].(map[string]any)
-	if !ok {
-		return ""
-	}
-	name, _ := meta["name"].(string)
-	return name
 }

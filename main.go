@@ -63,8 +63,13 @@ func main() {
 		log.Fatalf("tfbackend init: %v", err)
 	}
 
-	// Initialize watch bus + wire into store mutations.
-	bus := watch.NewBus()
+	// Initialize watch bus (NATS embedded, per ADR 0009) + wire into store mutations.
+	natsBus, err := watch.NewNATSBus()
+	if err != nil {
+		log.Fatalf("nats bus init: %v", err)
+	}
+	defer natsBus.Close()
+	var bus watch.Bus = natsBus
 
 	// Provider registry: maps ProviderClass prefixes to renderer modules.
 	registry := provider.NewRegistry()

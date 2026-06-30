@@ -54,7 +54,7 @@ type MetricsAggregator interface {
 // Handler serves / and /events/stream.
 type Handler struct {
 	store      state.StoreAPI
-	bus        *watch.Bus
+	bus        watch.Bus
 	auditStore audit.Store
 	backup     BackupReader
 	upgrades   UpgradeReader
@@ -65,7 +65,7 @@ type Handler struct {
 // New creates a dashboard Handler. bus, auditStore, backup, upgrades, and
 // metrics may be nil — the dashboard degrades gracefully when those subsystems
 // are not configured.
-func New(store state.StoreAPI, bus *watch.Bus, auditStore audit.Store, backup BackupReader, upgrades UpgradeReader, metricsAgg MetricsAggregator, host Host) *Handler {
+func New(store state.StoreAPI, bus watch.Bus, auditStore audit.Store, backup BackupReader, upgrades UpgradeReader, metricsAgg MetricsAggregator, host Host) *Handler {
 	return &Handler{
 		store:      store,
 		bus:        bus,

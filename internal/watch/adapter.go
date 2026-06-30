@@ -10,11 +10,11 @@ import (
 
 // Adapter is a state.EventBus implementation that republishes events on a Bus.
 type Adapter struct {
-	bus *Bus
+	bus Bus
 }
 
 // NewAdapter creates a new adapter wrapping the given watch bus.
-func NewAdapter(bus *Bus) *Adapter {
+func NewAdapter(bus Bus) *Adapter {
 	return &Adapter{bus: bus}
 }
 
