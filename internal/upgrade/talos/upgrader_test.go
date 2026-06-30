@@ -12,17 +12,6 @@ import (
 
 // --- helpers ---
 
-func newTestStore(t *testing.T) *state.Store {
-	t.Helper()
-	s, err := state.Open(t.TempDir() + "/test.db")
-	// Open needs a parent dir; use the helper.
-	if err != nil {
-		t.Fatalf("open store: %v", err)
-	}
-	t.Cleanup(func() { _ = s.Close() })
-	return s
-}
-
 func openTestStore(t *testing.T) *state.Store {
 	t.Helper()
 	path := t.TempDir() + "/test.db"
