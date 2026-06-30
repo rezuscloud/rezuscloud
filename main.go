@@ -88,9 +88,13 @@ func main() {
 		log.Fatalf("tfexec init: %v", err)
 	}
 
+	// Upgrade engine: owns the rolling upgrade loop + run persistence. Injected
+	// as the pre-apply upgrade hook (#93) so machines converge before tofu apply.
+	upgradeMgr := upgrade.NewManager(store, upgrade.NoOpMachineUpgrader{}, upgrade.NewStoreMachineLister(store))
+
 	// Apply queue: debounced per-tenant reconciliation scheduler (#87a). Driven
 	// by the production Applier (#87b/#99) which renders .tf.json + runs tofu.
-	applier := reconcile.NewApplier(tfExec, registry, store)
+	applier := reconcile.NewApplier(tfExec, registry, store, reconcile.WithUpgradeRunner(upgradeMgr))
 
 	// Projection index: TF state → K8s-style resource read model (#91). Rebuilt
 	// after each successful apply by the queue's listener.
@@ -171,8 +175,9 @@ func main() {
 		log.Printf("backup subsystem disabled: %v", backupErr)
 	}
 
-	// Upgrade subsystem: one Manager owns run lifecycle.
-	upgradeMgr := upgrade.NewManager(store)
+	// Upgrade subsystem: one Manager owns run lifecycle (moved up for the
+	// pre-apply hook; keep the API wiring here).
+	// upgradeMgr already constructed above.
 
 	// API router with middleware (recovery, logging, auth).
 	// Registered with explicit methods because the WebUI registers method-scoped

@@ -40,11 +40,30 @@ type Applier struct {
 	exec     *tfexec.Exec
 	registry *provider.Registry
 	store    state.StoreAPI
+	upgrades UpgradeRunner // optional pre-apply upgrade hook
 	logf     func(format string, args ...any)
+}
+
+// UpgradeRunner runs a synchronous rolling upgrade for a tenant before the
+// apply. Production wires upgrade.Manager.RunUpgrade; tests use a fake or nil
+// (nil disables the pre-apply upgrade hook).
+//
+// This is the upgrade-then-apply ordering seam (#93): the Applier detects a
+// version change and runs the upgrade FIRST so machines converge before tofu
+// regenerates version-specific config.
+type UpgradeRunner interface {
+	RunUpgrade(ctx context.Context, tenant, component, currentVersion, targetVersion string) error
 }
 
 // Option configures an Applier.
 type Option func(*Applier)
+
+// WithUpgradeRunner injects the pre-apply upgrade hook (#93). When set, the
+// Applier detects spec-version vs observed-version drift and runs the rolling
+// upgrade before `tofu apply`.
+func WithUpgradeRunner(r UpgradeRunner) Option {
+	return func(a *Applier) { a.upgrades = r }
+}
 
 // WithLogger overrides the default log.Printf logger.
 func WithLogger(fn func(format string, args ...any)) Option {
@@ -67,8 +86,9 @@ func NewApplier(exec *tfexec.Exec, registry *provider.Registry, store state.Stor
 	return a
 }
 
-// Apply reconciles a single tenant: renders its `.tf.json`, runs tofu init +
-// apply. Implements applyqueue.Applier.
+// Apply reconciles a single tenant: detects version drift and runs the rolling
+// upgrade FIRST (if an UpgradeRunner is configured and the spec changed), then
+// renders its `.tf.json`, runs tofu init + apply. Implements applyqueue.Applier.
 func (a *Applier) Apply(ctx context.Context, tenant string) error {
 	t, err := a.store.GetTenant(tenant)
 	if err != nil {
@@ -76,6 +96,15 @@ func (a *Applier) Apply(ctx context.Context, tenant string) error {
 	}
 	if t == nil {
 		return fmt.Errorf("reconcile: tenant %q not found", tenant)
+	}
+
+	// Pre-apply upgrade hook: converge machines to the declared version BEFORE
+	// regenerating version-specific config (the only safe ordering — see
+	// CONTEXT.md "Upgrades").
+	if a.upgrades != nil {
+		if err := a.runUpgradesIfNeeded(ctx, tenant, t); err != nil {
+			return fmt.Errorf("reconcile: pre-apply upgrade for %q: %w", tenant, err)
+		}
 	}
 
 	ngs, err := loadNodeGroups(a.store, tenant)
@@ -220,4 +249,70 @@ func providerTypeOf(class string) string {
 		return class[:i]
 	}
 	return class
+}
+
+// runUpgradesIfNeeded detects spec-version vs observed-machine-version drift
+// and runs the rolling upgrade for each drifted component (talos, kubernetes).
+// No machines → no upgrade (the tenant is being formed, not upgraded). If the
+// observed version is empty (machines never reported a version), skip — we
+// can't upgrade from an unknown baseline.
+func (a *Applier) runUpgradesIfNeeded(ctx context.Context, tenant string, t *state.Tenant) error {
+	if a.upgrades == nil {
+		return nil // pre-apply upgrade hook not configured
+	}
+	machines, _, err := a.store.ListMachinesByTenant(tenant)
+	if err != nil {
+		return fmt.Errorf("list machines: %w", err)
+	}
+	if len(machines) == 0 {
+		return nil // forming, not upgrading
+	}
+
+	for _, component := range []struct{ name, spec, observed string }{
+		{"talos", t.Spec.TalosVersion, observedTalos(machines)},
+		{"kubernetes", t.Spec.KubernetesVersion, observedK8s(machines)},
+	} {
+		if component.spec == "" || component.observed == "" {
+			continue // unknown baseline or no target declared
+		}
+		if component.spec == component.observed {
+			continue // already at the declared version
+		}
+		a.logf("reconcile: %s version drift for %q: observed=%s spec=%s → upgrading first",
+			component.name, tenant, component.observed, component.spec)
+		if err := a.upgrades.RunUpgrade(ctx, tenant, component.name, component.observed, component.spec); err != nil {
+			return fmt.Errorf("upgrade %s: %w", component.name, err)
+		}
+	}
+	return nil
+}
+
+// observedTalos returns the Talos version shared by all machines (the observed
+// baseline), or "" if machines disagree or have none. A disagreement means the
+// cluster is mid-upgrade; we don't trigger a new one.
+func observedTalos(machines []*state.Machine) string {
+	return sharedVersion(machines, func(m *state.Machine) string { return m.Status.TalosVersion })
+}
+
+// observedK8s returns the shared Kubernetes version across machines.
+func observedK8s(machines []*state.Machine) string {
+	return sharedVersion(machines, func(m *state.Machine) string { return m.Status.K8sVersion })
+}
+
+// sharedVersion returns the single version reported by all machines, or "" if
+// they disagree or all are empty.
+func sharedVersion(machines []*state.Machine, pick func(*state.Machine) string) string {
+	var v string
+	for i, m := range machines {
+		mv := pick(m)
+		if mv == "" {
+			return "" // at least one machine never reported
+		}
+		if i == 0 {
+			v = mv
+		} else if mv != v {
+			return "" // disagreement → not a clean baseline
+		}
+	}
+	return v
 }
