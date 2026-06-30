@@ -55,7 +55,9 @@ func NewNATSBus() (*NATSBus, error) {
 	if err != nil {
 		return nil, fmt.Errorf("nats: create server: %w", err)
 	}
-	go srv.Start()
+	go func() {
+		_ = srv.Start()
+	}()
 
 	// Wait for server to be ready (client connections block until ready, but
 	// the server needs a moment to bind the listener).
