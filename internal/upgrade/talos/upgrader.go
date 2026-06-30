@@ -105,7 +105,7 @@ func (m *MachineUpgrader) UpgradeMachine(ctx context.Context, machineID, targetV
 	if err != nil {
 		return fmt.Errorf("talos: open client for %s: %w", addr, err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	image := installerImage(m.registry, targetVersion)
 	if err := c.Upgrade(ctx, addr, image); err != nil {
@@ -132,7 +132,7 @@ func (m *MachineUpgrader) CheckMachineHealth(ctx context.Context, machineID stri
 	if err != nil {
 		return fmt.Errorf("talos: open client for %s: %w", addr, err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	// The machine must at least respond with a version — if the API is up, the
 	// node rebooted into the new image successfully.
@@ -163,7 +163,7 @@ func (m *MachineUpgrader) RollbackMachine(ctx context.Context, machineID, _ stri
 	if err != nil {
 		return fmt.Errorf("talos: open client for %s: %w", addr, err)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	if err := c.Rollback(ctx, addr); err != nil {
 		return fmt.Errorf("talos: rollback %s: %w", machineID, err)
