@@ -91,11 +91,13 @@ catch external drift.
 **Upgrade first, apply after** — the only safe ordering because config
 generation is version-aware (the `talos` provider's `talos_machine_configuration`
 generates version-specific config). On a `talosVersion`/`kubernetesVersion` bump:
-the UpgradeReconciler [planned] runs `talosctl upgrade` machine-by-machine with
-health gates (existing `internal/upgrade/rolling.go` [built], K8s skew policy in
-`internal/upgrade/k8s/policy.go` [built]), *then* the reconciler runs
-`tofu apply` to sync declared state. `ignore_changes = [user_data]` on instances
-guarantees the apply never recreates VMs. The upgrade engine is model-agnostic.
+the reconcile `Applier` runs the rolling upgrade engine (`internal/upgrade`, K8s
+skew policy in `internal/upgrade/k8s/policy.go`) **first** via a pre-apply hook,
+*then* `tofu apply` syncs declared state. `ignore_changes = [user_data]` on
+instances guarantees the apply never recreates VMs. The upgrade engine is
+declarative — the spec is the input (the user already set the new version); the
+upgrade converges machines to match it. No write-back of the version after
+upgrade (that would re-trigger the apply queue).
 
 ### Secrets & encryption
 

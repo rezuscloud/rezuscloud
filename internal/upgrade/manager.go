@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
@@ -34,21 +35,33 @@ type Run struct {
 	Status   RunStatus      `json:"status"`
 }
 
-// Manager orchestrates upgrade runs and persists their state in Store resources.
+// Manager orchestrates upgrade runs and persists their state in Store
+// resources. It is the single deep module for the upgrade lifecycle: it owns
+// the goroutine, status persistence, cancellation, AND the real rolling loop
+// (upgrade → health check → rollback, machine-by-machine). The per-machine
+// action lives behind the MachineUpgrader seam; the ordering behind
+// MachineLister.
+//
+// The rolling loop was previously split across RollingUpgrader (real loop, dead
+// code) and Manager.executeRun (no-op simulation). They are unified here so the
+// health-gated rollback logic has one home and is actually exercised.
 type Manager struct {
-	store state.StoreAPI
+	store    state.StoreAPI
+	upgrader MachineUpgrader
+	lister   MachineLister
 
 	mu      sync.Mutex
 	running map[string]context.CancelFunc
 }
 
-// NewManager creates an upgrade Manager bound to the given store.
-// Construct one per process in main.go and pass it to whoever needs it.
-func NewManager(store state.StoreAPI) *Manager {
-	return &Manager{store: store, running: map[string]context.CancelFunc{}}
+// NewManager creates an upgrade Manager bound to the store and the injected
+// per-machine upgrader + machine lister. Construct one per process in main.go.
+func NewManager(store state.StoreAPI, upgrader MachineUpgrader, lister MachineLister) *Manager {
+	return &Manager{store: store, upgrader: upgrader, lister: lister, running: map[string]context.CancelFunc{}}
 }
 
-// StartRun creates and starts an upgrade run asynchronously.
+// StartRun creates and starts an upgrade run asynchronously. The returned Run
+// reflects the initial persisted state; the run completes in the background.
 func (m *Manager) StartRun(tenant, component, target, requestedBy string) (*Run, error) {
 	if component != "talos" && component != "kubernetes" {
 		return nil, fmt.Errorf("component must be 'talos' or 'kubernetes'")
@@ -105,95 +118,159 @@ func (m *Manager) StartRun(tenant, component, target, requestedBy string) (*Run,
 	m.running[runID] = cancel
 	m.mu.Unlock()
 
-	go m.executeRun(ctx, runID, tenant, component, target)
+	go m.executeRun(ctx, runID, tenant, component, target, status.Current)
 
 	return &Run{Metadata: md, Spec: spec, Status: status}, nil
 }
 
-func (m *Manager) executeRun(ctx context.Context, runID, tenant, component, target string) {
+// executeRun runs the real rolling upgrade loop in the background and persists
+// the final status. It does NOT write the tenant spec version back — the spec
+// is the declarative input (the user already set it); the upgrade converges
+// machines to match it. Writing it back would only re-trigger the apply queue.
+func (m *Manager) executeRun(ctx context.Context, runID, tenant, component, target, currentVersion string) {
 	defer func() {
 		m.mu.Lock()
 		delete(m.running, runID)
 		m.mu.Unlock()
+		if r := recover(); r != nil {
+			log.Printf("upgrade: run %s panicked: %v", runID, r)
+			m.failRun(runID, fmt.Sprintf("panic: %v", r))
+		}
 	}()
 
-	machines, _, err := m.store.ListMachinesByTenant(tenant)
-	if err != nil {
-		m.failRun(runID, "list machines: "+err.Error())
-		return
+	status := Status{
+		Component: component,
+		Target:    target,
+		Current:   currentVersion,
+		Phase:     PhasePreCheck,
+	}
+	m.persistStatus(runID, status)
+
+	final := m.rollUpgrade(ctx, runID, tenant, status.Current, target, component)
+
+	finished := time.Now().UTC()
+	final.Current = currentVersion
+	final.Component = component
+	final.Target = target
+	m.persistFinal(runID, final, &finished)
+}
+
+// rollUpgrade is the real rolling loop: upgrade one machine → health check →
+// (rollback on failure). Pure orchestration; the per-machine action is the
+// injected MachineUpgrader. Status is persisted between each machine so the UI
+// reflects live progress. Returns the final Status.
+func (m *Manager) rollUpgrade(ctx context.Context, runID, tenant, currentVersion, targetVersion, component string) Status {
+	status := Status{
+		Phase:     PhasePreCheck,
+		Component: component,
+		Target:    targetVersion,
+		Current:   currentVersion,
 	}
 
-	for i, machine := range machines {
+	if currentVersion == targetVersion {
+		status.Phase = PhaseComplete
+		return status
+	}
+
+	machines, err := m.lister.ListMachinesInOrder(ctx, tenant)
+	if err != nil {
+		status.Phase = PhaseFailed
+		status.Error = err.Error()
+		return status
+	}
+
+	if len(machines) == 0 {
+		status.Phase = PhaseComplete
+		return status
+	}
+
+	status.TotalMachines = len(machines)
+	status.Phase = PhaseUpgrading
+
+	for i, machineID := range machines {
 		select {
 		case <-ctx.Done():
-			m.cancelRun(runID)
-			return
+			status.Phase = PhaseCanceled
+			status.Error = "cancelled by operator"
+			return status
 		default:
 		}
 
-		var rs RunStatus
-		md, err := m.store.GetResource("upgraderun", runID, nil, &rs)
-		if err != nil || md.Name == "" {
-			return
-		}
-		rs.CurrentMachine = machine.Metadata.Name
-		rs.Completed = i
-		rs.Phase = PhaseUpgrading
-		_, _ = m.store.UpdateStatus("upgraderun", runID, rs)
+		status.CurrentMachine = machineID
+		status.Completed = i
+		m.persistStatus(runID, status)
 
-		// Simulate per-machine upgrade step.
-		time.Sleep(10 * time.Millisecond)
+		// Upgrade machine.
+		if err := m.upgrader.UpgradeMachine(ctx, machineID, targetVersion); err != nil {
+			// Rollback current machine, then fail.
+			if rbErr := m.upgrader.RollbackMachine(ctx, machineID, currentVersion); rbErr != nil {
+				status.Error = err.Error() + "; rollback also failed: " + rbErr.Error()
+			} else {
+				status.Error = err.Error()
+			}
+			status.Phase = PhaseFailed
+			return status
+		}
+
+		// Health check.
+		if err := m.upgrader.CheckMachineHealth(ctx, machineID); err != nil {
+			_ = m.upgrader.RollbackMachine(ctx, machineID, currentVersion)
+			status.Phase = PhaseFailed
+			status.Error = "health check failed for " + machineID + ": " + err.Error()
+			return status
+		}
+
+		status.Completed = i + 1
 	}
 
-	// Mark complete.
-	finished := time.Now().UTC()
+	status.Phase = PhaseComplete
+	status.CurrentMachine = ""
+	return status
+}
+
+// persistStatus writes an intermediate Status to the run record.
+func (m *Manager) persistStatus(runID string, status Status) {
 	var rs RunStatus
 	md, err := m.store.GetResource("upgraderun", runID, nil, &rs)
-	if err == nil && md.Name != "" {
-		rs.Phase = PhaseComplete
-		rs.Completed = rs.TotalMachines
-		rs.CurrentMachine = ""
-		rs.EndedAt = &finished
-		_, _ = m.store.UpdateStatus("upgraderun", runID, rs)
-	}
-
-	// Persist new tenant desired version.
-	t, err := m.store.GetTenant(tenant)
-	if err != nil || t == nil {
+	if err != nil || md.Name == "" {
 		return
 	}
-	if component == "talos" {
-		t.Spec.TalosVersion = target
-	} else {
-		t.Spec.KubernetesVersion = target
+	rs.Status = status
+	_, _ = m.store.UpdateStatus("upgraderun", runID, rs)
+}
+
+// persistFinal writes the terminal Status + endedAt to the run record.
+func (m *Manager) persistFinal(runID string, status Status, endedAt *time.Time) {
+	var rs RunStatus
+	md, err := m.store.GetResource("upgraderun", runID, nil, &rs)
+	if err != nil || md.Name == "" {
+		return
 	}
-	_, _ = m.store.UpdateResource("tenant", tenant, t.Metadata.ResourceVersion, t.Spec, t.Metadata.Labels, t.Metadata.Annotations)
+	rs.Status = status
+	rs.EndedAt = endedAt
+	_, _ = m.store.UpdateStatus("upgraderun", runID, rs)
 }
 
 func (m *Manager) failRun(runID, msg string) {
-	var rs RunStatus
-	md, err := m.store.GetResource("upgraderun", runID, nil, &rs)
-	if err != nil || md.Name == "" {
-		return
-	}
 	now := time.Now().UTC()
-	rs.Phase = PhaseFailed
-	rs.Error = msg
-	rs.EndedAt = &now
-	_, _ = m.store.UpdateStatus("upgraderun", runID, rs)
+	m.persistFinal(runID, Status{Phase: PhaseFailed, Error: msg}, &now)
 }
 
-func (m *Manager) cancelRun(runID string) {
-	var rs RunStatus
-	md, err := m.store.GetResource("upgraderun", runID, nil, &rs)
-	if err != nil || md.Name == "" {
-		return
+// RunUpgrade runs the rolling upgrade loop SYNCHRONOUSLY (no goroutine) and
+// returns an error if the upgrade failed or was canceled. It does not persist
+// a run record — callers that need run persistence use StartRun. This is the
+// pre-apply hook entry point: the reconcile Applier calls it before
+// `tofu apply` when it detects a version change, blocking the apply until
+// machines converge.
+func (m *Manager) RunUpgrade(ctx context.Context, tenant, component, currentVersion, targetVersion string) error {
+	status := m.rollUpgrade(ctx, "", tenant, currentVersion, targetVersion, component)
+	if status.Phase == PhaseFailed {
+		return fmt.Errorf("upgrade %s %s→%s failed: %s", component, currentVersion, targetVersion, status.Error)
 	}
-	now := time.Now().UTC()
-	rs.Phase = PhaseCanceled
-	rs.Error = "cancelled by operator"
-	rs.EndedAt = &now
-	_, _ = m.store.UpdateStatus("upgraderun", runID, rs)
+	if status.Phase == PhaseCanceled {
+		return fmt.Errorf("upgrade %s %s→%s canceled", component, currentVersion, targetVersion)
+	}
+	return nil
 }
 
 // CancelRun cancels a currently-running upgrade run.
@@ -240,7 +317,6 @@ func (m *Manager) ListRuns(tenant string) ([]*Run, error) {
 		_ = jsonUnmarshal(statuses[i], &status)
 		out = append(out, &Run{Metadata: mds[i], Spec: spec, Status: status})
 	}
-	// reverse to newest-first because ListResources returns by created_at ASC.
 	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
 		out[i], out[j] = out[j], out[i]
 	}
@@ -254,7 +330,6 @@ func currentVersion(spec state.TenantSpec, component string) string {
 	return spec.TalosVersion
 }
 
-// tiny wrapper to avoid importing encoding/json in multiple files.
 func jsonUnmarshal(data []byte, v any) error {
 	return json.Unmarshal(data, v)
 }

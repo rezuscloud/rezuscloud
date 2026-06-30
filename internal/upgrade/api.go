@@ -10,16 +10,15 @@ import (
 
 // API provides HTTP handlers for upgrade management.
 type API struct {
-	store    state.StoreAPI
-	upgrader *RollingUpgrader
-	manager  *Manager
+	store   state.StoreAPI
+	manager *Manager
 }
 
 // NewAPI creates an upgrade API handler bound to the given manager.
 // The manager must be constructed once per process (typically in main.go)
 // and shared across all callers.
-func NewAPI(store state.StoreAPI, upgrader *RollingUpgrader, manager *Manager) *API {
-	return &API{store: store, upgrader: upgrader, manager: manager}
+func NewAPI(store state.StoreAPI, manager *Manager) *API {
+	return &API{store: store, manager: manager}
 }
 
 // RegisterRoutes registers upgrade routes.

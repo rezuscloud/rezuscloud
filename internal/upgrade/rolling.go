@@ -1,9 +1,10 @@
-// Package upgrade implements rolling Talos and Kubernetes upgrades.
-// Upgrades are triggered by declarative spec changes (talosVersion, kubernetesVersion)
-// and executed machine-by-machine with health checks between each.
 package upgrade
 
-import "context"
+import (
+	"context"
+
+	"github.com/rezuscloud/rezuscloud/internal/state"
+)
 
 // Phase represents the current upgrade phase.
 type Phase string
@@ -30,7 +31,10 @@ type Status struct {
 	Error          string `json:"error,omitempty"`
 }
 
-// MachineUpgrader upgrades a single machine.
+// MachineUpgrader upgrades a single machine. This is the seam where real
+// `talosctl upgrade` / `kubectl` calls live; the rolling loop in Manager drives
+// it machine-by-machine. Production adapters (internal/upgrade/talos) are
+// injected; tests use a fake.
 type MachineUpgrader interface {
 	// UpgradeMachine performs the upgrade on a single machine.
 	// Returns nil if the machine reports ready after upgrade.
@@ -50,85 +54,45 @@ type MachineLister interface {
 	ListMachinesInOrder(ctx context.Context, tenant string) ([]string, error)
 }
 
-// RollingUpgrader performs a rolling upgrade across machines.
-type RollingUpgrader struct {
-	upgrader MachineUpgrader
-	lister   MachineLister
+// StoreMachineLister is a real MachineLister backed by the state store. It
+// orders control-plane machines before workers (the only safe upgrade order for
+// a Talos+K8s cluster).
+type StoreMachineLister struct {
+	store state.StoreAPI
 }
 
-// NewRollingUpgrader creates a new rolling upgrader.
-func NewRollingUpgrader(upgrader MachineUpgrader, lister MachineLister) *RollingUpgrader {
-	return &RollingUpgrader{
-		upgrader: upgrader,
-		lister:   lister,
-	}
+// NewStoreMachineLister returns a MachineLister that reads machines from the
+// store and orders them control-plane-first.
+func NewStoreMachineLister(store state.StoreAPI) *StoreMachineLister {
+	return &StoreMachineLister{store: store}
 }
 
-// Upgrade performs a rolling upgrade across all machines in a tenant.
-// It upgrades one machine at a time, checking health between each.
-// On failure, it rolls back the current machine and stops.
-func (r *RollingUpgrader) Upgrade(ctx context.Context, tenant, currentVersion, targetVersion, component string) Status {
-	status := Status{
-		Phase:     PhasePreCheck,
-		Component: component,
-		Target:    targetVersion,
-		Current:   currentVersion,
-	}
-
-	if currentVersion == targetVersion {
-		status.Phase = PhaseComplete
-		return status
-	}
-
-	// Get machines in upgrade order.
-	machines, err := r.lister.ListMachinesInOrder(ctx, tenant)
+// ListMachinesInOrder implements MachineLister. Control planes come first
+// (sequential upgrades), then workers.
+func (s *StoreMachineLister) ListMachinesInOrder(ctx context.Context, tenant string) ([]string, error) {
+	_ = ctx
+	machines, _, err := s.store.ListMachinesByTenant(tenant)
 	if err != nil {
-		status.Phase = PhaseFailed
-		status.Error = err.Error()
-		return status
+		return nil, err
 	}
-
-	if len(machines) == 0 {
-		status.Phase = PhaseComplete
-		return status
-	}
-
-	status.TotalMachines = len(machines)
-	status.Phase = PhaseUpgrading
-
-	for i, machineID := range machines {
-		status.CurrentMachine = machineID
-
-		// Upgrade machine.
-		if err := r.upgrader.UpgradeMachine(ctx, machineID, targetVersion); err != nil {
-			status.Phase = PhaseRollback
-			status.Error = err.Error()
-
-			// Rollback current machine.
-			if rbErr := r.upgrader.RollbackMachine(ctx, machineID, currentVersion); rbErr != nil {
-				status.Error = err.Error() + "; rollback also failed: " + rbErr.Error()
-			}
-
-			status.Phase = PhaseFailed
-			return status
+	var controlPlane, workers []string
+	for _, m := range machines {
+		if m.Status.Role == "controlplane" {
+			controlPlane = append(controlPlane, m.Metadata.Name)
+		} else {
+			workers = append(workers, m.Metadata.Name)
 		}
-
-		// Check health.
-		if err := r.upgrader.CheckMachineHealth(ctx, machineID); err != nil {
-			status.Phase = PhaseRollback
-
-			// Rollback.
-			_ = r.upgrader.RollbackMachine(ctx, machineID, currentVersion)
-
-			status.Phase = PhaseFailed
-			status.Error = "health check failed for " + machineID + ": " + err.Error()
-			return status
-		}
-
-		status.Completed = i + 1
 	}
-
-	status.Phase = PhaseComplete
-	status.CurrentMachine = ""
-	return status
+	return append(controlPlane, workers...), nil
 }
+
+// NoOpMachineUpgrader is a placeholder MachineUpgrader whose per-machine calls
+// are no-ops. It exists so the upgrade engine (the rolling loop, health gates,
+// rollback, status tracking) is exercised end-to-end before a real
+// `talosctl`-backed adapter lands. Replace it in main.go once the Talos adapter
+// (#93 follow-up) is built.
+type NoOpMachineUpgrader struct{}
+
+func (NoOpMachineUpgrader) UpgradeMachine(context.Context, string, string) error  { return nil }
+func (NoOpMachineUpgrader) CheckMachineHealth(context.Context, string) error      { return nil }
+func (NoOpMachineUpgrader) RollbackMachine(context.Context, string, string) error { return nil }
