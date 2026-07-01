@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"strings"
 
+	"io"
+
 	"github.com/rezuscloud/rezuscloud/internal/credentials"
 	"github.com/rezuscloud/rezuscloud/internal/state"
 	"github.com/siderolabs/talos/pkg/machinery/client"
@@ -38,9 +40,15 @@ type TalosClient interface {
 	Upgrade(ctx context.Context, addr, image string) error
 	// Rollback reverts the node at addr to its previous installed state.
 	Rollback(ctx context.Context, addr string) error
-	// Version returns the Talos version tag the node at addr is running
-	// (e.g. "v1.13.0").
+	// Version returns the Talos version tag the node at addr is running.
 	Version(ctx context.Context, addr string) (string, error)
+	// Reboot reboots the node at addr.
+	Reboot(ctx context.Context, addr string) error
+	// Shutdown shuts down the node at addr.
+	Shutdown(ctx context.Context, addr string) error
+	// Dmesg returns recent kernel log lines from the node (for orchestration
+	// visibility — ADR 0015, read-only surfacing).
+	Dmesg(ctx context.Context, addr string) (string, error)
 	// Close releases the underlying client resources.
 	Close() error
 }
@@ -171,7 +179,51 @@ func (m *MachineUpgrader) RollbackMachine(ctx context.Context, machineID, _ stri
 	return nil
 }
 
-// resolve maps a machineID to its (tenant, management-address). The machine
+// Reboot reboots a machine via the Talos API. Resolves machineID → addr + creds.
+func (m *MachineUpgrader) Reboot(ctx context.Context, machineID string) error {
+	return m.action(ctx, machineID, func(c TalosClient, addr string) error {
+		return c.Reboot(ctx, addr)
+	})
+}
+
+// Shutdown shuts down a machine via the Talos API.
+func (m *MachineUpgrader) Shutdown(ctx context.Context, machineID string) error {
+	return m.action(ctx, machineID, func(c TalosClient, addr string) error {
+		return c.Shutdown(ctx, addr)
+	})
+}
+
+// Dmesg returns recent kernel log lines from a machine (ADR 0015: read-only
+// surfacing for orchestration visibility — is the node bootstrapping correctly?).
+func (m *MachineUpgrader) Dmesg(ctx context.Context, machineID string) (string, error) {
+	var result string
+	err := m.action(ctx, machineID, func(c TalosClient, addr string) error {
+		logs, e := c.Dmesg(ctx, addr)
+		result = logs
+		return e
+	})
+	return result, err
+}
+
+// action is a shared helper that resolves a machine → opens a client → runs a
+// per-machine action. Used by Reboot/Shutdown/Dmesg.
+func (m *MachineUpgrader) action(ctx context.Context, machineID string, fn func(TalosClient, string) error) error {
+	tenant, addr, err := m.resolve(ctx, machineID)
+	if err != nil {
+		return err
+	}
+	bundle, ok := m.cache.Get(tenant)
+	if !ok {
+		return fmt.Errorf("talos: no cached secrets bundle for tenant %q", tenant)
+	}
+	c, err := m.open(ctx, addr, bundle)
+	if err != nil {
+		return fmt.Errorf("talos: open client for %s: %w", addr, err)
+	}
+	defer func() { _ = c.Close() }()
+	return fn(c, addr)
+}
+
 // must exist and have a non-empty management address — one without an address
 // cannot be reached via the Talos API.
 func (m *MachineUpgrader) resolve(ctx context.Context, machineID string) (tenant, addr string, err error) {
@@ -240,6 +292,31 @@ func (r *realClient) Version(ctx context.Context, addr string) (string, error) {
 		return "", nil
 	}
 	return msgs[0].GetVersion().GetTag(), nil
+}
+
+func (r *realClient) Reboot(ctx context.Context, addr string) error {
+	return r.c.Reboot(client.WithNode(ctx, addr))
+}
+
+func (r *realClient) Shutdown(ctx context.Context, addr string) error {
+	return r.c.Shutdown(client.WithNode(ctx, addr))
+}
+
+func (r *realClient) Dmesg(ctx context.Context, addr string) (string, error) {
+	stream, err := r.c.Dmesg(client.WithNode(ctx, addr), false, false)
+	if err != nil {
+		return "", err
+	}
+	reader, err := client.ReadStream(stream)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = reader.Close() }()
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
 }
 
 func (r *realClient) Close() error { return r.c.Close() }

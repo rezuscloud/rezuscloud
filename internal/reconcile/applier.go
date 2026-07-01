@@ -252,10 +252,12 @@ func providerTypeOf(class string) string {
 }
 
 // runUpgradesIfNeeded detects spec-version vs observed-machine-version drift
-// and runs the rolling upgrade for each drifted component (talos, kubernetes).
-// No machines → no upgrade (the tenant is being formed, not upgraded). If the
-// observed version is empty (machines never reported a version), skip — we
-// can't upgrade from an unknown baseline.
+// and runs the rolling upgrade. For Talos-managed clusters, only the Talos
+// version triggers an upgrade: `talosctl upgrade` upgrades both Talos and
+// the bundled Kubernetes version in one operation (there is no separate
+// kubelet-upgrade path). A kubernetesVersion bump in the spec is realized by
+// the subsequent `tofu apply` regenerating version-specific config; the
+// kubelet binary itself only changes on a Talos upgrade.
 func (a *Applier) runUpgradesIfNeeded(ctx context.Context, tenant string, t *state.Tenant) error {
 	if a.upgrades == nil {
 		return nil // pre-apply upgrade hook not configured
@@ -268,20 +270,17 @@ func (a *Applier) runUpgradesIfNeeded(ctx context.Context, tenant string, t *sta
 		return nil // forming, not upgrading
 	}
 
-	for _, component := range []struct{ name, spec, observed string }{
-		{"talos", t.Spec.TalosVersion, observedTalos(machines)},
-		{"kubernetes", t.Spec.KubernetesVersion, observedK8s(machines)},
-	} {
-		if component.spec == "" || component.observed == "" {
-			continue // unknown baseline or no target declared
-		}
-		if component.spec == component.observed {
-			continue // already at the declared version
-		}
-		a.logf("reconcile: %s version drift for %q: observed=%s spec=%s → upgrading first",
-			component.name, tenant, component.observed, component.spec)
-		if err := a.upgrades.RunUpgrade(ctx, tenant, component.name, component.observed, component.spec); err != nil {
-			return fmt.Errorf("upgrade %s: %w", component.name, err)
+	// Only talos version drift triggers a rolling upgrade. kubernetesVersion is
+	// handled implicitly by the talos upgrade (same image) and by `tofu apply`
+	// regenerating version-specific config.
+	if t.Spec.TalosVersion != "" {
+		observed := observedTalos(machines)
+		if observed != "" && observed != t.Spec.TalosVersion {
+			a.logf("reconcile: talos version drift for %q: observed=%s spec=%s → upgrading first",
+				tenant, observed, t.Spec.TalosVersion)
+			if err := a.upgrades.RunUpgrade(ctx, tenant, "talos", observed, t.Spec.TalosVersion); err != nil {
+				return fmt.Errorf("upgrade talos: %w", err)
+			}
 		}
 	}
 	return nil
@@ -292,11 +291,6 @@ func (a *Applier) runUpgradesIfNeeded(ctx context.Context, tenant string, t *sta
 // cluster is mid-upgrade; we don't trigger a new one.
 func observedTalos(machines []*state.Machine) string {
 	return sharedVersion(machines, func(m *state.Machine) string { return m.Status.TalosVersion })
-}
-
-// observedK8s returns the shared Kubernetes version across machines.
-func observedK8s(machines []*state.Machine) string {
-	return sharedVersion(machines, func(m *state.Machine) string { return m.Status.K8sVersion })
 }
 
 // sharedVersion returns the single version reported by all machines, or "" if

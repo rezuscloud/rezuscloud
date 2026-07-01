@@ -197,7 +197,8 @@ func main() {
 	webHandler := web.NewHandler(store, jwtManager, bus).
 		WithAuditComponent(auditComponent).
 		WithBackupComponent(backupComponent).
-		WithUpgradeManager(upgradeMgr)
+		WithUpgradeManager(upgradeMgr).
+		WithMachineActions(machineUpgrader)
 
 	// Resource pressure visualization (optional — requires Prometheus + K8s API access).
 	if cfg.PrometheusURL != "" && cfg.K8sAPIURL != "" {
