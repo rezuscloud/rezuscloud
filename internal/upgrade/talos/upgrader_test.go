@@ -3,6 +3,7 @@ package talos
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/rezuscloud/rezuscloud/internal/credentials"
@@ -52,9 +53,15 @@ type fakeClient struct {
 	rollbackErr error
 	version     string
 	versionErr  error
+	rebootErr   error
+	shutdownErr error
+	dmesg       string
+	dmesgErr    error
 
 	upgrades  []upgradeCall
 	rollbacks []string
+	reboots   []string
+	shutdowns []string
 	closed    bool
 }
 
@@ -74,6 +81,20 @@ func (f *fakeClient) Rollback(_ context.Context, addr string) error {
 
 func (f *fakeClient) Version(_ context.Context, _ string) (string, error) {
 	return f.version, f.versionErr
+}
+
+func (f *fakeClient) Reboot(_ context.Context, addr string) error {
+	f.reboots = append(f.reboots, addr)
+	return f.rebootErr
+}
+
+func (f *fakeClient) Shutdown(_ context.Context, addr string) error {
+	f.shutdowns = append(f.shutdowns, addr)
+	return f.shutdownErr
+}
+
+func (f *fakeClient) Dmesg(_ context.Context, _ string) (string, error) {
+	return f.dmesg, f.dmesgErr
 }
 
 func (f *fakeClient) Close() error { f.closed = true; return nil }
@@ -259,5 +280,48 @@ func TestBuildTLSConfig_MissingBundle(t *testing.T) {
 	_, err := buildTLSConfig(nil)
 	if err == nil {
 		t.Fatal("expected error for nil bundle")
+	}
+}
+
+func TestReboot_Success(t *testing.T) {
+	store := openTestStore(t)
+	fc := &fakeClient{}
+	m := newTestMachineUpgrader(t, fc, store, genBundle(t))
+	seedMachine(t, store, "node-1", "t1", "10.0.0.1:50000")
+
+	if err := m.Reboot(context.Background(), "node-1"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(fc.reboots) != 1 || fc.reboots[0] != "10.0.0.1:50000" {
+		t.Errorf("reboots = %v, want [10.0.0.1:50000]", fc.reboots)
+	}
+}
+
+func TestShutdown_Success(t *testing.T) {
+	store := openTestStore(t)
+	fc := &fakeClient{}
+	m := newTestMachineUpgrader(t, fc, store, genBundle(t))
+	seedMachine(t, store, "node-1", "t1", "10.0.0.1:50000")
+
+	if err := m.Shutdown(context.Background(), "node-1"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(fc.shutdowns) != 1 || fc.shutdowns[0] != "10.0.0.1:50000" {
+		t.Errorf("shutdowns = %v, want [10.0.0.1:50000]", fc.shutdowns)
+	}
+}
+
+func TestDmesg_Success(t *testing.T) {
+	store := openTestStore(t)
+	fc := &fakeClient{dmesg: "kernel: boot started\nkernel: talos initialized"}
+	m := newTestMachineUpgrader(t, fc, store, genBundle(t))
+	seedMachine(t, store, "node-1", "t1", "10.0.0.1:50000")
+
+	out, err := m.Dmesg(context.Background(), "node-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(out, "talos initialized") {
+		t.Errorf("dmesg output = %q, want 'talos initialized'", out)
 	}
 }

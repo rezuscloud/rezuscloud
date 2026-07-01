@@ -847,22 +847,16 @@ func TestW4_MachineActions_Admin(t *testing.T) {
 	_, _ = s.store.CreateMachine("action-target", state.MachineSpec{}, map[string]string{}, nil)
 	_, _ = s.store.UpdateMachineStatus("action-target", state.MachineStatus{Stage: state.StageReady})
 
-	// Restart.
-	status, _, hdr := s.postFormWithCookie(t, "/machines/action-target/restart", "", cookie)
-	if status != http.StatusSeeOther {
-		t.Errorf("restart status = %d, want 303", status)
-	}
-	if !strings.Contains(hdr.Get("Location"), "/machines/action-target") {
-		t.Errorf("restart Location = %q", hdr.Get("Location"))
+	// Restart — 503 without an action runner configured.
+	status, _, _ := s.postFormWithCookie(t, "/machines/action-target/restart", "", cookie)
+	if status != http.StatusServiceUnavailable {
+		t.Errorf("restart status = %d, want 503 (no action runner)", status)
 	}
 
-	// Shutdown.
-	status, _, hdr = s.postFormWithCookie(t, "/machines/action-target/shutdown", "", cookie)
-	if status != http.StatusSeeOther {
-		t.Errorf("shutdown status = %d, want 303", status)
-	}
-	if !strings.Contains(hdr.Get("Location"), "/machines/action-target") {
-		t.Errorf("shutdown Location = %q", hdr.Get("Location"))
+	// Shutdown — 503 without an action runner configured.
+	status, _, _ = s.postFormWithCookie(t, "/machines/action-target/shutdown", "", cookie)
+	if status != http.StatusServiceUnavailable {
+		t.Errorf("shutdown status = %d, want 503 (no action runner)", status)
 	}
 }
 

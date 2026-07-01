@@ -30,6 +30,7 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/web/handlers/clusters"
 	dashhandler "github.com/rezuscloud/rezuscloud/internal/web/handlers/dashboard"
 	"github.com/rezuscloud/rezuscloud/internal/web/handlers/machines"
+	machineshandler "github.com/rezuscloud/rezuscloud/internal/web/handlers/machines"
 	"github.com/rezuscloud/rezuscloud/internal/web/handlers/settings"
 	"github.com/rezuscloud/rezuscloud/internal/web/layout"
 	"github.com/rezuscloud/rezuscloud/internal/web/pages"
@@ -40,13 +41,14 @@ import (
 // (store, JWT manager, watch bus, audit/backup/upgrade subsystems) and
 // implements the Host interface that section sub-packages call back into.
 type Handler struct {
-	store       state.StoreAPI
-	jwtManager  *auth.JWTManager
-	bus         watch.Bus                     // optional — enables /events/stream
-	auditStore  audit.Store                   // optional — enables /settings/audit
-	backupSvc   *backup.Service               // optional — enables /settings/backups
-	upgradeMgr  *upgrade.Manager              // optional — enables cluster upgrade endpoints
-	metricsAgg_ dashhandler.MetricsAggregator // optional — enables resource pressure on dashboard
+	store          state.StoreAPI
+	jwtManager     *auth.JWTManager
+	bus            watch.Bus                           // optional — enables /events/stream
+	auditStore     audit.Store                         // optional — enables /settings/audit
+	backupSvc      *backup.Service                     // optional — enables /settings/backups
+	upgradeMgr     *upgrade.Manager                    // optional — enables cluster upgrade endpoints
+	metricsAgg_    dashhandler.MetricsAggregator       // optional — enables resource pressure on dashboard
+	machineActions machineshandler.MachineActionRunner // optional — enables reboot/shutdown/logs
 }
 
 // NewHandler creates a WebUI handler.
@@ -102,6 +104,13 @@ func (h *Handler) metricsAgg() dashhandler.MetricsAggregator {
 	return h.metricsAgg_
 }
 
+// WithMachineActions injects the machine action runner (reboot/shutdown/logs
+// via the Talos API). Optional — without it, those endpoints return 503.
+func (h *Handler) WithMachineActions(r machineshandler.MachineActionRunner) *Handler {
+	h.machineActions = r
+	return h
+}
+
 // WithAuditComponent injects the audit subsystem component.
 func (h *Handler) WithAuditComponent(c *audit.Component) *Handler {
 	if c == nil {
@@ -119,7 +128,11 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	authn.New(h.store, h.jwtManager, h).RegisterRoutes(mux)
 	dashhandler.New(h.store, h.bus, h.auditStore, h.backupAdapter(), h.upgradeAdapter(), h.metricsAgg(), h).RegisterRoutes(mux)
 	clusters.New(h.store, h.upgradeMgr, h).RegisterRoutes(mux)
-	machines.New(h.store, h.bus, h).RegisterRoutes(mux)
+	mh := machines.New(h.store, h.bus, h)
+	if h.machineActions != nil {
+		mh.WithActions(h.machineActions)
+	}
+	mh.RegisterRoutes(mux)
 	settings.New(h.store, h.backupSvc, h.auditStore, h).RegisterRoutes(mux)
 
 	// Static assets (W12 logs/monitor SSE consumers).
