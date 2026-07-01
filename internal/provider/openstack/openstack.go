@@ -114,6 +114,12 @@ func (p *Provider) Render(req provider.RenderRequest) ([]byte, error) {
 	// provider block: OpenStack reads creds from OS_* env (no hardcoded auth).
 	root.AddProvider("openstack", obj{})
 
+	// data: talos_machine_configuration per role — generates the machine
+	// config delivered via config_drive user_data (ADR 0008).
+	for _, role := range rolesPresent(req.NodeGroups) {
+		renderTalosConfigDataSource(&root, role)
+	}
+
 	// Render each node group → its own secgroup + pets + volumes + instance.
 	// (One secgroup per node group keeps them isolated; the reference uses a
 	// single cluster-wide secgroup because it has one workers map.)
@@ -320,6 +326,38 @@ func rolePrefix(role string) string {
 		return "c"
 	}
 	return "w"
+}
+
+// rolesPresent returns the distinct set of roles across the given node groups
+// ("controlplane" and/or "worker"), preserving first-seen order.
+func rolesPresent(ngs []state.NodeGroupSpec) []string {
+	seen := make(map[string]bool, 2)
+	var roles []string
+	for _, ng := range ngs {
+		role := ng.Role
+		if role == "" {
+			continue
+		}
+		if !seen[role] {
+			seen[role] = true
+			roles = append(roles, role)
+		}
+	}
+	return roles
+}
+
+// renderTalosConfigDataSource emits a data.talos_machine_configuration.<role>
+// data source. Each role gets one (shared across all node groups of that role).
+// The cluster secrets bundle is injected via terraform.tfvars.json at apply.
+func renderTalosConfigDataSource(root *provider.TFConfig, role string) {
+	root.AddDataSource("talos_machine_configuration", role, obj{
+		"cluster_name":       "${var.cluster_name}",
+		"cluster_endpoint":   "${var.cluster_endpoint}",
+		"machine_type":       role,
+		"machine_secrets":    "${var.machine_secrets}",
+		"kubernetes_version": "${var.kubernetes_version}",
+		"talos_version":      "${var.talos_version}",
+	})
 }
 
 func sanitize(s string) string {
