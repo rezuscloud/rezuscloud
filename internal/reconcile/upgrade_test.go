@@ -90,20 +90,14 @@ func TestRunUpgradesIfNeeded_DriftTriggersUpgrade(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Both talos (1.12.6→1.13.0) and kubernetes (1.35.0→1.36.0) drifted.
-	if len(runner.calls) != 2 {
-		t.Fatalf("expected 2 upgrade calls, got %d: %+v", len(runner.calls), runner.calls)
+	// Only talos drift triggers an upgrade (k8s is handled implicitly by the
+	// talos upgrade for Talos-managed clusters).
+	if len(runner.calls) != 1 {
+		t.Fatalf("expected 1 upgrade call (talos only), got %d: %+v", len(runner.calls), runner.calls)
 	}
-
-	components := map[string]upgradeCall{}
-	for _, c := range runner.calls {
-		components[c.component] = c
-	}
-	if c, ok := components["talos"]; !ok || c.currentVersion != "1.12.6" || c.targetVersion != "1.13.0" {
-		t.Errorf("talos upgrade = %+v", c)
-	}
-	if c, ok := components["kubernetes"]; !ok || c.currentVersion != "1.35.0" || c.targetVersion != "1.36.0" {
-		t.Errorf("kubernetes upgrade = %+v", c)
+	c := runner.calls[0]
+	if c.component != "talos" || c.currentVersion != "1.12.6" || c.targetVersion != "1.13.0" {
+		t.Errorf("talos upgrade = %+v, want component=talos 1.12.6→1.13.0", c)
 	}
 }
 

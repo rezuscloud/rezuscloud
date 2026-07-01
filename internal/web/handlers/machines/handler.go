@@ -46,17 +46,32 @@ type Host interface {
 	BusPresent() bool
 }
 
+// MachineActionRunner performs lifecycle actions on a machine via the Talos
+// API (reboot, shutdown, logs). Optional — if nil, the actions return 503.
+type MachineActionRunner interface {
+	Reboot(ctx context.Context, machineID string) error
+	Shutdown(ctx context.Context, machineID string) error
+	Dmesg(ctx context.Context, machineID string) (string, error)
+}
+
 // Handler serves the machines routes.
 type Handler struct {
-	store state.StoreAPI
-	bus   watch.Bus // optional — enables /machines/{id}/events SSE
-	host  Host
+	store   state.StoreAPI
+	bus     watch.Bus // optional — enables /machines/{id}/events SSE
+	host    Host
+	actions MachineActionRunner // optional — enables reboot/shutdown/logs
 }
 
 // New creates a machines Handler. bus may be nil — the events endpoint
 // returns 503 in that case.
 func New(store state.StoreAPI, bus watch.Bus, host Host) *Handler {
 	return &Handler{store: store, bus: bus, host: host}
+}
+
+// WithActions injects the machine action runner (reboot/shutdown/logs).
+func (h *Handler) WithActions(r MachineActionRunner) *Handler {
+	h.actions = r
+	return h
 }
 
 // RegisterRoutes registers all machine routes, gated by Host.AuthRequired.
@@ -291,16 +306,48 @@ func logPartial(w http.ResponseWriter, lines []pages.LogLine) {
 	}
 }
 
-// recentLogs returns synthetic log lines for v1. TODO(W7+): wire real log provider.
+// recentLogs returns real kernel log lines via the Talos API (ADR 0015:
+// read-only surfacing for orchestration visibility). Falls back to a stub
+// message when no action runner is configured or the machine is unreachable.
 func (h *Handler) recentLogs(machineID string) []pages.LogLine {
-	return []pages.LogLine{
-		{
+	if h.actions == nil {
+		return []pages.LogLine{{
 			Timestamp: time.Now().UTC().Format("15:04:05"),
-			Message:   fmt.Sprintf("Log streaming is stubbed for machine %s. Real implementation in W7+.", machineID),
+			Message:   fmt.Sprintf("Log streaming not configured for machine %s.", machineID),
 			Level:     "info",
-			Source:    "rezuscloud",
-		},
+		}}
 	}
+	lines, err := h.actions.Dmesg(context.Background(), machineID)
+	if err != nil || lines == "" {
+		return []pages.LogLine{{
+			Timestamp: time.Now().UTC().Format("15:04:05"),
+			Message:   fmt.Sprintf("No logs available for machine %s: %v", machineID, err),
+			Level:     "warn",
+		}}
+	}
+	return parseDmesgLines(machineID, lines)
+}
+
+// parseDmesgLines splits raw dmesg output into structured LogLine entries.
+// Each line of dmesg output becomes one LogLine with an "info" level.
+func parseDmesgLines(machineID, raw string) []pages.LogLine {
+	var out []pages.LogLine
+	for _, line := range strings.Split(strings.TrimSpace(raw), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		out = append(out, pages.LogLine{
+			Timestamp: time.Now().UTC().Format("15:04:05"),
+			Message:   line,
+			Level:     "info",
+			Source:    "dmesg",
+		})
+	}
+	if len(out) == 0 {
+		return []pages.LogLine{{Timestamp: time.Now().UTC().Format("15:04:05"), Message: "(no kernel log lines)", Level: "info"}}
+	}
+	return out
 }
 
 // --- Monitor + events ---
@@ -632,7 +679,14 @@ func (h *Handler) MachineRestart(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	// TODO(W7): issue restart via machine link.
+	if h.actions == nil {
+		http.Error(w, "machine actions not configured", http.StatusServiceUnavailable)
+		return
+	}
+	if err := h.actions.Reboot(r.Context(), id); err != nil {
+		http.Redirect(w, r, "/machines/"+id+"?toast=restart+failed:+"+err.Error()+"&toast-type=error", http.StatusSeeOther)
+		return
+	}
 	http.Redirect(w, r, "/machines/"+id+"?toast=restart+queued&toast-type=success", http.StatusSeeOther)
 }
 
@@ -648,6 +702,14 @@ func (h *Handler) MachineShutdown(w http.ResponseWriter, r *http.Request) {
 	}
 	if m, _ := h.store.GetMachine(id); m == nil {
 		http.NotFound(w, r)
+		return
+	}
+	if h.actions == nil {
+		http.Error(w, "machine actions not configured", http.StatusServiceUnavailable)
+		return
+	}
+	if err := h.actions.Shutdown(r.Context(), id); err != nil {
+		http.Redirect(w, r, "/machines/"+id+"?toast=shutdown+failed:+"+err.Error()+"&toast-type=error", http.StatusSeeOther)
 		return
 	}
 	http.Redirect(w, r, "/machines/"+id+"?toast=shutdown+queued&toast-type=success", http.StatusSeeOther)
