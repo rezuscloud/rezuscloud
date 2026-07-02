@@ -55,8 +55,8 @@ func TestRender_EmitsTalosConfigDataSource_PerRole(t *testing.T) {
 			if body["machine_type"] != role {
 				t.Errorf("machine_type = %v, want %q", body["machine_type"], role)
 			}
-			if body["machine_secrets"] != "${var.machine_secrets}" {
-				t.Errorf("machine_secrets = %v, want var reference", body["machine_secrets"])
+			if body["machine_secrets"] != "${talos_machine_secrets.this.machine_secrets}" {
+				t.Errorf("machine_secrets = %v, want talos_machine_secrets.this reference", body["machine_secrets"])
 			}
 		})
 	}

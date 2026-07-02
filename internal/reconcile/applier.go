@@ -121,6 +121,20 @@ func (a *Applier) Apply(ctx context.Context, tenant string) error {
 		return fmt.Errorf("reconcile: render config for %q: %w", tenant, err)
 	}
 
+	// Write the common TF config (talos_machine_secrets resource + variable
+	// declarations) and tfvars with tenant values — but only when the rendered
+	// configs actually reference talos resources (i.e. a real provider rendered
+	// cloud/metal config, not a null_resource test). Without these, a real tofu
+	// apply fails with "undeclared variable" / "missing required resource".
+	if configReferencesTalos(dir) {
+		if err := renderCommonConfig(dir); err != nil {
+			return fmt.Errorf("reconcile: common config for %q: %w", tenant, err)
+		}
+		if err := renderTFVars(dir, t); err != nil {
+			return fmt.Errorf("reconcile: tfvars for %q: %w", tenant, err)
+		}
+	}
+
 	// init downloads providers and configures the backend; apply reconciles.
 	if _, err := a.exec.Run(ctx, tenant, "init", "-input=false"); err != nil {
 		return fmt.Errorf("reconcile: tofu init for %q: %w", tenant, err)
@@ -244,6 +258,90 @@ func filterByProvider(ngs []state.NodeGroupSpec, providerType string) []state.No
 
 // providerTypeOf extracts the provider type from a ProviderClass. Returns the
 // segment before the first ':', or the whole string if there is no ':'.
+// configReferencesTalos checks whether any .tf.json in the workdir references
+// talos_machine_secrets. If so, the common config (secrets resource + variables)
+// must be written so those references resolve.
+func configReferencesTalos(dir string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if !strings.HasSuffix(e.Name(), ".tf.json") || e.Name() == "backend.tf.json" {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			continue
+		}
+		if strings.Contains(string(data), "talos_machine_secrets") {
+			return true
+		}
+	}
+	return false
+}
+
+// renderCommonConfig writes common.tf.json: the talos_machine_secrets resource
+// (generates + stores cluster PKI in TF state, per ADR 0005) and variable
+// declarations for the values that providers reference. Without this, the
+// generated config references undeclared variables and a missing resource.
+func renderCommonConfig(dir string) error {
+	common := map[string]any{
+		"terraform": map[string]any{
+			"required_providers": map[string]any{
+				"talos": map[string]any{"source": "siderolabs/talos"},
+			},
+		},
+		"resource": map[string]any{
+			"talos_machine_secrets": map[string]any{
+				"this": map[string]any{},
+			},
+		},
+		"variable": commonVariables(),
+	}
+	raw, err := json.MarshalIndent(common, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "common.tf.json"), raw, 0o644)
+}
+
+// commonVariables declares every variable the provider modules reference.
+// Simple string variables — the complex secrets are handled by the
+// talos_machine_secrets resource, not variables.
+func commonVariables() map[string]any {
+	strVar := func(desc string) map[string]any {
+		return map[string]any{"type": "string", "description": desc}
+	}
+	return map[string]any{
+		"cluster_name":       strVar("The tenant cluster name"),
+		"cluster_endpoint":   strVar("The control-plane API endpoint"),
+		"talos_version":      strVar("The desired Talos version"),
+		"kubernetes_version": strVar("The desired Kubernetes version"),
+		// OCI-specific (harmless for non-OCI tenants — tofu warns if unused).
+		"region":           strVar("OCI region"),
+		"compartment_ocid": strVar("OCI compartment OCID"),
+		"talos_image_ocid": strVar("Talos image OCID (OCI)"),
+	}
+}
+
+// renderTFVars writes terraform.tfvars.json with the tenant's declared values.
+// Only simple string values — the secrets bundle lives in the
+// talos_machine_secrets TF resource, not here.
+func renderTFVars(dir string, t *state.Tenant) error {
+	tfvars := map[string]string{
+		"cluster_name":       t.Metadata.Name,
+		"cluster_endpoint":   t.Spec.ControlPlaneEndpoint,
+		"talos_version":      t.Spec.TalosVersion,
+		"kubernetes_version": t.Spec.KubernetesVersion,
+	}
+	raw, err := json.MarshalIndent(tfvars, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "terraform.tfvars.json"), raw, 0o644)
+}
+
 func providerTypeOf(class string) string {
 	if i := strings.IndexByte(class, ':'); i >= 0 {
 		return class[:i]

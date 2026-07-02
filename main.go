@@ -84,17 +84,19 @@ func main() {
 	backendURL := "http://127.0.0.1:" + portFromAddr(cfg.Addr) + "/tfstate"
 	tfExec, err := tfexec.New(filepath.Join(cfg.DataDir, "tfwork"),
 		tfexec.WithBackendURL(backendURL),
+		tfexec.WithEncryption(cfg.StatePassphrase),
 	)
 	if err != nil {
 		log.Fatalf("tfexec init: %v", err)
 	}
 
+	// Secrets cache: in-memory tenant credentials, shared across subsystems
+	// (status-plane probes + the upgrade adapter). Refreshed after each apply.
+	secretsCache := credentials.NewSecretsCache(credentials.StoreSource(store))
+
 	// Upgrade engine: owns the rolling upgrade loop + run persistence. Injected
 	// as the pre-apply upgrade hook (#93) so machines converge before tofu apply.
-	// The per-machine adapter (#134) uses the SecretsCache to reach each
-	// tenant's Talos API.
-	secretsCacheForUpgrade := credentials.NewSecretsCache(credentials.StoreSource(store))
-	machineUpgrader := talosupgrade.New(secretsCacheForUpgrade, store)
+	machineUpgrader := talosupgrade.New(secretsCache, store)
 	upgradeMgr := upgrade.NewManager(store, machineUpgrader, upgrade.NewStoreMachineLister(store))
 
 	// Apply queue: debounced per-tenant reconciliation scheduler (#87a). Driven
@@ -124,9 +126,8 @@ func main() {
 	statusTracker.Start(ctx)
 	defer statusTracker.Stop()
 
-	// Secrets cache: in-memory tenant credentials for status-plane probes
-	// (ADR 0016, #92). Refreshed after each successful apply.
-	secretsCache := credentials.NewSecretsCache(credentials.StoreSource(store))
+	// Secrets cache listener: refreshed after PhaseApplied.
+	// (secretsCache was created earlier, shared with the upgrade adapter.)
 
 	statusListener := statusTracker.Listener()
 	projectionListener := reconcile.ProjectionListener(projIndex)
@@ -245,24 +246,26 @@ func main() {
 
 // config holds the management plane configuration.
 type config struct {
-	Addr          string // HTTP listen address
-	DataDir       string // Persistent data directory
-	Mode          string // "standalone" or "cluster"
-	JWTSecret     string // JWT signing secret
-	AdminPassword string // Initial admin password
-	PrometheusURL string // Prometheus query endpoint (e.g. http://prometheus:9090)
-	K8sAPIURL     string // Kubernetes API server URL (e.g. https://kubernetes.default.svc)
+	Addr            string // HTTP listen address
+	DataDir         string // Persistent data directory
+	Mode            string // "standalone" or "cluster"
+	JWTSecret       string // JWT signing secret
+	AdminPassword   string // Initial admin password
+	PrometheusURL   string // Prometheus query endpoint (e.g. http://prometheus:9090)
+	K8sAPIURL       string // Kubernetes API server URL (e.g. https://kubernetes.default.svc)
+	StatePassphrase string // OpenTofu state encryption passphrase (ADR 0005)
 }
 
 func loadConfig() config {
 	return config{
-		Addr:          envOr("REZUSCLOUD_ADDR", ":8080"),
-		DataDir:       envOr("REZUSCLOUD_DATA_DIR", "/data"),
-		Mode:          envOr("REZUSCLOUD_MODE", "standalone"),
-		JWTSecret:     envOr("REZUSCLOUD_JWT_SECRET", ""),
-		AdminPassword: os.Getenv("REZUSCLOUD_ADMIN_PASSWORD"),
-		PrometheusURL: os.Getenv("REZUSCLOUD_PROMETHEUS_URL"),
-		K8sAPIURL:     os.Getenv("REZUSCLOUD_K8S_API_URL"),
+		Addr:            envOr("REZUSCLOUD_ADDR", ":8080"),
+		DataDir:         envOr("REZUSCLOUD_DATA_DIR", "/data"),
+		Mode:            envOr("REZUSCLOUD_MODE", "standalone"),
+		JWTSecret:       envOr("REZUSCLOUD_JWT_SECRET", ""),
+		AdminPassword:   os.Getenv("REZUSCLOUD_ADMIN_PASSWORD"),
+		PrometheusURL:   os.Getenv("REZUSCLOUD_PROMETHEUS_URL"),
+		K8sAPIURL:       os.Getenv("REZUSCLOUD_K8S_API_URL"),
+		StatePassphrase: os.Getenv("REZUSCLOUD_STATE_PASSPHRASE"),
 	}
 }
 
