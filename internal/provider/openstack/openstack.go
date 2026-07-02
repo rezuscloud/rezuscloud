@@ -354,7 +354,7 @@ func renderTalosConfigDataSource(root *provider.TFConfig, role string) {
 		"cluster_name":       "${var.cluster_name}",
 		"cluster_endpoint":   "${var.cluster_endpoint}",
 		"machine_type":       role,
-		"machine_secrets":    "${var.machine_secrets}",
+		"machine_secrets":    "${talos_machine_secrets.this.machine_secrets}",
 		"kubernetes_version": "${var.kubernetes_version}",
 		"talos_version":      "${var.talos_version}",
 	})
