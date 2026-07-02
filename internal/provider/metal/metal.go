@@ -139,7 +139,7 @@ func renderNodeGroup(root *provider.TFConfig, ng state.NodeGroupSpec) error {
 		"cluster_name":       "${var.cluster_name}",
 		"cluster_endpoint":   "${var.cluster_endpoint}",
 		"machine_type":       role,
-		"machine_secrets":    "${var.machine_secrets}",
+		"machine_secrets":    "${talos_machine_secrets.this.machine_secrets}",
 		"talos_version":      strVar("talos_version"),
 		"kubernetes_version": strVar("kubernetes_version"),
 	})
@@ -158,7 +158,7 @@ func renderNodeGroup(root *provider.TFConfig, ng state.NodeGroupSpec) error {
 	patches := buildConfigPatches(base, cfg, prefix, petName)
 	apply := obj{
 		"for_each":                    fmt.Sprintf("${var.metal_machines_%s}", base),
-		"client_configuration":        "${var.client_configuration}",
+		"client_configuration":        "${talos_machine_secrets.this.client_configuration}",
 		"machine_configuration_input": fmt.Sprintf("${data.talos_machine_configuration.%s.machine_configuration}", dsName),
 		"node":                        "${each.key}",
 		"apply_mode":                  "auto",
