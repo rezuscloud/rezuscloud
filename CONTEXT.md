@@ -43,7 +43,7 @@ rezuscloud binary (server)                       rezusctl binary (CLI)
 ├── Controllers (async reconciliation) [built]
 │   ├── TenantReconciler          [built]
 │   ├── NodeGroupReconciler       [built]
-│   └── UpgradeReconciler         [planned]
+│   └── UpgradeReconciler         [built]
 ├── Providers (TF config generation) [built]
 ├── State projection (TF state → API spec) [built]
 ├── Config generation (Talos) [built]
@@ -92,9 +92,8 @@ catch external drift.
 generation is version-aware (the `talos` provider's `talos_machine_configuration`
 generates version-specific config). On a `talosVersion`/`kubernetesVersion` bump:
 the reconcile `Applier` runs the rolling upgrade engine (`internal/upgrade`,
-real Talos API adapter in `internal/upgrade/talos`, K8s skew policy in
-`internal/upgrade/k8s/policy.go`) **first** via a pre-apply hook, *then*
-`tofu apply` syncs declared state. `ignore_changes = [user_data]` on
+real Talos API adapter in `internal/upgrade/talos`) **first** via a pre-apply
+hook, *then* `tofu apply` syncs declared state. `ignore_changes = [user_data]` on
 instances guarantees the apply never recreates VMs. The upgrade engine is
 declarative — the spec is the input (the user already set the new version); the
 upgrade converges machines to match it. No write-back of the version after
@@ -106,7 +105,7 @@ upgrade (that would re-trigger the apply queue).
 `aes_gcm` config embedded in the generated `.tf.json` — RezusCloud's HTTP
 backend stores opaque blobs and never implements crypto itself. The reconciler
 runs `tofu state pull` (with `TF_ENCRYPTION` set) after each apply to extract
-`client_configuration`, which it caches in memory *[planned]*. v1 uses a
+`client_configuration`, which it caches in memory **[built]**. v1 uses a
 single root passphrase; the design evolves to per-tenant passphrases under a
 root key without an architecture change.
 
