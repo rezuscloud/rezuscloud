@@ -17,6 +17,7 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/backup"
 	"github.com/rezuscloud/rezuscloud/internal/projection"
 	"github.com/rezuscloud/rezuscloud/internal/state"
+	"github.com/rezuscloud/rezuscloud/internal/status"
 	"github.com/rezuscloud/rezuscloud/internal/upgrade"
 )
 
@@ -24,7 +25,9 @@ import (
 // auditComponent is required — the API runs audit middleware on every mutation.
 // backupComponent may be nil — if nil, /api/v1/backups/* is not registered.
 // upgradeManager is required — owns upgrade run lifecycle.
-func Router(store state.StoreAPI, jwtManager *auth.JWTManager, auditComponent *audit.Component, backupComponent *backup.Component, upgradeManager *upgrade.Manager, projectionIdx *projection.Index) http.Handler {
+// projectionIdx may be nil — if nil, /api/v1/.../projected returns 503.
+// statusGatherer may be nil — if nil, /api/v1/.../health returns 503.
+func Router(store state.StoreAPI, jwtManager *auth.JWTManager, auditComponent *audit.Component, backupComponent *backup.Component, upgradeManager *upgrade.Manager, projectionIdx *projection.Index, statusGatherer *status.Gatherer) http.Handler {
 	mux := http.NewServeMux()
 
 	// Public endpoints (no auth required).
@@ -61,6 +64,9 @@ func Router(store state.StoreAPI, jwtManager *auth.JWTManager, auditComponent *a
 	// Projected TF-state read model (ADR 0005). Optional — returns 503 if the
 	// projection subsystem isn't configured.
 	apiproj.NewAPI(projectionIdx).RegisterRoutes(protected)
+
+	// Tenant health (ADR 0016 on-demand probe). Optional — returns 503.
+	status.NewAPI(statusGatherer).RegisterRoutes(protected)
 
 	// Upgrade endpoints.
 	upgradeAPI := upgrade.NewAPI(store, upgradeManager)

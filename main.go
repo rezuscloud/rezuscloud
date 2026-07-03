@@ -29,6 +29,7 @@ import (
 	provideros "github.com/rezuscloud/rezuscloud/internal/provider/openstack"
 	"github.com/rezuscloud/rezuscloud/internal/reconcile"
 	"github.com/rezuscloud/rezuscloud/internal/state"
+	statuspkg "github.com/rezuscloud/rezuscloud/internal/status"
 	"github.com/rezuscloud/rezuscloud/internal/tfbackend"
 	"github.com/rezuscloud/rezuscloud/internal/tfexec"
 	"github.com/rezuscloud/rezuscloud/internal/upgrade"
@@ -131,6 +132,8 @@ func main() {
 
 	statusListener := statusTracker.Listener()
 	projectionListener := reconcile.ProjectionListener(projIndex)
+	storeEnricher := reconcile.NewStoreEnricher(store, projIndex)
+	enrichListener := storeEnricher.Listener()
 	secretsListener := func(tenant string, phase applyqueue.Phase, err error) {
 		if phase == applyqueue.PhaseApplied {
 			secretsCache.Refresh(ctx, tenant)
@@ -140,6 +143,7 @@ func main() {
 		func(tenant string, phase applyqueue.Phase, err error) {
 			statusListener(tenant, phase, err)
 			projectionListener(tenant, phase, err)
+			enrichListener(tenant, phase, err)
 			secretsListener(tenant, phase, err)
 		},
 		applyqueue.Config{},
@@ -185,11 +189,14 @@ func main() {
 	// pre-apply hook; keep the API wiring here).
 	// upgradeMgr already constructed above.
 
+	// Status gatherer (ADR 0016): on-demand tenant health probe with short TTL.
+	statusGatherer := statuspkg.NewGatherer(store, secretsCache, nil)
+
 	// API router with middleware (recovery, logging, auth).
 	// Registered with explicit methods because the WebUI registers method-scoped
 	// routes ("GET /", "GET /tenants", ...) and Go 1.22+ ServeMux panics when
 	// method-scoped and method-less patterns share a path prefix.
-	apiRouter := api.Router(store, jwtManager, auditComponent, backupComponent, upgradeMgr, projIndex)
+	apiRouter := api.Router(store, jwtManager, auditComponent, backupComponent, upgradeMgr, projIndex, statusGatherer)
 	for _, method := range []string{"GET", "POST", "PUT", "DELETE", "PATCH"} {
 		mux.Handle(method+" /api/", apiRouter)
 	}
