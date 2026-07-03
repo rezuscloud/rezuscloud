@@ -46,6 +46,8 @@ rezuscloud binary (server)                       rezusctl binary (CLI)
 │   └── UpgradeReconciler         [built]
 ├── Providers (TF config generation) [built]
 ├── State projection (TF state → API spec) [built]
+├── Store enrichment (projection → store) [built #139]
+├── Tenant health (on-demand probe) [built #139]
 ├── Config generation (Talos) [built]
 └── Rolling upgrades [built]
 ```
