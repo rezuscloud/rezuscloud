@@ -128,7 +128,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	authn.New(h.store, h.jwtManager, h).RegisterRoutes(mux)
 	dashhandler.New(h.store, h.bus, h.auditStore, h.backupAdapter(), h.upgradeAdapter(), h.metricsAgg(), h).RegisterRoutes(mux)
 	clusters.New(h.store, h.upgradeMgr, h).RegisterRoutes(mux)
-	mh := machines.New(h.store, h.bus, h)
+	mh := machineshandler.New(h.store, h.bus, h)
 	if h.machineActions != nil {
 		mh.WithActions(h.machineActions)
 	}
