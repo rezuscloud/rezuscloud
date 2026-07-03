@@ -83,10 +83,17 @@ func main() {
 	// TF execution engine: runs tofu in per-tenant workdirs, reading/writing
 	// state through RezusCloud's own HTTP backend (started below).
 	backendURL := "http://127.0.0.1:" + portFromAddr(cfg.Addr) + "/tfstate"
-	tfExec, err := tfexec.New(filepath.Join(cfg.DataDir, "tfwork"),
-		tfexec.WithBackendURL(backendURL),
-		tfexec.WithEncryption(cfg.StatePassphrase),
-	)
+	// Encryption: only enable when the passphrase is set. Without it, state
+	// is stored unencrypted (fine for dev/test; production must set the env var).
+	var tfOpts []tfexec.Option
+	tfOpts = append(tfOpts, tfexec.WithBackendURL(backendURL))
+	if cfg.StatePassphrase != "" {
+		tfOpts = append(tfOpts, tfexec.WithEncryption(cfg.StatePassphrase))
+		log.Printf("  state encryption: enabled")
+	} else {
+		log.Printf("  state encryption: disabled (set REZUSCLOUD_STATE_PASSPHRASE to enable)")
+	}
+	tfExec, err := tfexec.New(filepath.Join(cfg.DataDir, "tfwork"), tfOpts...)
 	if err != nil {
 		log.Fatalf("tfexec init: %v", err)
 	}
