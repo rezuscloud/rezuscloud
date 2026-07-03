@@ -29,7 +29,6 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/web/handlers/authn"
 	"github.com/rezuscloud/rezuscloud/internal/web/handlers/clusters"
 	dashhandler "github.com/rezuscloud/rezuscloud/internal/web/handlers/dashboard"
-	"github.com/rezuscloud/rezuscloud/internal/web/handlers/machines"
 	machineshandler "github.com/rezuscloud/rezuscloud/internal/web/handlers/machines"
 	"github.com/rezuscloud/rezuscloud/internal/web/handlers/settings"
 	"github.com/rezuscloud/rezuscloud/internal/web/layout"
@@ -415,9 +414,9 @@ func (a *upgradeDashboardAdapter) ListRuns(tenant string) ([]dashboard.UpgradeRu
 // interface. If a method is removed or its signature drifts, the build fails
 // here with a clear message.
 var (
-	_ authn.Renderer   = (*Handler)(nil)
-	_ dashhandler.Host = (*Handler)(nil)
-	_ clusters.Host    = (*Handler)(nil)
-	_ machines.Host    = (*Handler)(nil)
-	_ settings.Host    = (*Handler)(nil)
+	_ authn.Renderer       = (*Handler)(nil)
+	_ dashhandler.Host     = (*Handler)(nil)
+	_ clusters.Host        = (*Handler)(nil)
+	_ machineshandler.Host = (*Handler)(nil)
+	_ settings.Host        = (*Handler)(nil)
 )
