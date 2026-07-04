@@ -1,0 +1,49 @@
+name: E2E (QEMU)
+
+# Manual trigger or tag pushes. NOT part of the PR CI gate — QEMU E2E tests
+# require KVM on the runner and a Talos ISO, and take 5+ minutes to run.
+on:
+  workflow_dispatch: {}
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  e2e-qemu:
+    runs-on: [self-hosted, Linux, X64]
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Install C compiler
+        run: which gcc || (sudo apt-get update -q && sudo apt-get install -y gcc)
+
+      - name: Install OpenTofu
+        uses: opentofu/setup-opentofu@v2
+        with:
+          tofu_version_file: .opentofu-version
+          tofu_wrapper: false
+
+      - name: Check KVM availability
+        run: |
+          if [ ! -e /dev/kvm ]; then
+            echo "::warning::KVM not available — QEMU E2E tests will be skipped"
+          fi
+
+      - name: Download Talos ISO
+        run: |
+          TALOS_VERSION="${REZUSCLOUD_E2E_TALOS_VERSION:-v1.12.6}"
+          curl -fSsL "https://github.com/siderolabs/talos/releases/download/${TALOS_VERSION}/metal-amd64.iso" -o /tmp/talos.iso
+
+      - name: Run QEMU E2E tests
+        env:
+          REZUSCLOUD_E2E_QEMU: "1"
+          REZUSCLOUD_E2E_TALOS_ISO: "/tmp/talos.iso"
+          CGO_ENABLED: "1"
+        run: go test -v -tags=e2e -run '^TestE2E' ./tests/e2e/...
