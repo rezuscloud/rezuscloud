@@ -26,7 +26,7 @@
 | **Apply Queue** | Debounced, per-tenant queue. All spec writes for a tenant coalesce within a debounce window; when it drains, a single `tofu apply` reconciles the whole tenant. Serial within a tenant, parallel across tenants. A slow periodic resync re-enqueues every tenant to catch external drift. |
 | **Event Bus** | NATS, embedded in-process in the single-replica management plane. The single event/streaming primitive — both resource-change events (WebUI SSE) and async-controller events flow through it (ADR 0009). |
 | **State Encryption** | OpenTofu's native state encryption (`pbkdf2` + `aes_gcm`). Applied by `tofu` in the generated `.tf.json`, NOT by RezusCloud's HTTP backend. The backend stores opaque encrypted blobs. RezusCloud never reimplements crypto — every decrypt goes through `tofu state pull` with `TF_ENCRYPTION` set. |
-| **Status Plane** | Observed runtime state (node health, machine stage) — **best-effort, never authoritative, never written to TF state.** The principle is decided (ADR 0010); the mechanism that populates status (live scrape, on-demand probe, etc.) is **deferred to a later phase** and will be its own ADR. RezusCloud does not depend on an external observability stack and does not build one now — only the primitives needed for orchestration, later. |
+| **Status Plane** | Observed runtime state (node health, machine stage) — **best-effort, never authoritative, never written to TF state.** The principle (ADR 0010) and the mechanism are decided: **on-demand probe with short in-memory TTL** (ADR 0016, 15 s). No background scrapers — probes fire only when the health endpoint is hit. RezusCloud does not depend on an external observability stack and does not build one. |
 
 ## Architecture
 
@@ -61,9 +61,9 @@ rezuscloud binary (server)                       rezusctl binary (CLI)
 - **Status plane (observed):** Runtime data (node health, machine stage) is
   best-effort and **never authoritative** — it may lag, may be stale, and may
   be absent. **Never written back to TF state.** The principle is decided
-  (ADR 0010); the mechanism that populates status is **deferred to a later
-  phase**. Today `status` is written by API handlers from ad-hoc observations;
-  no status-gathering component exists yet.
+  (ADR 0010); the mechanism is decided and built: **on-demand probe with
+  short in-memory TTL** (ADR 0016, 15 s, `internal/status/`). No background
+  scrapers — probes fire only when the health endpoint is hit.
 
 The `metadata` + `spec` of an infrastructure resource come from TF state;
 `status` comes from observation. The two never mix. RezusCloud does not depend
