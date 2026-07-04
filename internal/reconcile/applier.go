@@ -313,21 +313,29 @@ func commonVariables() map[string]any {
 	strVar := func(desc string) map[string]any {
 		return map[string]any{"type": "string", "description": desc}
 	}
+	// Provider-specific variables are optional (default "") so non-matching
+	// tenants (e.g. an OpenStack tenant) don't fail on undeclared-but-unused
+	// OCI variables. When the matching provider IS rendered, renderTFVars
+	// populates them from node group config.
+	optionalStrVar := func(desc string) map[string]any {
+		return map[string]any{"type": "string", "description": desc, "default": ""}
+	}
 	return map[string]any{
 		"cluster_name":       strVar("The tenant cluster name"),
 		"cluster_endpoint":   strVar("The control-plane API endpoint"),
 		"talos_version":      strVar("The desired Talos version"),
 		"kubernetes_version": strVar("The desired Kubernetes version"),
-		// OCI-specific (harmless for non-OCI tenants — tofu warns if unused).
-		"region":           strVar("OCI region"),
-		"compartment_ocid": strVar("OCI compartment OCID"),
-		"talos_image_ocid": strVar("Talos image OCID (OCI)"),
+		// OCI-specific (populated by renderTFVars from node group config).
+		"region":           optionalStrVar("OCI region"),
+		"compartment_ocid": optionalStrVar("OCI compartment OCID"),
+		"talos_image_ocid": optionalStrVar("Talos image OCID (OCI)"),
 	}
 }
 
 // renderTFVars writes terraform.tfvars.json with the tenant's declared values.
-// Only simple string values — the secrets bundle lives in the
-// talos_machine_secrets TF resource, not here.
+// Cluster-level values come from the tenant spec; provider-specific values
+// (e.g. OCI compartment OCID, image OCID) are extracted from the first
+// matching node group's ProviderConfig.
 func renderTFVars(dir string, t *state.Tenant) error {
 	tfvars := map[string]string{
 		"cluster_name":       t.Metadata.Name,
@@ -335,6 +343,32 @@ func renderTFVars(dir string, t *state.Tenant) error {
 		"talos_version":      t.Spec.TalosVersion,
 		"kubernetes_version": t.Spec.KubernetesVersion,
 	}
+
+	// Extract OCI-specific values from the first OCI node group's config.
+	for _, ng := range t.Spec.NodeGroups {
+		if providerTypeOf(ng.ProviderClass) != "oci" || len(ng.ProviderConfig) == 0 {
+			continue
+		}
+		var cfg struct {
+			CompartmentOcid string `json:"compartmentOcid"`
+			ImageOcid       string `json:"imageOcid"`
+			Region          string `json:"region"`
+		}
+		if err := json.Unmarshal(ng.ProviderConfig, &cfg); err != nil {
+			continue // malformed config — skip, let provider validation catch it
+		}
+		if cfg.CompartmentOcid != "" {
+			tfvars["compartment_ocid"] = cfg.CompartmentOcid
+		}
+		if cfg.ImageOcid != "" {
+			tfvars["talos_image_ocid"] = cfg.ImageOcid
+		}
+		if cfg.Region != "" {
+			tfvars["region"] = cfg.Region
+		}
+		break // one OCI node group is enough — compartment is tenant-level
+	}
+
 	raw, err := json.MarshalIndent(tfvars, "", "  ")
 	if err != nil {
 		return err
