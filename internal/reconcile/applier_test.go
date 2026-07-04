@@ -3,6 +3,7 @@ package reconcile
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -260,5 +261,92 @@ func (q *testQueue) Enqueue(tenant string) {
 	select {
 	case q.calls <- tenant:
 	default:
+	}
+}
+
+func TestRenderTFVars_ClusterLevelOnly(t *testing.T) {
+	dir := t.TempDir()
+	tenant := &state.Tenant{
+		Metadata: state.Metadata{Name: "my-cluster"},
+		Spec: state.TenantSpec{
+			KubernetesVersion:    "1.35.0",
+			TalosVersion:         "1.12.6",
+			ControlPlaneEndpoint: "https://10.0.0.1:6443",
+		},
+	}
+	if err := renderTFVars(dir, tenant); err != nil {
+		t.Fatal(err)
+	}
+	//nolint:errcheck
+	data, _ := os.ReadFile(filepath.Join(dir, "terraform.tfvars.json"))
+	var v map[string]string
+	if err := json.Unmarshal(data, &v); err != nil {
+		t.Fatal(err)
+	}
+	if v["cluster_name"] != "my-cluster" {
+		t.Errorf("cluster_name = %q", v["cluster_name"])
+	}
+	if v["kubernetes_version"] != "1.35.0" {
+		t.Errorf("kubernetes_version = %q", v["kubernetes_version"])
+	}
+	if _, ok := v["compartment_ocid"]; ok {
+		t.Error("compartment_ocid should be absent for non-OCI tenant")
+	}
+}
+
+func TestRenderTFVars_OCIProviderConfig(t *testing.T) {
+	dir := t.TempDir()
+	ociConfig, _ := json.Marshal(map[string]string{
+		"region":          "us-phoenix-1",
+		"compartmentOcid": "ocid1.compartment.oc1..abc",
+		"imageOcid":       "ocid1.image.oc1.phx.abc",
+	})
+	tenant := &state.Tenant{
+		Metadata: state.Metadata{Name: "oci-cluster"},
+		Spec: state.TenantSpec{
+			TalosVersion:      "1.12.6",
+			KubernetesVersion: "1.35.0",
+			NodeGroups: []state.NodeGroupSpec{{
+				Name:           "cp",
+				Role:           "controlplane",
+				Count:          1,
+				ProviderClass:  "oci:VM.Standard.A1.Flex",
+				ProviderConfig: ociConfig,
+			}},
+		},
+	}
+	if err := renderTFVars(dir, tenant); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(filepath.Join(dir, "terraform.tfvars.json"))
+	var v map[string]string
+	if err := json.Unmarshal(data, &v); err != nil {
+		t.Fatal(err)
+	}
+	if v["region"] != "us-phoenix-1" {
+		t.Errorf("region = %q, want us-phoenix-1", v["region"])
+	}
+	if v["compartment_ocid"] != "ocid1.compartment.oc1..abc" {
+		t.Errorf("compartment_ocid = %q", v["compartment_ocid"])
+	}
+	if v["talos_image_ocid"] != "ocid1.image.oc1.phx.abc" {
+		t.Errorf("talos_image_ocid = %q", v["talos_image_ocid"])
+	}
+}
+
+func TestCommonVariables_OptionalDefaults(t *testing.T) {
+	vars := commonVariables()
+	for _, name := range []string{"region", "compartment_ocid", "talos_image_ocid"} {
+		v := vars[name].(map[string]any)
+		if v["default"] != "" {
+			t.Errorf("variable %q default = %v, want empty string", name, v["default"])
+		}
+	}
+	// Required variables (no default)
+	for _, name := range []string{"cluster_name", "cluster_endpoint", "talos_version", "kubernetes_version"} {
+		v := vars[name].(map[string]any)
+		if _, hasDefault := v["default"]; hasDefault {
+			t.Errorf("variable %q should not have a default", name)
+		}
 	}
 }

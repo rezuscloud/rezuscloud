@@ -55,6 +55,10 @@ func (p *Provider) Mappings() []provider.TFResourceMapping {
 //
 // Required: CompartmentOCID, Shape, SubnetID. Others default sensibly.
 type NodeGroupConfig struct {
+	// Region is the OCI region, e.g. "us-phoenix-1". Tenant-level: all OCI
+	// node groups in a tenant use the same region. If empty, the operator
+	// must supply TF_VAR_region.
+	Region string `json:"region,omitempty"`
 	// CompartmentOCID is the OCI compartment the instances live in.
 	CompartmentOCID string `json:"compartmentOcid"`
 	// Shape is the OCI instance shape, e.g. "VM.Standard.A1.Flex" (ARM) or
