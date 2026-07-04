@@ -197,7 +197,8 @@ func main() {
 	// upgradeMgr already constructed above.
 
 	// Status gatherer (ADR 0016): on-demand tenant health probe with short TTL.
-	statusGatherer := statuspkg.NewGatherer(store, secretsCache, nil)
+	statusGatherer := statuspkg.NewGatherer(store, secretsCache,
+		statuspkg.NewTalosMachineProbe(store, machineUpgrader.MachineVersion))
 
 	// API router with middleware (recovery, logging, auth).
 	// Registered with explicit methods because the WebUI registers method-scoped

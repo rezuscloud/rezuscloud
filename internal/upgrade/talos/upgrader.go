@@ -154,6 +154,27 @@ func (m *MachineUpgrader) CheckMachineHealth(ctx context.Context, machineID stri
 	return nil
 }
 
+// MachineVersion returns the Talos version string for a single machine, or an
+// error if the machine is unreachable. Used by the status-plane probe adapter
+// to check tenant health (ADR 0016).
+func (m *MachineUpgrader) MachineVersion(ctx context.Context, machineID string) (string, error) {
+	tenant, addr, err := m.resolve(ctx, machineID)
+	if err != nil {
+		return "", err
+	}
+	bundle, ok := m.cache.Get(tenant)
+	if !ok {
+		return "", fmt.Errorf("talos: no cached secrets bundle for tenant %q", tenant)
+	}
+	c, err := m.open(ctx, addr, bundle)
+	if err != nil {
+		return "", fmt.Errorf("talos: open client for %s: %w", addr, err)
+	}
+	defer func() { _ = c.Close() }()
+
+	return c.Version(ctx, addr)
+}
+
 // RollbackMachine reverts a machine to its previously-installed Talos state.
 // The Talos API's Rollback has no version argument — it reverts to the last
 // successful install. The previousVersion parameter is unused (kept for
