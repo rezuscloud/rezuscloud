@@ -23,13 +23,15 @@ Two binaries from one repo (the `kubectl`-in-`kubernetes` model):
 
 ## Current State
 
-The TF-state architecture pivot (epic #83) is in progress — Phases 1–3
-landed (TF backend, exec engine, encryption, apply queue, three provider
-modules), Phase 4 (projection + reconciliation) in flight. Dead code from the
-superseded gRPC-provider/SideroLink model is being removed under the Cleanup
-milestone (#94, #104–#109).
+The TF-state architecture pivot (epic #83) is **complete**. All phases landed:
+TF backend, exec engine, encryption, apply queue, three provider modules,
+projection, reconciliation, convergence, NATS event bus, on-demand status
+probes, and the rolling upgrade engine with a real Talos API adapter. All
+five milestones (Cleanup, Spec-plane, Event-bus, Status-plane, Lifecycle) are
+closed. Dead code from the superseded gRPC-provider/SideroLink model has been
+removed.
 
-- **47 tested packages, 703 test functions** — all passing
+- **61 tested packages, 788 test functions** — all passing
 - CI + release pipelines green. Single version, single release.
 
 ## Repository Layout
@@ -79,12 +81,15 @@ internal/
 ├── metrics/          # Resource metrics (server)
 ├── provider/         # RezusCloud TF Provider modules (oci, openstack, metal)
 ├── state/            # SQLite store + status derivation (server)
+├── status/           # On-demand tenant health probe (ADR 0016, server)
 ├── talosconfig/      # Talos config generation (server)
 ├── tfbackend/        # OpenTofu HTTP state backend
 ├── tfencryption/     # OpenTofu state encryption (pbkdf2 + aes_gcm)
 ├── tfexec/           # OpenTofu subprocess driver
-├── upgrade/          # Rolling upgrades (server)
-├── watch/            # Event bus + SSE/streaming (server)
+├── reconcile/        # Apply pipeline: Applier, EnqueueBus, StoreEnricher, StatusTracker
+├── upgrade/          # Rolling upgrade engine (server)
+│   └── talos/        #   Real Talos API adapter (Upgrade/Rollback/Version/Reboot/Shutdown/Dmesg)
+├── watch/            # NATS event bus + SSE/streaming (server)
 └── web/              # WebUI (server)
     ├── handlers/     #   Section-specific handlers (clusters, machines, settings, dashboard)
     ├── layout/       #   Shared layout + design-system components
@@ -110,8 +115,9 @@ internal/
 - **Upgrades**: Rolling engine for Talos and Kubernetes. One machine at a
   time, health check, auto-rollback (ADR lifecycle, #93).
 - **Backup**: S3-compatible. Database snapshot + resource export.
-- **Events**: In-process event bus today (`internal/watch/`); NATS planned
-  (ADR 0009, #110).
+- **Events**: NATS, embedded in-process (`internal/watch/`), is the single
+  event bus (ADR 0009, built #110). Resource-change events (WebUI SSE) and
+  async-controller events both flow through it.
 
 ## Build Separation (Kubernetes Model)
 
