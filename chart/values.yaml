@@ -81,6 +81,10 @@ rezuscloud:
   # When empty, state encryption is disabled (development only).
   # In production, set via existingSecret key "state-passphrase".
   statePassphrase: ""
+  # -- Log format: "json" (production) or "text" (development).
+  logFormat: "text"
+  # -- Log level: "debug", "info", "warn", "error".
+  logLevel: "info"
 
 # -- JWT signing secret. REQUIRED for auth to work.
 # Generate with: openssl rand -hex 32

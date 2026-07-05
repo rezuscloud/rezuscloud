@@ -2,7 +2,7 @@ package credentials
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -61,7 +61,7 @@ func NewSecretsCache(source SecretsSource) *SecretsCache {
 func (c *SecretsCache) Refresh(ctx context.Context, tenant string) {
 	raw, err := c.source(ctx, tenant)
 	if err != nil {
-		log.Printf("secrets-cache: refresh %q failed: %v", tenant, err)
+		slog.Error("secrets-cache: refresh failed", "tenant", tenant, "err", err)
 		return
 	}
 
@@ -83,7 +83,7 @@ func (c *SecretsCache) Refresh(ctx context.Context, tenant string) {
 
 	bundle, err := UnmarshalSecretsBundle(raw)
 	if err != nil {
-		log.Printf("secrets-cache: unmarshal bundle for %q failed: %v", tenant, err)
+		slog.Error("secrets-cache: unmarshal bundle failed", "tenant", tenant, "err", err)
 		return
 	}
 

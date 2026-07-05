@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"strconv"
 	"sync"
@@ -83,7 +83,7 @@ func NewNATSBus() (*NATSBus, error) {
 		return nil, fmt.Errorf("nats: connect: %w", err)
 	}
 
-	log.Printf("nats: embedded server listening on %s", url)
+	slog.Info("nats: embedded server listening", "url", url)
 
 	return &NATSBus{
 		server:     srv,
@@ -101,11 +101,11 @@ func subject(resourceType string) string {
 func (b *NATSBus) Publish(resourceType string, event Event) {
 	data, err := json.Marshal(event)
 	if err != nil {
-		log.Printf("nats: marshal event for %q: %v", resourceType, err)
+		slog.Error("nats: marshal event failed", "resource", resourceType, "err", err)
 		return
 	}
 	if err := b.nc.Publish(subject(resourceType), data); err != nil {
-		log.Printf("nats: publish to %q: %v", resourceType, err)
+		slog.Error("nats: publish failed", "resource", resourceType, "err", err)
 	}
 }
 
@@ -121,7 +121,7 @@ func (b *NATSBus) Subscribe(resourceType string) (<-chan Event, context.CancelFu
 	sub, err := b.nc.Subscribe(subject, func(msg *nats.Msg) {
 		var ev Event
 		if err := json.Unmarshal(msg.Data, &ev); err != nil {
-			log.Printf("nats: unmarshal event from %q: %v", subject, err)
+			slog.Error("nats: unmarshal event failed", "subject", subject, "err", err)
 			return
 		}
 		select {
@@ -131,7 +131,7 @@ func (b *NATSBus) Subscribe(resourceType string) (<-chan Event, context.CancelFu
 		}
 	})
 	if err != nil {
-		log.Printf("nats: subscribe to %q: %v", subject, err)
+		slog.Error("nats: subscribe failed", "subject", subject, "err", err)
 		// Return a closed channel so the consumer exits immediately.
 		close(ch)
 		_, cancel := context.WithCancel(context.Background())
