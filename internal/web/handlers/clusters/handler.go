@@ -79,6 +79,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /clusters/{name}/{tab}", auth(h.TenantDetail))
 	mux.HandleFunc("DELETE /clusters/{name}", auth(h.ClusterDelete))
 	mux.HandleFunc("POST /clusters/{name}/nodegroups/{ng}/scale", auth(h.NodeGroupScale))
+	mux.HandleFunc("POST /clusters/{name}/nodegroups/create", auth(h.NodeGroupCreate))
 	mux.HandleFunc("GET /clusters/{name}/kubeconfig", auth(h.ClusterKubeconfig))
 	mux.HandleFunc("GET /clusters/{name}/talosconfig", auth(h.ClusterTalosconfig))
 	mux.HandleFunc("POST /clusters/{name}/upgrade/start", auth(h.ClusterUpgradeStart))
@@ -142,6 +143,13 @@ func (h *Handler) TenantDetail(w http.ResponseWriter, r *http.Request) {
 		CanMutate:        h.host.CanMutate(r),
 		UpgradeComponent: r.URL.Query().Get("component"),
 		UpgradeTarget:    r.URL.Query().Get("version"),
+	}
+	if status.Reconciliation != nil {
+		data.ReconcilePhase = status.Reconciliation.Phase
+		data.ReconcileLastError = status.Reconciliation.LastError
+		if status.Reconciliation.UpdatedAt != nil {
+			data.ReconcileUpdatedAt = status.Reconciliation.UpdatedAt.Format("2006-01-02 15:04:05")
+		}
 	}
 
 	// Node groups.
@@ -405,6 +413,72 @@ func (h *Handler) NodeGroupScale(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("HX-Redirect", "/clusters/"+tenant+"?toast="+url.QueryEscape("Node group "+ngName+" scaled to "+countStr)+"&toast-type=success")
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// NodeGroupCreate handles POST /clusters/{name}/nodegroups/create.
+// Creates a new node group scoped to the cluster. The store mutation fires
+// an event through NATS → EnqueueBus → apply queue → reconciliation.
+func (h *Handler) NodeGroupCreate(w http.ResponseWriter, r *http.Request) {
+	tenant := r.PathValue("name")
+	if tenant == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	role := auth.RoleFromContext(r.Context())
+	if role != string(auth.RoleAdmin) && role != string(auth.RoleEdit) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	_ = r.ParseForm()
+	ngName := strings.TrimSpace(r.FormValue("name"))
+	ngRole := r.FormValue("role")
+	countStr := r.FormValue("count")
+	providerClass := strings.TrimSpace(r.FormValue("providerClass"))
+	providerConfig := strings.TrimSpace(r.FormValue("providerConfig"))
+
+	toastType := "error"
+	toast := ""
+
+	if ngName == "" {
+		toast = "Node group name is required."
+	} else if ngRole != "controlplane" && ngRole != "worker" {
+		toast = "Role must be controlplane or worker."
+	} else if count, err := strconv.Atoi(countStr); err != nil || count < 1 || count > 100 {
+		toast = "Count must be between 1 and 100."
+	} else if t, err := h.store.GetTenant(tenant); err != nil || t == nil {
+		toast = "Cluster not found."
+	} else {
+		// Check for existing node group.
+		var existing state.NodeGroupSpec
+		existingMeta, _ := h.store.GetResource("nodegroup", ngName, &existing, nil)
+		if existingMeta.Name != "" {
+			toast = "A node group with this name already exists."
+		} else {
+			spec := state.NodeGroupSpec{
+				Name:          ngName,
+				Role:          ngRole,
+				Count:         count,
+				ProviderClass: providerClass,
+			}
+			if providerConfig != "" {
+				spec.ProviderConfig = json.RawMessage(providerConfig)
+			}
+			labels := map[string]string{
+				"rezuscloud.io/tenant": tenant,
+				"rezuscloud.io/role":   ngRole,
+			}
+			if _, err := h.store.CreateResource("nodegroup", ngName, spec, nil, labels, nil); err != nil {
+				toast = "Failed to create node group: " + err.Error()
+			} else {
+				toast = "Node group " + ngName + " created. Reconciliation queued."
+				toastType = "success"
+			}
+		}
+	}
+
+	http.Redirect(w, r, "/clusters/"+tenant+"?toast="+url.QueryEscape(toast)+"&toast-type="+toastType, http.StatusSeeOther)
 }
 
 // --- Credential download (kubeconfig / talosconfig) ---

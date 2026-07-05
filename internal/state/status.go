@@ -100,5 +100,9 @@ func ComputeTenantStatus(tenant *Tenant, machines []*Machine, nodeGroups []NodeG
 		},
 		KubernetesVersion: tenant.Spec.KubernetesVersion,
 		TalosVersion:      tenant.Spec.TalosVersion,
+		// Preserve the reconciliation status written by StatusTracker (async
+		// apply-queue state). ComputeTenantStatus recomputes the lifecycle
+		// fields but must not clobber the operational reconciliation state.
+		Reconciliation: tenant.Status.Reconciliation,
 	}
 }
