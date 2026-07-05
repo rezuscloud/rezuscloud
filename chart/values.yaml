@@ -76,6 +76,11 @@ rezuscloud:
   # -- Kubernetes API server URL for resource pressure visualization.
   # Example: "https://kubernetes.default.svc"
   k8sAPIURL: ""
+  # -- OpenTofu state encryption passphrase. When set (min 16 chars),
+  # `tofu` encrypts state files at rest via pbkdf2+aes_gcm (ADR 0005).
+  # When empty, state encryption is disabled (development only).
+  # In production, set via existingSecret key "state-passphrase".
+  statePassphrase: ""
 
 # -- JWT signing secret. REQUIRED for auth to work.
 # Generate with: openssl rand -hex 32
