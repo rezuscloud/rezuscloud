@@ -1,5 +1,7 @@
 # Home Assistant Integration
 
+> **Type:** How-to · **Audience:** User integrating Home Assistant
+
 > **⚠ Partially stale.** The deployment topology and HA addon blueprint below
 > describe the pre-pivot architecture (MachineLink port 50180, WireGuard
 > capabilities, Provider gRPC port 50190, join tokens). Under the current

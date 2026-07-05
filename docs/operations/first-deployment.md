@@ -1,5 +1,7 @@
 # First Real Deployment Runbook
 
+> **Type:** How-to · **Audience:** Operator creating the first real tenant
+
 > This runbook walks through creating a real tenant cluster against real cloud
 > infrastructure (OCI or OpenStack), verifying the full reconciliation pipeline.
 > It is the validation that everything works end-to-end: spec → apply →

@@ -1,5 +1,7 @@
 # Multi-Cluster Management
 
+> **Type:** Explanation · **Audience:** Operator managing multiple clusters
+
 RezusCloud manages multiple independent Kubernetes clusters (tenants). Each
 tenant cluster runs its own etcd, API server, and kubelets on dedicated
 machines — no shared control plane infrastructure. This guide describes the

@@ -1,5 +1,7 @@
 # Versioning and Release Pipeline
 
+> **Type:** Reference · **Audience:** Release engineer
+
 ## Overview
 
 Versions are **automatically computed** by [GitVersion](https://gitversion.net/) from git history. No manual tagging needed — every merge to `main` produces a versioned release.
