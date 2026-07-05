@@ -1,4 +1,6 @@
-# Getting Started
+# Install and Deploy RezusCloud
+
+> **Type:** How-to · **Audience:** Operator deploying the management plane
 
 This guide walks through installing RezusCloud and bootstrapping your first
 tenant cluster. For the architecture behind these steps, see

@@ -1,5 +1,7 @@
 # Architecture
 
+> **Type:** Explanation · **Audience:** Anyone seeking understanding
+
 RezusCloud is a **tenant orchestrator** that lives one layer above `talosctl`
 and `kubectl`. It declares Kubernetes clusters (called *tenants*), realises
 them on top of lower-layer tools, and surfaces their state read-only. It never

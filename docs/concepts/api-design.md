@@ -1,5 +1,7 @@
 # RezusCloud API Design
 
+> **Type:** Explanation · **Audience:** API designer or integrator
+
 REST API for the RezusCloud management plane. Follows the Kubernetes API model:
 metadata/spec/status on every resource, label-based selection, finalizer-controlled
 deletion, optimistic concurrency, sub-resource endpoints for non-CRUD operations.

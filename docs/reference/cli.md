@@ -1,5 +1,7 @@
 # CLI Reference
 
+> **Type:** Reference · **Audience:** CLI user
+
 ## Global Options
 
 | Flag | Default | Description |
