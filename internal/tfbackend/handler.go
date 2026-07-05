@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 )
 
@@ -65,7 +65,7 @@ func (h *Handler) handleRead(w http.ResponseWriter, r *http.Request) {
 	id := workspaceID(r)
 	state, found, err := h.store.GetState(r.Context(), id)
 	if err != nil {
-		log.Printf("tfbackend: get state %q: %v", id, err)
+		slog.Error("tfbackend: get state failed", "id", id, "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
@@ -76,7 +76,7 @@ func (h *Handler) handleRead(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if _, err := w.Write(state); err != nil {
-		log.Printf("tfbackend: write state %q: %v", id, err)
+		slog.Error("tfbackend: write state failed", "id", id, "err", err)
 	}
 }
 
@@ -88,7 +88,7 @@ func (h *Handler) handleWrite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.store.PutState(r.Context(), id, body); err != nil {
-		log.Printf("tfbackend: put state %q: %v", id, err)
+		slog.Error("tfbackend: put state failed", "id", id, "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
@@ -99,7 +99,7 @@ func (h *Handler) handleDelete(w http.ResponseWriter, r *http.Request) {
 	id := workspaceID(r)
 	found, err := h.store.DeleteState(r.Context(), id)
 	if err != nil {
-		log.Printf("tfbackend: delete state %q: %v", id, err)
+		slog.Error("tfbackend: delete state failed", "id", id, "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
@@ -134,7 +134,7 @@ func (h *Handler) handleLock(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(holder)
 		return
 	}
-	log.Printf("tfbackend: lock %q: %v", id, err)
+	slog.Error("tfbackend: lock failed", "id", id, "err", err)
 	http.Error(w, "internal error", http.StatusInternalServerError)
 }
 
@@ -150,7 +150,7 @@ func (h *Handler) handleUnlock(w http.ResponseWriter, r *http.Request) {
 	}
 	released, mismatch, err := h.store.Unlock(r.Context(), id, payload.ID)
 	if err != nil {
-		log.Printf("tfbackend: unlock %q: %v", id, err)
+		slog.Error("tfbackend: unlock failed", "id", id, "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}

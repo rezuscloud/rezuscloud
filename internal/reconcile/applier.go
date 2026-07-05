@@ -22,11 +22,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/rezuscloud/rezuscloud/internal/logging"
 	"github.com/rezuscloud/rezuscloud/internal/provider"
 	"github.com/rezuscloud/rezuscloud/internal/state"
 	"github.com/rezuscloud/rezuscloud/internal/tfexec"
@@ -65,7 +65,7 @@ func WithUpgradeRunner(r UpgradeRunner) Option {
 	return func(a *Applier) { a.upgrades = r }
 }
 
-// WithLogger overrides the default log.Printf logger.
+// WithLogger overrides the default logging.Logf logger.
 func WithLogger(fn func(format string, args ...any)) Option {
 	return func(a *Applier) { a.logf = fn }
 }
@@ -78,7 +78,7 @@ func NewApplier(exec *tfexec.Exec, registry *provider.Registry, store state.Stor
 		exec:     exec,
 		registry: registry,
 		store:    store,
-		logf:     log.Printf,
+		logf:     logging.Logf,
 	}
 	for _, o := range opts {
 		o(a)

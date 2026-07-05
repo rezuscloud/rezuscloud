@@ -1,8 +1,7 @@
 package reconcile
 
 import (
-	"log"
-
+	"github.com/rezuscloud/rezuscloud/internal/logging"
 	"github.com/rezuscloud/rezuscloud/internal/state"
 )
 
@@ -27,7 +26,7 @@ type EnqueueBus struct {
 
 // NewEnqueueBus returns an EnqueueBus driving the given queue.
 func NewEnqueueBus(queue Enqueuer) *EnqueueBus {
-	return &EnqueueBus{queue: queue, logf: log.Printf}
+	return &EnqueueBus{queue: queue, logf: logging.Logf}
 }
 
 // Publish implements state.EventBus. It extracts the tenant name from the event

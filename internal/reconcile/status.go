@@ -3,11 +3,11 @@ package reconcile
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"sync"
 	"time"
 
 	"github.com/rezuscloud/rezuscloud/internal/applyqueue"
+	"github.com/rezuscloud/rezuscloud/internal/logging"
 	"github.com/rezuscloud/rezuscloud/internal/state"
 )
 
@@ -40,7 +40,7 @@ type nodeGroupStatusJSON struct {
 func NewStatusTracker(store state.StoreAPI) *StatusTracker {
 	return &StatusTracker{
 		store: store,
-		logf:  log.Printf,
+		logf:  logging.Logf,
 		ch:    make(chan phaseEvent, 256),
 	}
 }

@@ -2,7 +2,7 @@ package reconcile
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"strings"
 
 	"github.com/rezuscloud/rezuscloud/internal/applyqueue"
@@ -51,7 +51,7 @@ func (e *StoreEnricher) enrich(ctx context.Context, tenant string) {
 	// Load existing store machines for this tenant to avoid duplicates.
 	existing, _, err := e.store.ListMachinesByTenant(tenant)
 	if err != nil {
-		log.Printf("enrich: list machines for %q: %v", tenant, err)
+		slog.Error("enrich: list machines failed", "tenant", tenant, "err", err)
 		return
 	}
 
@@ -97,10 +97,10 @@ func (e *StoreEnricher) enrich(ctx context.Context, tenant string) {
 
 		_, err := e.store.CreateMachine(name, spec, labels, nil)
 		if err != nil {
-			log.Printf("enrich: create machine %q for %q: %v", name, tenant, err)
+			slog.Error("enrich: create machine failed", "machine", name, "tenant", tenant, "err", err)
 			continue
 		}
-		log.Printf("enrich: created machine %q for tenant %q from projection (addr=%s)", name, tenant, addr)
+		slog.Info("enrich: created machine from projection", "machine", name, "tenant", tenant, "addr", addr)
 	}
 }
 

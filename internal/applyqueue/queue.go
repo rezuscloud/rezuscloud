@@ -29,9 +29,10 @@ package applyqueue
 import (
 	"context"
 	"errors"
-	"log"
 	"sync"
 	"time"
+
+	"github.com/rezuscloud/rezuscloud/internal/logging"
 )
 
 // Phase is a tenant's position in the reconciliation cycle. Emitted to Listener.
@@ -77,7 +78,7 @@ type Config struct {
 	// ResyncInterval re-enqueues all listed tenants periodically to catch
 	// external drift. Default 5m; 0 disables resync entirely.
 	ResyncInterval time.Duration
-	// Logf is the lifecycle logger. Default log.Printf.
+	// Logf is the lifecycle logger. Default logging.Logf.
 	Logf func(format string, args ...any)
 }
 
@@ -93,7 +94,7 @@ func (c Config) withDefaults() Config {
 		c.ResyncInterval = 0
 	}
 	if c.Logf == nil {
-		c.Logf = log.Printf
+		c.Logf = logging.Logf
 	}
 	return c
 }

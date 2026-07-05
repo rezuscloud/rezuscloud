@@ -6,13 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/rezuscloud/rezuscloud/internal/logging"
 	"github.com/rezuscloud/rezuscloud/internal/tfencryption"
 )
 
@@ -135,7 +135,7 @@ func WithTimeout(d time.Duration) Option {
 	}
 }
 
-// WithLogger overrides the output/lifecycle logger (defaults to log.Printf).
+// WithLogger overrides the output/lifecycle logger (defaults to logging.Logf).
 func WithLogger(fn Logf) Option {
 	return func(e *Exec) error {
 		e.logf = fn
@@ -156,7 +156,7 @@ func New(root string, opts ...Option) (*Exec, error) {
 		root:    root,
 		bin:     "tofu",
 		timeout: DefaultTimeout,
-		logf:    log.Printf,
+		logf:    logging.Logf,
 	}
 	for _, o := range opts {
 		if err := o(e); err != nil {
