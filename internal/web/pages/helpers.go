@@ -23,6 +23,20 @@ func phaseBadgeClass(phase string) string {
 	}
 }
 
+// reconcileBadgeClass maps a reconciliation phase to a badge variant.
+func reconcileBadgeClass(phase string) string {
+	switch phase {
+	case "applied":
+		return "positive"
+	case "failed":
+		return "negative"
+	case "queued", "applying":
+		return "warning"
+	default:
+		return "neutral"
+	}
+}
+
 // stageBadgeClass maps a machine stage to a design system status badge variant.
 func stageBadgeClass(stage string) string {
 	switch stage {

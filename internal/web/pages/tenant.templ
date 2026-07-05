@@ -8,9 +8,13 @@ type TenantDetailData struct {
 	Phase        string
 	K8sVersion   string
 	TalosVersion string
-	NodeGroups   []NodeGroupRow
-	Machines     []MachineRow
-	Patches      []PatchRow
+	// Reconciliation status (async apply-queue state, ADR 0005).
+	ReconcilePhase     string
+	ReconcileLastError string
+	ReconcileUpdatedAt string
+	NodeGroups         []NodeGroupRow
+	Machines           []MachineRow
+	Patches            []PatchRow
 	// PatchPreview is the resolved patch stack for PreviewRole (patches tab).
 	PatchPreview string
 	PreviewRole  string
@@ -199,8 +203,11 @@ templ clusterOverview(data TenantDetailData) {
 						</tr>
 					}
 				</tbody>
-			</table>
+		</table>
 		</div>
+	}
+	if data.CanMutate {
+		@addNodeGroupForm(data)
 	}
 	if len(data.Machines) > 0 {
 		<div class="ds-section-header">Machines</div>
@@ -571,4 +578,72 @@ templ deleteClusterModal(name string) {
 			</form>
 		</div>
 	</dialog>
+}
+
+// reconciliationBanner shows the async apply-queue state (ADR 0005).
+// Displayed when ReconcilePhase is non-empty — helps users understand
+// whether their changes are pending, applying, applied, or failed.
+templ reconciliationBanner(data TenantDetailData) {
+	<div class="ds-callout" style="margin-bottom: 1.5rem;">
+		<div class="ds-callout-header">
+			<span class={ "ds-status-badge ds-status-badge--" + reconcileBadgeClass(data.ReconcilePhase) }>
+				{ "Reconciliation: " + data.ReconcilePhase }
+			</span>
+			if data.ReconcileUpdatedAt != "" {
+				<span class="ds-text-muted" style="font-size: 0.8125rem;">{ "Updated " + data.ReconcileUpdatedAt }</span>
+			}
+		</div>
+		if data.ReconcileLastError != "" {
+			<div class="ds-callout-body">
+				<code class="ds-code">{ data.ReconcileLastError }</code>
+			</div>
+		}
+	</div>
+}
+
+// addNodeGroupForm renders the node group creation form (admin/edit only).
+// Submits to POST /clusters/{name}/nodegroups/create, which creates the
+// node group and triggers reconciliation via the store event bus.
+templ addNodeGroupForm(data TenantDetailData) {
+	<div class="ds-section-header">Add Node Group</div>
+	<form
+		method="POST"
+		action={ templ.URL("/clusters/" + data.Name + "/nodegroups/create") }
+		class="ds-form"
+		style="margin-bottom: 2rem;"
+	>
+		<div class="ds-grid ds-grid-4" style="gap: 0.75rem; align-items: end;">
+			<div class="ds-form-group">
+				<label class="ds-form-label" for={ "ng-name-" + data.Name }>Name</label>
+				<input class="ds-input" type="text" id={ "ng-name-" + data.Name } name="name"
+					placeholder="controlplane" required />
+			</div>
+			<div class="ds-form-group">
+				<label class="ds-form-label" for={ "ng-role-" + data.Name }>Role</label>
+				<select class="ds-input" id={ "ng-role-" + data.Name } name="role">
+					<option value="controlplane">controlplane</option>
+					<option value="worker" selected>worker</option>
+				</select>
+			</div>
+			<div class="ds-form-group">
+				<label class="ds-form-label" for={ "ng-count-" + data.Name }>Count</label>
+				<input class="ds-input" type="number" id={ "ng-count-" + data.Name } name="count"
+					value="1" min="1" max="100" required />
+			</div>
+			<div class="ds-form-group">
+				<label class="ds-form-label" for={ "ng-class-" + data.Name }>Provider Class</label>
+				<input class="ds-input" type="text" id={ "ng-class-" + data.Name } name="providerClass"
+					placeholder="oci:VM.Standard.A1.Flex" />
+			</div>
+		</div>
+		<div class="ds-form-group" style="margin-top: 0.75rem;">
+			<label class="ds-form-label" for={ "ng-config-" + data.Name }>Provider Config (JSON, optional)</label>
+			<textarea class="ds-input" id={ "ng-config-" + data.Name } name="providerConfig" rows="3"
+				placeholder='{"region":"us-phoenix-1","compartmentOcid":"ocid1...","subnetId":"ocid1..."}'
+				style="font-family: monospace; font-size: 0.8125rem;"></textarea>
+		</div>
+		<div class="ds-form-actions" style="margin-top: 0.75rem;">
+			<button type="submit" class="ds-btn ds-btn--primary">Create Node Group</button>
+		</div>
+	</form>
 }
