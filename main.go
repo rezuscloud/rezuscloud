@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -42,34 +42,41 @@ import (
 func main() {
 	cfg := loadConfig()
 
+	// Initialize structured logger. JSON in production, text in development.
+	initLogger(cfg)
+
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 
-	log.Printf("rezuscloud management plane starting")
-	log.Printf("  version: %s", version.Version)
-	log.Printf("  commit:  %s", version.GitCommit)
-	log.Printf("  built:   %s", version.BuildTime)
-	log.Printf("  addr: %s", cfg.Addr)
-	log.Printf("  data dir: %s", cfg.DataDir)
-	log.Printf("  mode: %s", cfg.Mode)
+	slog.Info("rezuscloud management plane starting",
+		"version", version.Version,
+		"gitCommit", version.GitCommit,
+		"buildTime", version.BuildTime,
+		"addr", cfg.Addr,
+		"dataDir", cfg.DataDir,
+		"mode", cfg.Mode,
+	)
 
 	// Initialize state store.
 	store, err := state.Open(filepath.Join(cfg.DataDir, "rezuscloud.db"))
 	if err != nil {
-		log.Fatalf("state init: %v", err)
+		slog.Error("state init failed", "err", err)
+		os.Exit(1)
 	}
 
 	// TF HTTP backend: RezusCloud is the remote state store tofu writes one
 	// encrypted state blob per tenant to (ADR 21). Shares the management DB.
 	tfStore, err := tfbackend.New(store.DB())
 	if err != nil {
-		log.Fatalf("tfbackend init: %v", err)
+		slog.Error("tfbackend init failed", "err", err)
+		os.Exit(1)
 	}
 
 	// Initialize watch bus (NATS embedded, per ADR 0009) + wire into store mutations.
 	natsBus, err := watch.NewNATSBus()
 	if err != nil {
-		log.Fatalf("nats bus init: %v", err)
+		slog.Error("nats bus init failed", "err", err)
+		os.Exit(1)
 	}
 	defer natsBus.Close()
 	var bus watch.Bus = natsBus
@@ -89,13 +96,14 @@ func main() {
 	tfOpts = append(tfOpts, tfexec.WithBackendURL(backendURL))
 	if cfg.StatePassphrase != "" {
 		tfOpts = append(tfOpts, tfexec.WithEncryption(cfg.StatePassphrase))
-		log.Printf("  state encryption: enabled")
+		slog.Info("state encryption enabled")
 	} else {
-		log.Printf("  state encryption: disabled (set REZUSCLOUD_STATE_PASSPHRASE to enable)")
+		slog.Warn("state encryption disabled (set REZUSCLOUD_STATE_PASSPHRASE to enable)")
 	}
 	tfExec, err := tfexec.New(filepath.Join(cfg.DataDir, "tfwork"), tfOpts...)
 	if err != nil {
-		log.Fatalf("tfexec init: %v", err)
+		slog.Error("tfexec init failed", "err", err)
+		os.Exit(1)
 	}
 
 	// Secrets cache: in-memory tenant credentials, shared across subsystems
@@ -189,7 +197,7 @@ func main() {
 	backupDir := os.Getenv("REZUSCLOUD_BACKUP_DIR")
 	backupComponent, backupErr := backup.NewComponent(store, backup.ComponentOptions{Root: backupDir})
 	if backupErr != nil {
-		log.Printf("backup subsystem disabled: %v", backupErr)
+		slog.Warn("backup subsystem disabled", "err", backupErr)
 	}
 
 	// Upgrade subsystem: one Manager owns run lifecycle (moved up for the
@@ -235,7 +243,7 @@ func main() {
 
 	errCh := make(chan error, 1)
 	go func() {
-		log.Printf("  http: %s", cfg.Addr)
+		slog.Info("HTTP server listening", "addr", cfg.Addr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			errCh <- err
 		}
@@ -243,10 +251,11 @@ func main() {
 
 	select {
 	case <-ctx.Done():
-		log.Println("shutting down...")
+		slog.Info("shutting down")
 	case err := <-errCh:
 		if err != nil {
-			log.Fatalf("error: %v", err)
+			slog.Error("shutdown error", "err", err)
+			os.Exit(1)
 		}
 	}
 
@@ -256,7 +265,7 @@ func main() {
 	// Best-effort shutdown — ignore errors (context already cancelled, connections closing).
 	_ = srv.Shutdown(shutdownCtx) //nolint:errcheck // shutdown in deferred context
 	_ = store.Close()             //nolint:errcheck // store close on shutdown
-	log.Println("stopped")
+	slog.Info("stopped")
 }
 
 // config holds the management plane configuration.
@@ -269,6 +278,8 @@ type config struct {
 	PrometheusURL   string // Prometheus query endpoint (e.g. http://prometheus:9090)
 	K8sAPIURL       string // Kubernetes API server URL (e.g. https://kubernetes.default.svc)
 	StatePassphrase string // OpenTofu state encryption passphrase (ADR 0005)
+	LogFormat       string // "json" or "text" (default: text)
+	LogLevel        string // "debug", "info", "warn", "error" (default: info)
 }
 
 func loadConfig() config {
@@ -281,6 +292,8 @@ func loadConfig() config {
 		PrometheusURL:   os.Getenv("REZUSCLOUD_PROMETHEUS_URL"),
 		K8sAPIURL:       os.Getenv("REZUSCLOUD_K8S_API_URL"),
 		StatePassphrase: os.Getenv("REZUSCLOUD_STATE_PASSPHRASE"),
+		LogFormat:       envOr("REZUSCLOUD_LOG_FORMAT", "text"),
+		LogLevel:        envOr("REZUSCLOUD_LOG_LEVEL", "info"),
 	}
 }
 
@@ -289,6 +302,31 @@ func envOr(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// initLogger configures the global slog logger based on REZUSCLOUD_LOG_FORMAT
+// (json/text) and REZUSCLOUD_LOG_LEVEL (debug/info/warn/error).
+func initLogger(cfg config) {
+	var level slog.Level
+	switch strings.ToLower(cfg.LogLevel) {
+	case "debug":
+		level = slog.LevelDebug
+	case "warn":
+		level = slog.LevelWarn
+	case "error":
+		level = slog.LevelError
+	default:
+		level = slog.LevelInfo
+	}
+
+	opts := &slog.HandlerOptions{Level: level}
+	var handler slog.Handler
+	if strings.ToLower(cfg.LogFormat) == "json" {
+		handler = slog.NewJSONHandler(os.Stdout, opts)
+	} else {
+		handler = slog.NewTextHandler(os.Stdout, opts)
+	}
+	slog.SetDefault(slog.New(handler))
 }
 
 // --- HTTP Handlers ---
@@ -316,7 +354,7 @@ func registerVersionHandler(mux *http.ServeMux) {
 func ensureAdminUser(store *state.Store, cfg config) {
 	users, err := store.ListUsers()
 	if err != nil {
-		log.Printf("warning: could not check existing users: %v", err)
+		slog.Warn("could not check existing users", "err", err)
 		return
 	}
 	if len(users) > 0 {
@@ -325,14 +363,14 @@ func ensureAdminUser(store *state.Store, cfg config) {
 
 	password := cfg.AdminPassword
 	if password == "" {
-		log.Println("no admin password set via REZUSCLOUD_ADMIN_PASSWORD")
-		log.Println("create user with: curl -X POST localhost:8080/api/v1/users -H 'Content-Type: application/json' -d '{\"metadata\":{\"name\":\"admin\"},\"spec\":{\"role\":\"admin\",\"password\":\"YOUR_PASSWORD\"}}'")
+		slog.Warn("no admin password set via REZUSCLOUD_ADMIN_PASSWORD; create user via API")
+		slog.Info("create user with: curl -X POST localhost:8080/api/v1/users ...")
 		return
 	}
 
 	hash, err := auth.HashPassword(password)
 	if err != nil {
-		log.Printf("warning: could not hash admin password: %v", err)
+		slog.Warn("could not hash admin password", "err", err)
 		return
 	}
 
@@ -341,11 +379,11 @@ func ensureAdminUser(store *state.Store, cfg config) {
 		PasswordHash: hash,
 	})
 	if err != nil {
-		log.Printf("warning: could not create admin user: %v", err)
+		slog.Warn("could not create admin user", "err", err)
 		return
 	}
 
-	log.Println("created initial admin user (username: admin)")
+	slog.Info("created initial admin user", "username", "admin")
 }
 
 // atoiDefault parses s as an integer; returns fallback on parse error or when

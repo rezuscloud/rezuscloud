@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -133,7 +133,7 @@ func (m *Manager) executeRun(ctx context.Context, runID, tenant, component, targ
 		delete(m.running, runID)
 		m.mu.Unlock()
 		if r := recover(); r != nil {
-			log.Printf("upgrade: run %s panicked: %v", runID, r)
+			slog.Error("upgrade: run panicked", "run", runID, "panic", r)
 			m.failRun(runID, fmt.Sprintf("panic: %v", r))
 		}
 	}()

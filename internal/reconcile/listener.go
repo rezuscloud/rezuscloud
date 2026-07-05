@@ -2,7 +2,7 @@ package reconcile
 
 import (
 	"context"
-	"log"
+	"log/slog"
 
 	"github.com/rezuscloud/rezuscloud/internal/applyqueue"
 	"github.com/rezuscloud/rezuscloud/internal/projection"
@@ -23,10 +23,10 @@ func ProjectionListener(idx *projection.Index) applyqueue.Listener {
 		go func() {
 			n, err := idx.Rebuild(context.Background(), tenant)
 			if err != nil {
-				log.Printf("reconcile: projection rebuild for %q failed: %v", tenant, err)
+				slog.Error("reconcile: projection rebuild failed", "tenant", tenant, "err", err)
 				return
 			}
-			log.Printf("reconcile: projected %d resources for %q", n, tenant)
+			slog.Info("reconcile: projected resources", "count", n, "tenant", tenant)
 		}()
 	}
 }

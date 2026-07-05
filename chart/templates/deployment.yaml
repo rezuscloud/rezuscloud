@@ -91,6 +91,10 @@ spec:
                   key: state-passphrase
                   optional: true
             {{- end }}
+            - name: REZUSCLOUD_LOG_FORMAT
+              value: {{ .Values.rezuscloud.logFormat | quote }}
+            - name: REZUSCLOUD_LOG_LEVEL
+              value: {{ .Values.rezuscloud.logLevel | quote }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
