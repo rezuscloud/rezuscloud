@@ -22,6 +22,7 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/credentials"
 	"github.com/rezuscloud/rezuscloud/internal/ingress"
 	"github.com/rezuscloud/rezuscloud/internal/metrics"
+	operationalmetrics "github.com/rezuscloud/rezuscloud/internal/operationalmetrics"
 	"github.com/rezuscloud/rezuscloud/internal/projection"
 	"github.com/rezuscloud/rezuscloud/internal/provider"
 	providermetal "github.com/rezuscloud/rezuscloud/internal/provider/metal"
@@ -182,6 +183,9 @@ func main() {
 	mux := http.NewServeMux()
 	registerHealthHandlers(mux)
 	registerVersionHandler(mux)
+
+	// Prometheus /metrics endpoint (operational metrics from the store).
+	operationalmetrics.NewHandler(store).RegisterRoutes(mux)
 
 	// TF HTTP backend routes (tofu's remote state endpoint).
 	tfbackend.NewHandler(tfStore).RegisterRoutes(mux, "/tfstate")
