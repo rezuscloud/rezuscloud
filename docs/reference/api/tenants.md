@@ -73,7 +73,23 @@ Requires `metadata.resourceVersion` for optimistic concurrency. Bumping
 DELETE /api/v1/tenants/{name}
 ```
 
-Sets a deletion timestamp; finalizers clean up resources before removal.
+Returns **202 Accepted** — deletion is asynchronous. The store stamps a
+`deletionTimestamp` and two finalizers (`rezuscloud.io/machines`,
+`rezuscloud.io/secrets`). The reconcile controller then runs `tofu destroy`
+to tear down the real cloud infrastructure, cascade-removes child resources
+(node groups, machines, config patches), drops cached secrets, and clears the
+finalizers — the last one triggers garbage-collection of the tenant row. On
+destroy failure the finalizers are left intact and the next resync re-attempts.
+
+### Watch tenants
+
+```
+GET /api/v1/tenants?watch=true
+```
+
+Upgrades to an SSE stream of `{"type":"ADDED|MODIFIED|DELETED","object":{...}}`
+frames. An initial `ADDED` burst reflects current state, then live deltas flow
+until the client disconnects.
 
 ### Download kubeconfig
 

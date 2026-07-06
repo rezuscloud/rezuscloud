@@ -78,6 +78,16 @@ unchanged — it subscribes to NATS under the hood. **[built]** — `internal/wa
 runs an embedded NATS server; the `watch.Bus` interface abstracts the transport
 (`NATSBus` for production, `LocalBus` for tests).
 
+**Generic `?watch=true` [built #172].** The K8s-style watch surface is exposed
+on every resource list endpoint (`GET /tenants?watch=true`, `GET
+/tenants/{t}/node-groups?watch=true`, `GET /machines?watch=true`, `GET
+/tenants/{t}/machines?watch=true`, `GET /tenants/{t}/configpatches?watch=true`).
+The handler subscribes to the bus, optionally sends an initial ADDED snapshot,
+then streams live ADDED/MODIFIED/DELETED frames as SSE (default) or NDJSON until
+the client disconnects. Tenant-scoped watches filter to events labelled with that
+tenant. The WebUI can subscribe to live reconciliation/machine/nodegroup changes
+instead of polling.
+
 ### Scheduling
 
 **Debounced per-tenant apply queue + optimistic concurrency [built].** The
@@ -87,6 +97,20 @@ queue per tenant — rapid edits coalesce into a single `tofu apply` that
 reconciles the whole tenant. Applies serialize within a tenant, run in parallel
 across tenants. A slow periodic resync (e.g., 5 min) re-enqueues every tenant to
 catch external drift.
+
+### Teardown (deletion)
+
+**Finalizer-driven deletion + `tofu destroy` [built #171].** `DELETE
+/tenants/{name}` is asynchronous: the store stamps a `deletionTimestamp` and two
+finalizers (`rezuscloud.io/machines`, `rezuscloud.io/secrets`) and returns 202
+Accepted. The reconcile `Applier.Apply` detects the `deletionTimestamp`, runs
+`tofu init` + `tofu destroy -auto-approve` (same workdir + state as apply), then
+on success cascade-removes every child resource (`RemoveResourcesByTenant`),
+drops cached secrets, and clears the finalizers — the last one triggers the
+store's auto-GC of the tenant row. On failure the finalizers are left intact so
+the next resync re-attempts. The `StatusTracker` translates the queue's
+`PhaseApplying` → `PhaseDestroying` when the tenant is deleting, so the
+reconciliation banner reads "destroying".
 
 ### Upgrades
 
