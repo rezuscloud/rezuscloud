@@ -10,7 +10,7 @@ import (
 func TestResolvePatches_AllEnabled(t *testing.T) {
 	store := newTestStore(t)
 	setupTenant(t, store)
-	api := NewAPI(store)
+	api := NewAPI(store, nil)
 
 	for _, p := range []struct {
 		name, patch, role string
@@ -41,7 +41,7 @@ func TestResolvePatches_AllEnabled(t *testing.T) {
 func TestResolvePatches_FilterByRole(t *testing.T) {
 	store := newTestStore(t)
 	setupTenant(t, store)
-	api := NewAPI(store)
+	api := NewAPI(store, nil)
 
 	for _, p := range []struct {
 		name, patch, role string
@@ -69,7 +69,7 @@ func TestResolvePatches_FilterByRole(t *testing.T) {
 func TestResolvePatches_DisabledExcluded(t *testing.T) {
 	store := newTestStore(t)
 	setupTenant(t, store)
-	api := NewAPI(store)
+	api := NewAPI(store, nil)
 
 	body1 := `{"metadata":{"name":"on"},"spec":{"patch":"on: yaml","enabled":true}}`
 	req1 := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/prod/patches", strings.NewReader(body1))

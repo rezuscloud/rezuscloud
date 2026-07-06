@@ -19,6 +19,7 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/state"
 	"github.com/rezuscloud/rezuscloud/internal/status"
 	"github.com/rezuscloud/rezuscloud/internal/upgrade"
+	"github.com/rezuscloud/rezuscloud/internal/watch"
 )
 
 // Router creates and returns a fully configured HTTP handler for the API.
@@ -27,7 +28,7 @@ import (
 // upgradeManager is required — owns upgrade run lifecycle.
 // projectionIdx may be nil — if nil, /api/v1/.../projected returns 503.
 // statusGatherer may be nil — if nil, /api/v1/.../health returns 503.
-func Router(store state.StoreAPI, jwtManager *auth.JWTManager, auditComponent *audit.Component, backupComponent *backup.Component, upgradeManager *upgrade.Manager, projectionIdx *projection.Index, statusGatherer *status.Gatherer) http.Handler {
+func Router(store state.StoreAPI, jwtManager *auth.JWTManager, auditComponent *audit.Component, backupComponent *backup.Component, upgradeManager *upgrade.Manager, projectionIdx *projection.Index, statusGatherer *status.Gatherer, bus watch.Bus) http.Handler {
 	mux := http.NewServeMux()
 
 	// Public endpoints (no auth required).
@@ -38,15 +39,15 @@ func Router(store state.StoreAPI, jwtManager *auth.JWTManager, auditComponent *a
 	protected := http.NewServeMux()
 
 	// Tenant endpoints — view role minimum.
-	tenantAPI := NewTenantAPI(store)
+	tenantAPI := NewTenantAPI(store, bus)
 	tenantAPI.RegisterRoutes(protected)
 
 	// NodeGroup endpoints — nested under tenants.
-	ngAPI := nodegroup.NewAPI(store)
+	ngAPI := nodegroup.NewAPI(store, bus)
 	ngAPI.RegisterRoutes(protected)
 
 	// Machine endpoints (cluster-wide + tenant-scoped).
-	machineAPI := machine.NewAPI(store)
+	machineAPI := machine.NewAPI(store, bus)
 	machineAPI.RegisterRoutes(protected)
 
 	// Provider endpoints.
@@ -54,7 +55,7 @@ func Router(store state.StoreAPI, jwtManager *auth.JWTManager, auditComponent *a
 	providerAPI.RegisterRoutes(protected)
 
 	// ConfigPatch endpoints — nested under tenants.
-	patchAPI := patch.NewAPI(store)
+	patchAPI := patch.NewAPI(store, bus)
 	patchAPI.RegisterRoutes(protected)
 
 	// Machine log streaming.

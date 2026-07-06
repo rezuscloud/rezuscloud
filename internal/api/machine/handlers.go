@@ -11,16 +11,19 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/api/patch"
 	"github.com/rezuscloud/rezuscloud/internal/configrender"
 	"github.com/rezuscloud/rezuscloud/internal/state"
+	"github.com/rezuscloud/rezuscloud/internal/watch"
 )
 
 // API provides HTTP handlers for Machine CRUD.
 type API struct {
 	store state.StoreAPI
+	bus   watch.Bus // optional: enables ?watch=true on List/ListByTenant
 }
 
-// NewAPI creates a Machine API handler.
-func NewAPI(store state.StoreAPI) *API {
-	return &API{store: store}
+// NewAPI creates a Machine API handler. bus may be nil — when nil,
+// ?watch=true returns 503.
+func NewAPI(store state.StoreAPI, bus watch.Bus) *API {
+	return &API{store: store, bus: bus}
 }
 
 // RegisterRoutes registers machine routes on the given mux.
@@ -43,7 +46,17 @@ type listResponse struct {
 }
 
 // List handles GET /api/v1/machines (all machines, including unassigned).
-func (a *API) List(w http.ResponseWriter, _ *http.Request) {
+func (a *API) List(w http.ResponseWriter, r *http.Request) {
+	// ?watch=true upgrades to an SSE stream of all machine change events (#172).
+	if r.URL.Query().Get("watch") == "true" {
+		if a.bus == nil {
+			writeError(w, "watch not available", "ServiceUnavailable", http.StatusServiceUnavailable)
+			return
+		}
+		watch.ServeWatch(w, r, a.bus, "machine", watch.WatchOptions{})
+		return
+	}
+
 	machines, total, err := a.store.ListMachines()
 	if err != nil {
 		writeError(w, "list failed", "InternalError", http.StatusInternalServerError)
@@ -75,6 +88,19 @@ func (a *API) Get(w http.ResponseWriter, r *http.Request) {
 // ListByTenant handles GET /api/v1/tenants/{tenant}/machines.
 func (a *API) ListByTenant(w http.ResponseWriter, r *http.Request) {
 	tenant := r.PathValue("tenant")
+
+	// ?watch=true upgrades to an SSE stream of machine change events for this
+	// tenant only (#172).
+	if r.URL.Query().Get("watch") == "true" {
+		if a.bus == nil {
+			writeError(w, "watch not available", "ServiceUnavailable", http.StatusServiceUnavailable)
+			return
+		}
+		watch.ServeWatch(w, r, a.bus, "machine", watch.WatchOptions{
+			Filter: watch.TenantFilter(tenant),
+		})
+		return
+	}
 
 	// Verify tenant exists.
 	t, err := a.store.GetTenant(tenant)

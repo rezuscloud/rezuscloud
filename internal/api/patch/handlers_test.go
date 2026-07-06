@@ -36,7 +36,7 @@ func setupTenant(t *testing.T, store *state.Store) {
 func TestCreate_Success(t *testing.T) {
 	store := newTestStore(t)
 	setupTenant(t, store)
-	api := NewAPI(store)
+	api := NewAPI(store, nil)
 
 	body := `{"metadata":{"name":"disk-patch"},"spec":{"patch":"machine:\n  disks:\n    - device: /dev/sda\n      partitions: []","enabled":true}}`
 
@@ -65,7 +65,7 @@ func TestCreate_Success(t *testing.T) {
 func TestCreate_WithTargetRole(t *testing.T) {
 	store := newTestStore(t)
 	setupTenant(t, store)
-	api := NewAPI(store)
+	api := NewAPI(store, nil)
 
 	body := `{"metadata":{"name":"cp-patch"},"spec":{"patch":"machine:\n  type: controlplane","format":"strategic","targetRole":"controlplane","enabled":true}}`
 
@@ -89,7 +89,7 @@ func TestCreate_WithTargetRole(t *testing.T) {
 func TestCreate_NoName(t *testing.T) {
 	store := newTestStore(t)
 	setupTenant(t, store)
-	api := NewAPI(store)
+	api := NewAPI(store, nil)
 
 	body := `{"spec":{"patch":"yaml: here","enabled":true}}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/prod/patches", strings.NewReader(body))
@@ -106,7 +106,7 @@ func TestCreate_NoName(t *testing.T) {
 func TestCreate_NoPatch(t *testing.T) {
 	store := newTestStore(t)
 	setupTenant(t, store)
-	api := NewAPI(store)
+	api := NewAPI(store, nil)
 
 	body := `{"metadata":{"name":"empty"},"spec":{"enabled":true}}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/prod/patches", strings.NewReader(body))
@@ -123,7 +123,7 @@ func TestCreate_NoPatch(t *testing.T) {
 func TestCreate_InvalidFormat(t *testing.T) {
 	store := newTestStore(t)
 	setupTenant(t, store)
-	api := NewAPI(store)
+	api := NewAPI(store, nil)
 
 	body := `{"metadata":{"name":"bad"},"spec":{"patch":"yaml: yes","format":"invalid","enabled":true}}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/prod/patches", strings.NewReader(body))
@@ -140,7 +140,7 @@ func TestCreate_InvalidFormat(t *testing.T) {
 func TestCreate_InvalidTargetRole(t *testing.T) {
 	store := newTestStore(t)
 	setupTenant(t, store)
-	api := NewAPI(store)
+	api := NewAPI(store, nil)
 
 	body := `{"metadata":{"name":"bad"},"spec":{"patch":"yaml: yes","targetRole":"superworker","enabled":true}}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/prod/patches", strings.NewReader(body))
@@ -157,7 +157,7 @@ func TestCreate_InvalidTargetRole(t *testing.T) {
 func TestCreate_Duplicate(t *testing.T) {
 	store := newTestStore(t)
 	setupTenant(t, store)
-	api := NewAPI(store)
+	api := NewAPI(store, nil)
 
 	body := `{"metadata":{"name":"dup"},"spec":{"patch":"yaml: here","enabled":true}}`
 	req1 := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/prod/patches", strings.NewReader(body))
@@ -177,7 +177,7 @@ func TestCreate_Duplicate(t *testing.T) {
 
 func TestCreate_TenantNotFound(t *testing.T) {
 	store := newTestStore(t)
-	api := NewAPI(store)
+	api := NewAPI(store, nil)
 
 	body := `{"metadata":{"name":"p"},"spec":{"patch":"yaml: here","enabled":true}}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/nonexistent/patches", strings.NewReader(body))
@@ -194,7 +194,7 @@ func TestCreate_TenantNotFound(t *testing.T) {
 func TestGet_Success(t *testing.T) {
 	store := newTestStore(t)
 	setupTenant(t, store)
-	api := NewAPI(store)
+	api := NewAPI(store, nil)
 
 	// Create first.
 	body := `{"metadata":{"name":"my-patch"},"spec":{"patch":"machine:\n  install:\n    disk: /dev/sda","enabled":true}}`
@@ -225,7 +225,7 @@ func TestGet_Success(t *testing.T) {
 func TestGet_NotFound(t *testing.T) {
 	store := newTestStore(t)
 	setupTenant(t, store)
-	api := NewAPI(store)
+	api := NewAPI(store, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/tenants/prod/patches/nope", nil)
 	req.SetPathValue("tenant", "prod")
@@ -242,7 +242,7 @@ func TestGet_NotFound(t *testing.T) {
 func TestGet_WrongTenant(t *testing.T) {
 	store := newTestStore(t)
 	setupTenant(t, store)
-	api := NewAPI(store)
+	api := NewAPI(store, nil)
 
 	// Create under prod.
 	body := `{"metadata":{"name":"my-patch"},"spec":{"patch":"yaml: yes","enabled":true}}`
@@ -267,7 +267,7 @@ func TestGet_WrongTenant(t *testing.T) {
 func TestList(t *testing.T) {
 	store := newTestStore(t)
 	setupTenant(t, store)
-	api := NewAPI(store)
+	api := NewAPI(store, nil)
 
 	// Create two patches.
 	for _, name := range []string{"patch-a", "patch-b"} {
@@ -301,7 +301,7 @@ func TestList(t *testing.T) {
 func TestUpdate_Success(t *testing.T) {
 	store := newTestStore(t)
 	setupTenant(t, store)
-	api := NewAPI(store)
+	api := NewAPI(store, nil)
 
 	// Create.
 	body := `{"metadata":{"name":"my-patch"},"spec":{"patch":"old: yaml","enabled":true}}`
@@ -339,7 +339,7 @@ func TestUpdate_Success(t *testing.T) {
 func TestUpdate_NotFound(t *testing.T) {
 	store := newTestStore(t)
 	setupTenant(t, store)
-	api := NewAPI(store)
+	api := NewAPI(store, nil)
 
 	body := `{"spec":{"patch":"yaml: yes","enabled":true}}`
 	req := httptest.NewRequest(http.MethodPut, "/api/v1/tenants/prod/patches/nope", strings.NewReader(body))
@@ -357,7 +357,7 @@ func TestUpdate_NotFound(t *testing.T) {
 func TestUpdate_NoPatch(t *testing.T) {
 	store := newTestStore(t)
 	setupTenant(t, store)
-	api := NewAPI(store)
+	api := NewAPI(store, nil)
 
 	// Create first.
 	body := `{"metadata":{"name":"p"},"spec":{"patch":"old: yaml","enabled":true}}`
@@ -383,7 +383,7 @@ func TestUpdate_NoPatch(t *testing.T) {
 func TestDelete_Success(t *testing.T) {
 	store := newTestStore(t)
 	setupTenant(t, store)
-	api := NewAPI(store)
+	api := NewAPI(store, nil)
 
 	// Create.
 	body := `{"metadata":{"name":"del-me"},"spec":{"patch":"yaml: here","enabled":true}}`
@@ -419,7 +419,7 @@ func TestDelete_Success(t *testing.T) {
 func TestDelete_NotFound(t *testing.T) {
 	store := newTestStore(t)
 	setupTenant(t, store)
-	api := NewAPI(store)
+	api := NewAPI(store, nil)
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/tenants/prod/patches/nope", nil)
 	req.SetPathValue("tenant", "prod")
@@ -436,7 +436,7 @@ func TestDelete_NotFound(t *testing.T) {
 func TestList_Empty(t *testing.T) {
 	store := newTestStore(t)
 	setupTenant(t, store)
-	api := NewAPI(store)
+	api := NewAPI(store, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/tenants/prod/patches", nil)
 	req.SetPathValue("tenant", "prod")
@@ -458,7 +458,7 @@ func TestList_Empty(t *testing.T) {
 func TestCreate_Json6902Format(t *testing.T) {
 	store := newTestStore(t)
 	setupTenant(t, store)
-	api := NewAPI(store)
+	api := NewAPI(store, nil)
 
 	body := `{"metadata":{"name":"json-patch"},"spec":{"patch":"[{\"op\":\"replace\",\"path\":\"/machine/install/disk\",\"value\":\"/dev/nvme0n1\"}]","format":"json6902","enabled":true}}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/tenants/prod/patches", strings.NewReader(body))
