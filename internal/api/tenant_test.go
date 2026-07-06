@@ -166,8 +166,8 @@ func TestTenantAPI_Delete(t *testing.T) {
 
 	api.Delete(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Errorf("status = %d, want %d", w.Code, http.StatusOK)
+	if w.Code != http.StatusAccepted {
+		t.Errorf("status = %d, want %d (202 Accepted — async deletion via finalizers)", w.Code, http.StatusAccepted)
 	}
 
 	var resp TenantResponse

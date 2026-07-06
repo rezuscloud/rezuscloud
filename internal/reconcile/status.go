@@ -84,8 +84,17 @@ func (t *StatusTracker) apply(ev phaseEvent) {
 
 	tenant, err := t.store.GetTenant(ev.tenant)
 	if err == nil && tenant != nil {
+		// When the tenant is being deleted, the queue's PhaseApplying is really
+		// a tofu destroy run (#171). Translate the phase so the reconciliation
+		// banner reads "destroying" instead of "applying". This is the single
+		// translation point — no direct status writes from the Applier, so there
+		// is no race between the Applier and this background worker.
+		phase := ev.phase
+		if tenant.Metadata.DeletionTimestamp != nil && phase == applyqueue.PhaseApplying {
+			phase = applyqueue.PhaseDestroying
+		}
 		status := tenant.Status
-		status.Reconciliation = nextReconciliation(status.Reconciliation, ev.phase, ev.err, now)
+		status.Reconciliation = nextReconciliation(status.Reconciliation, phase, ev.err, now)
 		if _, err := t.store.UpdateTenantStatus(ev.tenant, status); err != nil {
 			t.logf("reconcile: update tenant status for %q failed: %v", ev.tenant, err)
 		}
