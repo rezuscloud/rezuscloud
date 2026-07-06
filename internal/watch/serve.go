@@ -2,6 +2,7 @@ package watch
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/rezuscloud/rezuscloud/internal/state"
@@ -50,12 +51,9 @@ func ServeWatch(w http.ResponseWriter, r *http.Request, bus Bus, resourceType st
 			return
 		}
 		if sse {
-			w.Write([]byte("data: "))
-			w.Write(data)
-			w.Write([]byte("\n\n"))
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
 		} else {
-			w.Write(data)
-			w.Write([]byte("\n"))
+			_, _ = fmt.Fprintf(w, "%s\n", data)
 		}
 		if canFlush {
 			flusher.Flush()
