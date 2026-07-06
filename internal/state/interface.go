@@ -26,6 +26,7 @@ type StoreAPI interface {
 	UpdateStatus(resourceType, name string, status any) (Metadata, error)
 	DeleteResource(resourceType, name string) (Metadata, error)
 	RemoveResource(resourceType, name string) error
+	RemoveResourcesByTenant(tenant string) (int, error)
 	AddFinalizer(resourceType, name, finalizer string) error
 	RemoveFinalizer(resourceType, name, finalizer string) (bool, error)
 

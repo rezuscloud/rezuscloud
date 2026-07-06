@@ -323,10 +323,11 @@ func TestTenant_FullCRUD(t *testing.T) {
 		t.Errorf("items = %d, want 1", len(items))
 	}
 
-	// Delete (returns 200 with updated resource — graceful deletion).
+	// Delete (returns 202 Accepted — async deletion via finalizers; the
+	// controller runs tofu destroy then clears finalizers, #171).
 	resp, _ = ts.doRequest(http.MethodDelete, "/api/v1/tenants/prod", nil, token)
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("delete: status = %d, want 200", resp.StatusCode)
+	if resp.StatusCode != http.StatusAccepted {
+		t.Errorf("delete: status = %d, want 202", resp.StatusCode)
 	}
 }
 

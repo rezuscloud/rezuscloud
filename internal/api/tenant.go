@@ -250,10 +250,13 @@ func (a *TenantAPI) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Return the tenant with deletionTimestamp and finalizers set.
+	// Return the tenant with deletionTimestamp and finalizers set. 202 Accepted
+	// signals the deletion is asynchronous (finalizers block immediate GC) —
+	// the controller runs tofu destroy, then clears finalizers (#171).
 	tenant, _ := a.store.GetTenant(name)
 	if tenant != nil {
 		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
 		json.NewEncoder(w).Encode(tenantToResponse(tenant))
 	} else {
 		w.WriteHeader(http.StatusNoContent)

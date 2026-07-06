@@ -350,3 +350,74 @@ func TestCommonVariables_OptionalDefaults(t *testing.T) {
 		}
 	}
 }
+
+func TestStatusTracker_DestroyPhaseTranslation(t *testing.T) {
+	store := openTestStore(t)
+
+	_, err := store.CreateTenant("doomed", state.TenantSpec{KubernetesVersion: "1.35.0"}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Soft-delete → sets deletionTimestamp + finalizers.
+	if err := store.DeleteTenant("doomed"); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	tracker := NewStatusTracker(store)
+	tracker.Start(ctx)
+	defer func() {
+		cancel()
+		tracker.Stop()
+	}()
+	listener := tracker.Listener()
+
+	// The queue emits PhaseApplying for the destroy run. The StatusTracker must
+	// translate it to "destroying" because the tenant has a deletionTimestamp.
+	listener("doomed", applyqueue.PhaseApplying, nil)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		tenant, _ := store.GetTenant("doomed")
+		if tenant != nil && tenant.Status.Reconciliation != nil &&
+			tenant.Status.Reconciliation.Phase == string(applyqueue.PhaseDestroying) {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("PhaseApplying was not translated to PhaseDestroying for a deleting tenant")
+}
+
+// TestStatusTracker_ApplyPhaseUntouchedForLiveTenant confirms the translation
+// only fires for deleting tenants — a live tenant's PhaseApplying stays
+// "applying".
+func TestStatusTracker_ApplyPhaseUntouchedForLiveTenant(t *testing.T) {
+	store := openTestStore(t)
+
+	_, err := store.CreateTenant("live", state.TenantSpec{KubernetesVersion: "1.35.0"}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	tracker := NewStatusTracker(store)
+	tracker.Start(ctx)
+	defer func() {
+		cancel()
+		tracker.Stop()
+	}()
+	listener := tracker.Listener()
+
+	listener("live", applyqueue.PhaseApplying, nil)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		tenant, _ := store.GetTenant("live")
+		if tenant != nil && tenant.Status.Reconciliation != nil &&
+			tenant.Status.Reconciliation.Phase == string(applyqueue.PhaseApplying) {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("PhaseApplying was not recorded as 'applying' for a live tenant")
+}
