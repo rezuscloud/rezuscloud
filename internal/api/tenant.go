@@ -8,16 +8,19 @@ import (
 
 	"github.com/rezuscloud/rezuscloud/internal/credentials"
 	"github.com/rezuscloud/rezuscloud/internal/state"
+	"github.com/rezuscloud/rezuscloud/internal/watch"
 )
 
 // TenantAPI handles tenant CRUD operations.
 type TenantAPI struct {
 	store state.StoreAPI
+	bus   watch.Bus // optional: enables ?watch=true on List
 }
 
-// NewTenantAPI creates a tenant API handler.
-func NewTenantAPI(store state.StoreAPI) *TenantAPI {
-	return &TenantAPI{store: store}
+// NewTenantAPI creates a tenant API handler. bus may be nil — when nil,
+// ?watch=true returns 503.
+func NewTenantAPI(store state.StoreAPI, bus watch.Bus) *TenantAPI {
+	return &TenantAPI{store: store, bus: bus}
 }
 
 // RegisterRoutes registers tenant API routes on the given mux.
@@ -49,6 +52,21 @@ type TenantResponse struct {
 type TenantListResponse struct {
 	Items []TenantResponse `json:"items"`
 	Total int              `json:"total"`
+}
+
+// tenantsSnapshot lists existing tenants for the watch initial-state ADDED
+// burst (#172). Each entry matches the wire shape the live events carry
+// (metadata + spec + status).
+func (a *TenantAPI) tenantsSnapshot() ([]any, error) {
+	tenants, _, err := a.store.ListTenants()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]any, 0, len(tenants))
+	for _, t := range tenants {
+		out = append(out, tenantToResponse(t))
+	}
+	return out, nil
 }
 
 // ErrorResponse is the structured error shape.
@@ -134,6 +152,18 @@ func (a *TenantAPI) Create(w http.ResponseWriter, r *http.Request) {
 
 // List handles GET /api/v1/tenants.
 func (a *TenantAPI) List(w http.ResponseWriter, r *http.Request) {
+	// ?watch=true upgrades to an SSE stream of tenant change events (#172).
+	if r.URL.Query().Get("watch") == "true" {
+		if a.bus == nil {
+			writeError(w, "watch not available", "ServiceUnavailable", http.StatusServiceUnavailable)
+			return
+		}
+		watch.ServeWatch(w, r, a.bus, "tenant", watch.WatchOptions{
+			InitialState: a.tenantsSnapshot,
+		})
+		return
+	}
+
 	tenants, total, err := a.store.ListTenants()
 	if err != nil {
 		writeError(w, fmt.Sprintf("list failed: %v", err), "InternalError", http.StatusInternalServerError)
