@@ -10,6 +10,7 @@ import (
 	"net/http"
 
 	"github.com/rezuscloud/rezuscloud/internal/state"
+	"github.com/rezuscloud/rezuscloud/internal/watch"
 )
 
 // NodeGroup represents a group of machines within a tenant.
@@ -52,11 +53,13 @@ var validRoles = map[string]bool{
 // API provides HTTP handlers for NodeGroup CRUD.
 type API struct {
 	store state.StoreAPI
+	bus   watch.Bus // optional: enables ?watch=true on List
 }
 
-// NewAPI creates a NodeGroup API handler.
-func NewAPI(store state.StoreAPI) *API {
-	return &API{store: store}
+// NewAPI creates a NodeGroup API handler. bus may be nil — when nil,
+// ?watch=true returns 503.
+func NewAPI(store state.StoreAPI, bus watch.Bus) *API {
+	return &API{store: store, bus: bus}
 }
 
 // RegisterRoutes registers node group routes on the given mux.
@@ -199,6 +202,19 @@ func (a *API) Create(w http.ResponseWriter, r *http.Request) {
 // List handles GET /api/v1/tenants/{tenant}/node-groups.
 func (a *API) List(w http.ResponseWriter, r *http.Request) {
 	tenant := r.PathValue("tenant")
+
+	// ?watch=true upgrades to an SSE stream of nodegroup change events for
+	// this tenant (#172).
+	if r.URL.Query().Get("watch") == "true" {
+		if a.bus == nil {
+			writeError(w, "watch not available", "ServiceUnavailable", http.StatusServiceUnavailable)
+			return
+		}
+		watch.ServeWatch(w, r, a.bus, "nodegroup", watch.WatchOptions{
+			Filter: watch.TenantFilter(tenant),
+		})
+		return
+	}
 
 	items, total, err := state.ListTypedByTenant(a.store, "nodegroup", tenant,
 		func(meta state.Metadata, specRaw, statusRaw json.RawMessage) (NodeGroup, error) {

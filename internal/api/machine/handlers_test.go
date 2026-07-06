@@ -30,7 +30,7 @@ func setupTest(t *testing.T) (*state.Store, *API) {
 		t.Fatalf("CreateTenant: %v", err)
 	}
 
-	return store, NewAPI(store)
+	return store, NewAPI(store, nil)
 }
 
 func TestMachine_List(t *testing.T) {

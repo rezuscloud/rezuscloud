@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/rezuscloud/rezuscloud/internal/state"
+	"github.com/rezuscloud/rezuscloud/internal/watch"
 	"sigs.k8s.io/yaml"
 )
 
@@ -52,11 +53,13 @@ var validTargetRoles = map[string]bool{
 // API provides HTTP handlers for ConfigPatch CRUD.
 type API struct {
 	store state.StoreAPI
+	bus   watch.Bus // optional: enables ?watch=true on List
 }
 
-// NewAPI creates a ConfigPatch API handler.
-func NewAPI(store state.StoreAPI) *API {
-	return &API{store: store}
+// NewAPI creates a ConfigPatch API handler. bus may be nil — when nil,
+// ?watch=true returns 503.
+func NewAPI(store state.StoreAPI, bus watch.Bus) *API {
+	return &API{store: store, bus: bus}
 }
 
 // RegisterRoutes registers patch routes on the given mux.
@@ -194,6 +197,19 @@ func (a *API) Create(w http.ResponseWriter, r *http.Request) {
 // List handles GET /api/v1/tenants/{tenant}/patches.
 func (a *API) List(w http.ResponseWriter, r *http.Request) {
 	tenant := r.PathValue("tenant")
+
+	// ?watch=true upgrades to an SSE stream of configpatch change events for
+	// this tenant (#172).
+	if r.URL.Query().Get("watch") == "true" {
+		if a.bus == nil {
+			writeError(w, "watch not available", "ServiceUnavailable", http.StatusServiceUnavailable)
+			return
+		}
+		watch.ServeWatch(w, r, a.bus, "configpatch", watch.WatchOptions{
+			Filter: watch.TenantFilter(tenant),
+		})
+		return
+	}
 
 	items, total, err := state.ListTypedByTenant(a.store, "configpatch", tenant,
 		func(meta state.Metadata, specRaw, statusRaw json.RawMessage) (ConfigPatch, error) {
