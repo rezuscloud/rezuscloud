@@ -761,6 +761,59 @@ func (s *Store) RemoveResource(resourceType, name string) error {
 	return nil
 }
 
+// RemoveResourcesByTenant hard-deletes every resource carrying the
+// rezuscloud.io/tenant=<tenant> label (node groups, machines, config patches, …).
+// It does NOT delete the tenant resource itself — the caller removes the
+// tenant's finalizers to GC it. Used during tenant teardown after tofu destroy
+// succeeds: the cloud infrastructure is gone, so the metadata rows are stale.
+//
+// Each removed row publishes a DELETED event so the watch bus + EnqueueBus see
+// the cascade (the EnqueueBus coalesces the burst into one harmless re-enqueue
+// that no-ops because the tenant is gone or already destroying).
+func (s *Store) RemoveResourcesByTenant(tenant string) (int, error) {
+	rows, err := s.db.Query(
+		`SELECT type, name, uid, version, finalizers, labels, annotations, created_at, updated_at, deletion_timestamp
+		 FROM resources
+		 WHERE json_extract(labels, '$."rezuscloud.io/tenant"') = ?
+		   AND type != 'tenant'`,
+		tenant,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("list tenant resources: %w", err)
+	}
+	type row struct {
+		rt string
+		md Metadata
+	}
+	var pending []row
+	for rows.Next() {
+		var rt string
+		var md Metadata
+		var finalizersJSON, labelsJSON, annotationsJSON string
+		var deletionTS sql.NullTime
+		if err := rows.Scan(&rt, &md.Name, &md.UID, &md.ResourceVersion, &finalizersJSON, &labelsJSON, &annotationsJSON, &md.CreatedAt, &md.UpdatedAt, &deletionTS); err != nil {
+			rows.Close()
+			return 0, fmt.Errorf("scan tenant resource: %w", err)
+		}
+		_ = json.Unmarshal([]byte(finalizersJSON), &md.Finalizers)
+		_ = json.Unmarshal([]byte(labelsJSON), &md.Labels)
+		_ = json.Unmarshal([]byte(annotationsJSON), &md.Annotations)
+		if deletionTS.Valid {
+			md.DeletionTimestamp = &deletionTS.Time
+		}
+		pending = append(pending, row{rt: rt, md: md})
+	}
+	rows.Close()
+
+	for _, p := range pending {
+		if _, err := s.db.Exec(`DELETE FROM resources WHERE type = ? AND name = ?`, p.rt, p.md.Name); err != nil {
+			return 0, fmt.Errorf("delete tenant resource %s/%s: %w", p.rt, p.md.Name, err)
+		}
+		s.publish("DELETED", MutationDelete, p.rt, p.md, nil, nil)
+	}
+	return len(pending), nil
+}
+
 // --- Finalizer Operations ---
 
 // AddFinalizer adds a finalizer to a resource.

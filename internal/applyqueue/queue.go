@@ -39,10 +39,11 @@ import (
 type Phase string
 
 const (
-	PhaseQueued   Phase = "queued"   // enqueued, waiting for the debounce window to elapse
-	PhaseApplying Phase = "applying" // Applier.Apply is running
-	PhaseApplied  Phase = "applied"  // Apply succeeded
-	PhaseFailed   Phase = "failed"   // Apply returned an error
+	PhaseQueued     Phase = "queued"     // enqueued, waiting for the debounce window to elapse
+	PhaseApplying   Phase = "applying"   // Applier.Apply is running
+	PhaseApplied    Phase = "applied"    // Apply succeeded
+	PhaseFailed     Phase = "failed"     // Apply returned an error
+	PhaseDestroying Phase = "destroying" // tofu destroy is running (deleting tenant)
 )
 
 // Applier reconciles a single tenant. In production this wraps

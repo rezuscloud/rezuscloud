@@ -128,3 +128,106 @@ func TestIntegration_ApplierDrivesRealTofu(t *testing.T) {
 		t.Fatalf("state missing nodegroup config: %s", got)
 	}
 }
+
+// TestIntegration_ApplierDestroysTenant proves the teardown half of #171: after
+// a tenant is soft-deleted (deletionTimestamp + finalizers set), Apply runs
+// `tofu destroy`, cascade-removes child resources, and clears the finalizers so
+// the tenant is garbage-collected. This is the same destroy path the apply
+// queue drives when the EnqueueBus sees a tenant delete event.
+func TestIntegration_ApplierDestroysTenant(t *testing.T) {
+	skipWithoutTofu(t)
+
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = db.Close() })
+
+	store, err := state.NewFromDB(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tfStore, err := tfbackend.New(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(tfbackend.NewHandler(tfStore))
+	t.Cleanup(srv.Close)
+
+	root := t.TempDir()
+	execE, err := tfexec.New(root,
+		tfexec.WithBinary("tofu"),
+		tfexec.WithBackendURL(srv.URL+"/tfstate"),
+		tfexec.WithTimeout(90*time.Second),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	registry := provider.NewRegistry()
+	registry.Register(&testProvider{})
+
+	applier := NewApplier(execE, registry, store)
+
+	// Seed a tenant + a node group, then apply to create real state.
+	_, err = store.CreateTenant("doomed", state.TenantSpec{
+		KubernetesVersion: "1.35.0",
+	}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec, _ := json.Marshal(ngSpecJSON{Count: 2, Role: "worker", ProviderClass: "null:test"})
+	_, err = store.CreateResource("nodegroup", "workers", json.RawMessage(spec), struct{}{},
+		map[string]string{"rezuscloud.io/tenant": "doomed", "rezuscloud.io/role": "worker"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := applier.Apply(context.Background(), "doomed"); err != nil {
+		if strings.Contains(err.Error(), "dial") || strings.Contains(err.Error(), "timeout") ||
+			strings.Contains(err.Error(), "Failed to install provider") {
+			t.Skipf("null provider unavailable; skipping:\n%v", err)
+		}
+		t.Fatalf("initial Apply: %v", err)
+	}
+
+	// State must now contain the null_resource.
+	got, found, _ := tfStore.GetState(context.Background(), "doomed")
+	if !found || !strings.Contains(string(got), "null_resource") {
+		t.Fatalf("state missing null_resource after apply: %s", got)
+	}
+
+	// Soft-delete: sets deletionTimestamp + finalizers.
+	if err := store.DeleteTenant("doomed"); err != nil {
+		t.Fatal(err)
+	}
+
+	// The destroy Apply — runs tofu destroy, cascade-removes children, clears
+	// finalizers, GCs the tenant.
+	if err := applier.Apply(context.Background(), "doomed"); err != nil {
+		t.Fatalf("destroy Apply: %v", err)
+	}
+
+	// Tenant is gone (last finalizer cleared → auto-GC).
+	if t1, _ := store.GetTenant("doomed"); t1 != nil {
+		t.Fatal("tenant still exists after destroy — finalizers should have been cleared")
+	}
+
+	// Child resources are cascade-removed.
+	metas, _, _, total, _ := store.ListResources("nodegroup", state.ListOptions{
+		LabelSelector: "rezuscloud.io/tenant=doomed",
+	})
+	if total != 0 || len(metas) != 0 {
+		t.Errorf("nodegroups survived destroy: %d remain", total)
+	}
+
+	// State in the backend is now empty (tofu destroy removed all resources).
+	got, found, _ = tfStore.GetState(context.Background(), "doomed")
+	if !found {
+		t.Fatal("state object missing after destroy — backend should still hold an empty state")
+	}
+	if strings.Contains(string(got), "null_resource") {
+		t.Errorf("state still contains null_resource after destroy: %s", got)
+	}
+}

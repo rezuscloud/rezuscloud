@@ -86,7 +86,9 @@ func NewApplier(exec *tfexec.Exec, registry *provider.Registry, store state.Stor
 	return a
 }
 
-// Apply reconciles a single tenant: detects version drift and runs the rolling
+// Apply reconciles a single tenant. If the tenant has a deletionTimestamp
+// (DELETE was called), it runs the teardown path — tofu destroy + finalizer
+// removal (#171). Otherwise it detects version drift and runs the rolling
 // upgrade FIRST (if an UpgradeRunner is configured and the spec changed), then
 // renders its `.tf.json`, runs tofu init + apply. Implements applyqueue.Applier.
 func (a *Applier) Apply(ctx context.Context, tenant string) error {
@@ -95,7 +97,17 @@ func (a *Applier) Apply(ctx context.Context, tenant string) error {
 		return fmt.Errorf("reconcile: load tenant %q: %w", tenant, err)
 	}
 	if t == nil {
-		return fmt.Errorf("reconcile: tenant %q not found", tenant)
+		// Tenant is gone (already destroyed or never existed). A re-enqueue
+		// after teardown lands here — there is nothing to reconcile, so this is
+		// a clean no-op rather than an error.
+		return nil
+	}
+
+	// Teardown path: DELETE was called, the store set a deletionTimestamp +
+	// finalizers. Run tofu destroy, then cascade-remove child resources and
+	// clear the finalizers so the tenant is garbage-collected (#171).
+	if t.Metadata.DeletionTimestamp != nil {
+		return a.destroy(ctx, tenant, t)
 	}
 
 	// Pre-apply upgrade hook: converge machines to the declared version BEFORE
@@ -142,6 +154,71 @@ func (a *Applier) Apply(ctx context.Context, tenant string) error {
 	if _, err := a.exec.Run(ctx, tenant, "apply", "-auto-approve", "-input=false"); err != nil {
 		return fmt.Errorf("reconcile: tofu apply for %q: %w", tenant, err)
 	}
+	return nil
+}
+
+// destroy tears down a tenant marked for deletion (#171). It renders the same
+// `.tf.json` as apply (so tofu can load the providers that own the state),
+// runs `tofu init` + `tofu destroy -auto-approve`, then on success cascade-
+// removes every child resource (node groups, machines, config patches) and
+// clears the tenant's finalizers. Clearing the last finalizer triggers the
+// store's auto-GC (RemoveResource) — the tenant row is deleted.
+//
+// On failure the finalizers are left intact so the tenant stays in the
+// `removing` phase and the next resync re-attempts the destroy. The error is
+// surfaced via the normal PhaseFailed → StatusTracker path.
+func (a *Applier) destroy(ctx context.Context, tenant string, t *state.Tenant) error {
+	a.logf("reconcile: destroying tenant %q (finalizers=%v)", tenant, t.Metadata.Finalizers)
+
+	ngs, err := loadNodeGroups(a.store, tenant)
+	if err != nil {
+		return fmt.Errorf("reconcile: load node groups for destroy %q: %w", tenant, err)
+	}
+
+	dir, err := a.exec.Workdir(tenant)
+	if err != nil {
+		return fmt.Errorf("reconcile: workdir for destroy %q: %w", tenant, err)
+	}
+
+	// Render the same config as apply so tofu can resolve the providers that
+	// own the resources in state. tofu destroy removes every resource in state
+	// regardless of the config, but it must be able to load the configuration.
+	if err := a.renderConfig(dir, t, ngs); err != nil {
+		return fmt.Errorf("reconcile: render config for destroy %q: %w", tenant, err)
+	}
+	if configReferencesTalos(dir) {
+		if err := renderCommonConfig(dir); err != nil {
+			return fmt.Errorf("reconcile: common config for destroy %q: %w", tenant, err)
+		}
+		if err := renderTFVars(dir, t); err != nil {
+			return fmt.Errorf("reconcile: tfvars for destroy %q: %w", tenant, err)
+		}
+	}
+
+	if _, err := a.exec.Run(ctx, tenant, "init", "-input=false"); err != nil {
+		return fmt.Errorf("reconcile: tofu init for destroy %q: %w", tenant, err)
+	}
+	if _, err := a.exec.Run(ctx, tenant, "destroy", "-auto-approve", "-input=false"); err != nil {
+		return fmt.Errorf("reconcile: tofu destroy for %q: %w", tenant, err)
+	}
+
+	// Destroy succeeded — the cloud infrastructure is gone. Cascade-remove the
+	// tenant's child resources, drop the cached secrets, then clear finalizers.
+	// Clearing the last finalizer triggers the store's auto-GC of the tenant row.
+	n, err := a.store.RemoveResourcesByTenant(tenant)
+	if err != nil {
+		a.logf("reconcile: cascade-remove children for %q partially failed: %v", tenant, err)
+	}
+	if err := a.store.RemoveTenantSecrets(tenant); err != nil {
+		a.logf("reconcile: remove tenant secrets for %q failed: %v", tenant, err)
+	}
+	if _, err := a.store.RemoveFinalizer("tenant", tenant, "rezuscloud.io/machines"); err != nil {
+		return fmt.Errorf("reconcile: remove machines finalizer for %q: %w", tenant, err)
+	}
+	if _, err := a.store.RemoveFinalizer("tenant", tenant, "rezuscloud.io/secrets"); err != nil {
+		return fmt.Errorf("reconcile: remove secrets finalizer for %q: %w", tenant, err)
+	}
+	a.logf("reconcile: tenant %q destroyed (cascade-removed %d children)", tenant, n)
 	return nil
 }
 
