@@ -792,7 +792,9 @@ func (s *Store) RemoveResourcesByTenant(tenant string) (int, error) {
 		var finalizersJSON, labelsJSON, annotationsJSON string
 		var deletionTS sql.NullTime
 		if err := rows.Scan(&rt, &md.Name, &md.UID, &md.ResourceVersion, &finalizersJSON, &labelsJSON, &annotationsJSON, &md.CreatedAt, &md.UpdatedAt, &deletionTS); err != nil {
-			rows.Close()
+			if cerr := rows.Close(); cerr != nil {
+				return 0, fmt.Errorf("scan tenant resource: %w (close: %v)", err, cerr)
+			}
 			return 0, fmt.Errorf("scan tenant resource: %w", err)
 		}
 		_ = json.Unmarshal([]byte(finalizersJSON), &md.Finalizers)
@@ -803,7 +805,9 @@ func (s *Store) RemoveResourcesByTenant(tenant string) (int, error) {
 		}
 		pending = append(pending, row{rt: rt, md: md})
 	}
-	rows.Close()
+	if err := rows.Close(); err != nil {
+		return 0, fmt.Errorf("close tenant resource cursor: %w", err)
+	}
 
 	for _, p := range pending {
 		if _, err := s.db.Exec(`DELETE FROM resources WHERE type = ? AND name = ?`, p.rt, p.md.Name); err != nil {

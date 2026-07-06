@@ -65,7 +65,7 @@ func TestRemoveResourcesByTenant(t *testing.T) {
 	}
 
 	// The other tenant's machine survives.
-	metas, _, _, total, _ = s.ListResources("machine", ListOptions{LabelSelector: "rezuscloud.io/tenant=t2"})
+	_, _, _, total, _ = s.ListResources("machine", ListOptions{LabelSelector: "rezuscloud.io/tenant=t2"})
 	if total != 1 {
 		t.Errorf("t2 machines: %d, want 1 (cascade must be tenant-scoped)", total)
 	}
