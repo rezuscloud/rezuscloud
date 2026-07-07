@@ -10,6 +10,7 @@ import (
 
 	"github.com/rezuscloud/rezuscloud/internal/api/patch"
 	"github.com/rezuscloud/rezuscloud/internal/configrender"
+	"github.com/rezuscloud/rezuscloud/internal/pagination"
 	"github.com/rezuscloud/rezuscloud/internal/state"
 	"github.com/rezuscloud/rezuscloud/internal/watch"
 )
@@ -41,8 +42,9 @@ func (a *API) RegisterRoutes(mux *http.ServeMux) {
 }
 
 type listResponse struct {
-	Items []*state.Machine `json:"items"`
-	Total int              `json:"total"`
+	Items              []*state.Machine `json:"items"`
+	Total              int              `json:"total"`
+	RemainingItemCount int              `json:"remainingItemCount,omitempty"`
 }
 
 // List handles GET /api/v1/machines (all machines, including unassigned).
@@ -57,14 +59,19 @@ func (a *API) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	machines, total, err := a.store.ListMachines()
+	pg := pagination.Parse(r)
+	machines, total, err := a.store.ListMachines(state.WithLimit(pg.Limit), state.WithOffset(pg.Offset))
 	if err != nil {
 		writeError(w, "list failed", "InternalError", http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(listResponse{Items: machines, Total: total})
+	json.NewEncoder(w).Encode(listResponse{
+		Items:              machines,
+		Total:              total,
+		RemainingItemCount: pagination.RemainingItemCount(total, pg.Offset, len(machines)),
+	})
 }
 
 // Get handles GET /api/v1/machines/{id}.
@@ -113,14 +120,19 @@ func (a *API) ListByTenant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	machines, total, err := a.store.ListMachinesByTenant(tenant)
+	pg := pagination.Parse(r)
+	machines, total, err := a.store.ListMachinesByTenant(tenant, state.WithLimit(pg.Limit), state.WithOffset(pg.Offset))
 	if err != nil {
 		writeError(w, "list failed", "InternalError", http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(listResponse{Items: machines, Total: total})
+	json.NewEncoder(w).Encode(listResponse{
+		Items:              machines,
+		Total:              total,
+		RemainingItemCount: pagination.RemainingItemCount(total, pg.Offset, len(machines)),
+	})
 }
 
 // GetByTenant handles GET /api/v1/tenants/{tenant}/machines/{id}.

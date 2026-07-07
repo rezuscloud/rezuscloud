@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/rezuscloud/rezuscloud/internal/credentials"
+	"github.com/rezuscloud/rezuscloud/internal/pagination"
 	"github.com/rezuscloud/rezuscloud/internal/state"
 	"github.com/rezuscloud/rezuscloud/internal/watch"
 )
@@ -50,8 +51,9 @@ type TenantResponse struct {
 
 // TenantListResponse is the JSON response for listing tenants.
 type TenantListResponse struct {
-	Items []TenantResponse `json:"items"`
-	Total int              `json:"total"`
+	Items              []TenantResponse `json:"items"`
+	Total              int              `json:"total"`
+	RemainingItemCount int              `json:"remainingItemCount,omitempty"`
 }
 
 // tenantsSnapshot lists existing tenants for the watch initial-state ADDED
@@ -164,7 +166,8 @@ func (a *TenantAPI) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tenants, total, err := a.store.ListTenants()
+	pg := pagination.Parse(r)
+	tenants, total, err := a.store.ListTenants(state.WithLimit(pg.Limit), state.WithOffset(pg.Offset))
 	if err != nil {
 		writeError(w, fmt.Sprintf("list failed: %v", err), "InternalError", http.StatusInternalServerError)
 		return
@@ -181,8 +184,9 @@ func (a *TenantAPI) List(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(TenantListResponse{
-		Items: responses,
-		Total: total,
+		Items:              responses,
+		Total:              total,
+		RemainingItemCount: pagination.RemainingItemCount(total, pg.Offset, len(responses)),
 	})
 }
 
