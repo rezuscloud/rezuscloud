@@ -4,18 +4,18 @@ package api
 // the K8s APIResource shape (k8s.io/apimachinery/pkg/apis/meta/v1.APIResource)
 // so standard tooling can discover what rezuscloud serves.
 type APIResource struct {
-	Name         string   `json:"name"`          // plural, e.g. "tenants"
-	SingularName string   `json:"singularName"`  // e.g. "tenant"
-	Kind         string   `json:"kind"`          // e.g. "Tenant"
-	Namespaced   bool     `json:"namespaced"`    // tenant-scoped? (rezuscloud uses tenant labels, not k8s namespaces)
-	Verbs        []string `json:"verbs"`         // supported operations
+	Name         string   `json:"name"`         // plural, e.g. "tenants"
+	SingularName string   `json:"singularName"` // e.g. "tenant"
+	Kind         string   `json:"kind"`         // e.g. "Tenant"
+	Namespaced   bool     `json:"namespaced"`   // tenant-scoped? (rezuscloud uses tenant labels, not k8s namespaces)
+	Verbs        []string `json:"verbs"`        // supported operations
 }
 
 // APIResourceList is the top-level discovery response (K8s shape).
 type APIResourceList struct {
-	APIVersion string         `json:"apiVersion"` // "v1"
-	Kind       string         `json:"kind"`       // "APIResourceList"
-	Resources  []APIResource  `json:"resources"`
+	APIVersion string        `json:"apiVersion"` // "v1"
+	Kind       string        `json:"kind"`       // "APIResourceList"
+	Resources  []APIResource `json:"resources"`
 }
 
 // DefaultAPIResourceList returns the static catalogue of resource types the REST API
