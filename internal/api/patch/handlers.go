@@ -11,6 +11,7 @@ import (
 
 	"github.com/rezuscloud/rezuscloud/internal/pagination"
 	"github.com/rezuscloud/rezuscloud/internal/state"
+	"github.com/rezuscloud/rezuscloud/internal/validation"
 	"github.com/rezuscloud/rezuscloud/internal/watch"
 	"sigs.k8s.io/yaml"
 )
@@ -35,7 +36,7 @@ type PatchSpec struct {
 }
 
 // ValidFormat values.
-var validFormats = map[string]bool{
+var ValidFormats = map[string]bool{
 	"strategic": true,
 	"json6902":  true,
 	"text":      true,
@@ -43,7 +44,7 @@ var validFormats = map[string]bool{
 }
 
 // ValidTargetRole values.
-var validTargetRoles = map[string]bool{
+var ValidTargetRoles = map[string]bool{
 	"":             true,
 	"all":          true,
 	"controlplane": true,
@@ -53,14 +54,47 @@ var validTargetRoles = map[string]bool{
 
 // API provides HTTP handlers for ConfigPatch CRUD.
 type API struct {
-	store state.StoreAPI
-	bus   watch.Bus // optional: enables ?watch=true on List
+	store    state.StoreAPI
+	bus      watch.Bus
+	registry *validation.Registry
 }
 
-// NewAPI creates a ConfigPatch API handler. bus may be nil — when nil,
-// ?watch=true returns 503.
-func NewAPI(store state.StoreAPI, bus watch.Bus) *API {
-	return &API{store: store, bus: bus}
+// NewAPI creates a ConfigPatch API handler. bus and registry may be nil.
+func NewAPI(store state.StoreAPI, bus watch.Bus, registry *validation.Registry) *API {
+	if registry != nil {
+		registry.RegisterFunc("configpatch", func(spec any) error {
+			s, ok := spec.(PatchSpec)
+			if !ok {
+				return nil
+			}
+			if strings.TrimSpace(s.Patch) == "" {
+				return fmt.Errorf("spec.patch must not be empty")
+			}
+			if !ValidFormats[s.Format] {
+				return fmt.Errorf("spec.format must be one of: strategic, json6902, text")
+			}
+			if !ValidTargetRoles[s.TargetRole] {
+				return fmt.Errorf("spec.targetRole must be one of: all, controlplane, worker, kernel, or empty")
+			}
+			switch s.Format {
+			case "", "strategic":
+				var out any
+				if err := yaml.Unmarshal([]byte(s.Patch), &out); err != nil {
+					return fmt.Errorf("invalid YAML for strategic patch: %v", err)
+				}
+			case "json6902":
+				var ops []map[string]any
+				if err := json.Unmarshal([]byte(s.Patch), &ops); err != nil {
+					return fmt.Errorf("invalid JSON for json6902 patch: %v", err)
+				}
+				if len(ops) == 0 {
+					return fmt.Errorf("json6902 patch must contain at least one operation")
+				}
+			}
+			return nil
+		})
+	}
+	return &API{store: store, bus: bus, registry: registry}
 }
 
 // RegisterRoutes registers patch routes on the given mux.
@@ -144,7 +178,7 @@ func (a *API) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := validatePatchSpec(req.Spec); err != nil {
+	if err := a.registry.Validate("configpatch", req.Spec); err != nil {
 		writeError(w, err.Error(), "BadRequest", http.StatusBadRequest)
 		return
 	}
@@ -280,7 +314,7 @@ func (a *API) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := validatePatchSpec(req.Spec); err != nil {
+	if err := a.registry.Validate("configpatch", req.Spec); err != nil {
 		writeError(w, err.Error(), "BadRequest", http.StatusBadRequest)
 		return
 	}
@@ -361,35 +395,4 @@ func writeError(w http.ResponseWriter, message, reason string, code int) {
 		"reason":  reason,
 		"code":    code,
 	})
-}
-
-func validatePatchSpec(spec PatchSpec) error {
-	if strings.TrimSpace(spec.Patch) == "" {
-		return fmt.Errorf("spec.patch must not be empty")
-	}
-	if !validFormats[spec.Format] {
-		return fmt.Errorf("spec.format must be one of: strategic, json6902, text")
-	}
-	if !validTargetRoles[spec.TargetRole] {
-		return fmt.Errorf("spec.targetRole must be one of: all, controlplane, worker, kernel, or empty")
-	}
-
-	switch spec.Format {
-	case "", "strategic":
-		var out any
-		if err := yaml.Unmarshal([]byte(spec.Patch), &out); err != nil {
-			return fmt.Errorf("invalid YAML for strategic patch: %v", err)
-		}
-	case "json6902":
-		var ops []map[string]any
-		if err := json.Unmarshal([]byte(spec.Patch), &ops); err != nil {
-			return fmt.Errorf("invalid JSON for json6902 patch: %v", err)
-		}
-		if len(ops) == 0 {
-			return fmt.Errorf("json6902 patch must contain at least one operation")
-		}
-	case "text":
-		// No format validation for free-form text patches.
-	}
-	return nil
 }

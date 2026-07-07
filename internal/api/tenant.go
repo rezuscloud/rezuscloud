@@ -9,19 +9,23 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/credentials"
 	"github.com/rezuscloud/rezuscloud/internal/pagination"
 	"github.com/rezuscloud/rezuscloud/internal/state"
+	"github.com/rezuscloud/rezuscloud/internal/validation"
 	"github.com/rezuscloud/rezuscloud/internal/watch"
 )
 
 // TenantAPI handles tenant CRUD operations.
 type TenantAPI struct {
-	store state.StoreAPI
-	bus   watch.Bus // optional: enables ?watch=true on List
+	store    state.StoreAPI
+	bus      watch.Bus
+	registry *validation.Registry
 }
 
-// NewTenantAPI creates a tenant API handler. bus may be nil — when nil,
-// ?watch=true returns 503.
-func NewTenantAPI(store state.StoreAPI, bus watch.Bus) *TenantAPI {
-	return &TenantAPI{store: store, bus: bus}
+// NewTenantAPI creates a tenant API handler. bus and registry may be nil.
+func NewTenantAPI(store state.StoreAPI, bus watch.Bus, registry *validation.Registry) *TenantAPI {
+	if registry != nil {
+		registry.RegisterFunc("tenant", validateTenantSpec)
+	}
+	return &TenantAPI{store: store, bus: bus, registry: registry}
 }
 
 // RegisterRoutes registers tenant API routes on the given mux.
@@ -113,6 +117,11 @@ func (a *TenantAPI) Create(w http.ResponseWriter, r *http.Request) {
 
 	if req.Spec.KubernetesVersion == "" {
 		req.Spec.KubernetesVersion = "1.35.0"
+	}
+
+	if err := a.registry.Validate("tenant", req.Spec); err != nil {
+		writeError(w, err.Error(), "BadRequest", http.StatusBadRequest)
+		return
 	}
 
 	// Check if tenant already exists.
