@@ -11,6 +11,7 @@ import (
 
 	"github.com/rezuscloud/rezuscloud/internal/pagination"
 	"github.com/rezuscloud/rezuscloud/internal/state"
+	"github.com/rezuscloud/rezuscloud/internal/validation"
 	"github.com/rezuscloud/rezuscloud/internal/watch"
 )
 
@@ -53,14 +54,31 @@ var validRoles = map[string]bool{
 
 // API provides HTTP handlers for NodeGroup CRUD.
 type API struct {
-	store state.StoreAPI
-	bus   watch.Bus // optional: enables ?watch=true on List
+	store    state.StoreAPI
+	bus      watch.Bus
+	registry *validation.Registry
 }
 
-// NewAPI creates a NodeGroup API handler. bus may be nil — when nil,
-// ?watch=true returns 503.
-func NewAPI(store state.StoreAPI, bus watch.Bus) *API {
-	return &API{store: store, bus: bus}
+// NewAPI creates a NodeGroup API handler. bus and registry may be nil.
+func NewAPI(store state.StoreAPI, bus watch.Bus, registry *validation.Registry) *API {
+	if registry != nil {
+		registry.RegisterFunc("nodegroup", func(spec any) error {
+			s, ok := spec.(NodeGroupSpecAPI)
+			if !ok {
+				return nil
+			}
+			if s.Count < 0 {
+				return fmt.Errorf("spec.count must be >= 0")
+			}
+			switch s.Role {
+			case "controlplane", "worker":
+			default:
+				return fmt.Errorf("spec.role must be controlplane or worker")
+			}
+			return nil
+		})
+	}
+	return &API{store: store, bus: bus, registry: registry}
 }
 
 // RegisterRoutes registers node group routes on the given mux.
@@ -144,6 +162,11 @@ func (a *API) Create(w http.ResponseWriter, r *http.Request) {
 
 	if req.Metadata.Name == "" {
 		writeError(w, "metadata.name is required", "BadRequest", http.StatusBadRequest)
+		return
+	}
+
+	if err := a.registry.Validate("nodegroup", req.Spec); err != nil {
+		writeError(w, err.Error(), "BadRequest", http.StatusBadRequest)
 		return
 	}
 

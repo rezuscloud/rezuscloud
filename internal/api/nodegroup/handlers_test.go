@@ -28,7 +28,7 @@ func setupTest(t *testing.T) (*state.Store, *API) {
 		t.Fatalf("CreateTenant: %v", err)
 	}
 
-	return store, NewAPI(store, nil)
+	return store, NewAPI(store, nil, nil)
 }
 
 func TestNodeGroup_CRUD(t *testing.T) {
