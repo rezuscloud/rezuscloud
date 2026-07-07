@@ -112,6 +112,10 @@ func Router(store state.StoreAPI, jwtManager *auth.JWTManager, auditComponent *a
 
 // RegisterSystemRoutes registers system status routes.
 func RegisterSystemRoutes(mux *http.ServeMux, _ state.StoreAPI) {
+	mux.HandleFunc("GET /api/v1", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(DefaultAPIResourceList())
+	})
 	mux.HandleFunc("GET /api/v1/status", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{
