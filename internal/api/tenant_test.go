@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -320,5 +321,43 @@ func TestTenantAPI_Talosconfig_Success(t *testing.T) {
 	body2 := w.Body.String()
 	if !strings.Contains(body2, "context:") {
 		t.Errorf("talosconfig body missing 'context:'; got:\n%s", body2)
+	}
+}
+
+func TestTenantAPI_ListPagination(t *testing.T) {
+	api, store := setupTestAPI(t)
+
+	// Seed 5 tenants.
+	for i := 0; i < 5; i++ {
+		name := fmt.Sprintf("t%d", i)
+		_, _ = store.CreateTenant(name, state.TenantSpec{KubernetesVersion: "1.35.0"}, nil, nil)
+	}
+
+	// Page 1: limit=2, offset=0 → 2 items, remaining 3.
+	req := httptest.NewRequest("GET", "/api/v1/tenants?limit=2&offset=0", nil)
+	w := httptest.NewRecorder()
+	api.List(w, req)
+
+	var resp TenantListResponse
+	_ = json.NewDecoder(w.Body).Decode(&resp)
+	if len(resp.Items) != 2 {
+		t.Fatalf("page 1: got %d items, want 2", len(resp.Items))
+	}
+	if resp.RemainingItemCount != 3 {
+		t.Errorf("page 1: remaining = %d, want 3", resp.RemainingItemCount)
+	}
+
+	// Page 3: limit=2, offset=4 → 1 item (last), remaining 0.
+	req = httptest.NewRequest("GET", "/api/v1/tenants?limit=2&offset=4", nil)
+	w = httptest.NewRecorder()
+	api.List(w, req)
+
+	var resp3 TenantListResponse
+	_ = json.NewDecoder(w.Body).Decode(&resp3)
+	if len(resp3.Items) != 1 {
+		t.Fatalf("page 3: got %d items, want 1", len(resp3.Items))
+	}
+	if resp3.Total != 5 {
+		t.Errorf("page 3: total = %d, want 5", resp3.Total)
 	}
 }

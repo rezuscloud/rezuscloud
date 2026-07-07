@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/rezuscloud/rezuscloud/internal/pagination"
 	"github.com/rezuscloud/rezuscloud/internal/state"
 	"github.com/rezuscloud/rezuscloud/internal/watch"
 	"sigs.k8s.io/yaml"
@@ -118,8 +119,9 @@ type createRequest struct {
 }
 
 type listResponse struct {
-	Items []ConfigPatch `json:"items"`
-	Total int           `json:"total"`
+	Items              []ConfigPatch `json:"items"`
+	Total              int           `json:"total"`
+	RemainingItemCount int           `json:"remainingItemCount,omitempty"`
 }
 
 // Create handles POST /api/v1/tenants/{tenant}/patches.
@@ -211,7 +213,12 @@ func (a *API) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items, total, err := state.ListTypedByTenant(a.store, "configpatch", tenant,
+	pg := pagination.Parse(r)
+	items, total, err := state.ListTyped(a.store, "configpatch", state.ListOptions{
+		LabelSelector: "rezuscloud.io/tenant=" + tenant,
+		Limit:         pg.Limit,
+		Offset:        pg.Offset,
+	},
 		func(meta state.Metadata, specRaw, statusRaw json.RawMessage) (ConfigPatch, error) {
 			var p ConfigPatch
 			p.Metadata = meta
@@ -226,7 +233,11 @@ func (a *API) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(listResponse{Items: items, Total: total})
+	json.NewEncoder(w).Encode(listResponse{
+		Items:              items,
+		Total:              total,
+		RemainingItemCount: pagination.RemainingItemCount(total, pg.Offset, len(items)),
+	})
 }
 
 // Get handles GET /api/v1/tenants/{tenant}/patches/{name}.
