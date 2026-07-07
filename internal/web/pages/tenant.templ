@@ -126,6 +126,9 @@ templ TenantDetail(data TenantDetailData) {
 		</div>
 	</div>
 	@clusterTabs(data)
+	if data.ReconcilePhase != "" {
+		@ReconciliationBanner(data)
+	}
 	// Always render the scale + delete modals so their DOM nodes are present
 	// when the user clicks the corresponding triggers. They start hidden
 	// (native <dialog> is closed by default).
@@ -210,37 +213,7 @@ templ clusterOverview(data TenantDetailData) {
 		@addNodeGroupForm(data)
 	}
 	if len(data.Machines) > 0 {
-		<div class="ds-section-header">Machines</div>
-		<div class="ds-table-wrapper">
-			<table class="ds-table">
-				<thead>
-					<tr>
-						<th class="ds-table-th">ID</th>
-						<th class="ds-table-th">Stage</th>
-						<th class="ds-table-th">Connected</th>
-						<th class="ds-table-th">Role</th>
-						<th class="ds-table-th">Node Group</th>
-					</tr>
-				</thead>
-				<tbody>
-					for _, m := range data.Machines {
-						<tr class="ds-table-row">
-							<td class="ds-table-td"><span class="ds-table-mono">{ m.ID }</span></td>
-							<td class="ds-table-td"><span class={ "ds-status-badge ds-status-badge--" + stageBadgeClass(m.Stage) }>{ m.Stage }</span></td>
-							<td class="ds-table-td">
-								if m.Connected {
-									<span class="ds-status-dot ds-status-dot--positive"></span>
-								} else {
-									<span class="ds-status-dot ds-status-dot--neutral"></span>
-								}
-							</td>
-							<td class="ds-table-td">{ m.Role }</td>
-							<td class="ds-table-td">{ m.NodeGroup }</td>
-						</tr>
-					}
-				</tbody>
-			</table>
-		</div>
+		@MachinesPanel(data)
 	}
 	if len(data.Patches) > 0 {
 		<div class="ds-section-header">Config Patches</div>
@@ -273,6 +246,36 @@ templ clusterOverview(data TenantDetailData) {
 			</table>
 		</div>
 	}
+	@liveUpdateScript(data.Name)
+}
+
+// liveUpdateScript opens an EventSource to the cluster events SSE endpoint and
+// swaps the reconciliation banner + machines panel via HTMX when events arrive
+// (#178). Graceful degradation: if EventSource is unavailable or the
+// connection errors, the page works on manual refresh.
+templ liveUpdateScript(name string) {
+	<script type="text/javascript">
+		(function() {
+			var cluster = { JSON.stringify(name) };
+			if (!window.EventSource) return;
+			var es = new EventSource("/clusters/" + cluster + "/events");
+			function refreshPartial(partial, target) {
+				if (window.htmx) {
+					htmx.ajax("GET", "/clusters/" + cluster + "?partial=" + partial,
+						{ target: target, swap: "outerHTML" });
+				}
+			}
+			es.onmessage = function(e) {
+				try { var ev = JSON.parse(e.data); } catch (err) { return; }
+				if (ev.type === "READY") return;
+				var meta = (ev.object || {}).metadata || {};
+				if (meta.name === cluster) refreshPartial("reconcile", "#reconcile-banner");
+				refreshPartial("machines", "#machines-panel");
+			};
+			window.addEventListener("beforeunload", function() { es.close(); });
+			es.onerror = function() { es.close(); };
+		})();
+	</script>
 }
 
 templ clusterUpgradeTab(data TenantDetailData) {
@@ -580,11 +583,50 @@ templ deleteClusterModal(name string) {
 	</dialog>
 }
 
+// machinesPanel renders the machines table in a targetable container so the
+// live-update EventSource can swap it without re-rendering the whole page
+// (#178). Extracted from clusterOverview.
+templ MachinesPanel(data TenantDetailData) {
+	<div id="machines-panel">
+		<div class="ds-section-header">Machines</div>
+		<div class="ds-table-wrapper">
+			<table class="ds-table">
+				<thead>
+					<tr>
+						<th class="ds-table-th">ID</th>
+						<th class="ds-table-th">Stage</th>
+						<th class="ds-table-th">Connected</th>
+						<th class="ds-table-th">Role</th>
+						<th class="ds-table-th">Node Group</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, m := range data.Machines {
+						<tr class="ds-table-row">
+							<td class="ds-table-td"><span class="ds-table-mono">{ m.ID }</span></td>
+							<td class="ds-table-td"><span class={ "ds-status-badge ds-status-badge--" + stageBadgeClass(m.Stage) }>{ m.Stage }</span></td>
+							<td class="ds-table-td">
+								if m.Connected {
+									<span class="ds-status-dot ds-status-dot--positive"></span>
+								} else {
+									<span class="ds-status-dot ds-status-dot--neutral"></span>
+								}
+							</td>
+							<td class="ds-table-td">{ m.Role }</td>
+							<td class="ds-table-td">{ m.NodeGroup }</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	</div>
+}
+
 // reconciliationBanner shows the async apply-queue state (ADR 0005).
 // Displayed when ReconcilePhase is non-empty — helps users understand
 // whether their changes are pending, applying, applied, or failed.
-templ reconciliationBanner(data TenantDetailData) {
-	<div class="ds-callout" style="margin-bottom: 1.5rem;">
+templ ReconciliationBanner(data TenantDetailData) {
+	<div class="ds-callout" style="margin-bottom: 1.5rem;" id="reconcile-banner">
 		<div class="ds-callout-header">
 			<span class={ "ds-status-badge ds-status-badge--" + reconcileBadgeClass(data.ReconcilePhase) }>
 				{ "Reconciliation: " + data.ReconcilePhase }
