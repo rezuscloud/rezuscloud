@@ -272,7 +272,7 @@ func (h *Handler) renderReconcilePartial(w http.ResponseWriter, r *http.Request,
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	pages.ReconciliationBanner(data).Render(r.Context(), w)
+	_ = pages.ReconciliationBanner(data).Render(r.Context(), w)
 }
 
 // renderMachinesPartial renders just the machines panel for the live-update
@@ -283,7 +283,7 @@ func (h *Handler) renderMachinesPartial(w http.ResponseWriter, r *http.Request, 
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	pages.MachinesPanel(data).Render(r.Context(), w)
+	_ = pages.MachinesPanel(data).Render(r.Context(), w)
 }
 
 // tenantDetailData builds the TenantDetailData for a tenant (shared by the full
