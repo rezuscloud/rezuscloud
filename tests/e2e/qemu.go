@@ -13,8 +13,9 @@ import (
 	"time"
 )
 
-// requireQemu skips the test if QEMU/KVM is not available or the test is
-// not explicitly enabled.
+// requireQemu skips the test if QEMU is not available or the test is not
+// explicitly enabled. KVM is NOT required — when absent, the VM boots under
+// TCG software emulation (slower but functional) (#183).
 func requireQemu(t *testing.T) {
 	t.Helper()
 
@@ -25,13 +26,23 @@ func requireQemu(t *testing.T) {
 	if _, err := exec.LookPath("qemu-system-x86_64"); err != nil {
 		t.Skipf("qemu-system-x86_64 not found on PATH: %v", err)
 	}
-
-	if _, err := os.Stat("/dev/kvm"); err != nil {
-		t.Skipf("/dev/kvm not available: %v", err)
-	}
 }
 
-// isoPath returns the Talos ISO path (from env or default).
+// kvmAvailable reports whether hardware virtualization (/dev/kvm) is present.
+// When false, bootVM falls back to TCG software emulation (#183).
+func kvmAvailable() bool {
+	_, err := os.Stat("/dev/kvm")
+	return err == nil
+}
+
+// bootTimeout returns the max time to wait for the Talos API based on the
+// accelerator: KVM boots in ~30s (5 min budget), TCG in minutes (15 min budget).
+func bootTimeout() time.Duration {
+	if kvmAvailable() {
+		return 5 * time.Minute
+	}
+	return 15 * time.Minute
+}
 func isoPath() string {
 	if p := os.Getenv("REZUSCLOUD_E2E_TALOS_ISO"); p != "" {
 		return p
@@ -46,7 +57,8 @@ type QEMUVM struct {
 }
 
 // bootVM boots a Talos VM in QEMU maintenance mode from the given ISO.
-// The VM's Talos API is forwarded to a random localhost port.
+// The VM's Talos API is forwarded to a random localhost port. Uses KVM when
+// available, TCG software emulation otherwise (#183).
 func bootVM(t *testing.T, iso string) *QEMUVM {
 	t.Helper()
 
@@ -56,13 +68,22 @@ func bootVM(t *testing.T, iso string) *QEMUVM {
 		t.Fatalf("find free port: %v", err)
 	}
 
+	// Pick accelerator: KVM when available, TCG (software emulation) otherwise.
+	accel := "kvm"
+	cpu := "host"
+	if !kvmAvailable() {
+		accel = "tcg"
+		cpu = "qemu64" // TCG cannot use host passthrough
+		t.Log("KVM not available — booting under TCG software emulation (slower)")
+	}
+
 	// QEMU working directory (for serial log, etc.).
 	workDir := t.TempDir()
 	serialLog := filepath.Join(workDir, "serial.log")
 
 	args := []string{
-		"-machine", "type=q35,accel=kvm",
-		"-cpu", "host",
+		"-machine", fmt.Sprintf("type=q35,accel=%s", accel),
+		"-cpu", cpu,
 		"-smp", "2",
 		"-m", "2048",
 		"-nic", fmt.Sprintf("user,model=virtio-net-pci,hostfwd=tcp::%d-:50000", apiPort),
@@ -85,8 +106,8 @@ func bootVM(t *testing.T, iso string) *QEMUVM {
 		addr: fmt.Sprintf("127.0.0.1:%d", apiPort),
 	}
 
-	// Wait for the Talos API to become reachable.
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	// Wait for the Talos API to become reachable. TCG is much slower.
+	ctx, cancel := context.WithTimeout(context.Background(), bootTimeout())
 	defer cancel()
 	if err := waitForPort(ctx, apiPort); err != nil {
 		vm.Kill()

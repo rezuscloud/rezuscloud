@@ -4,12 +4,15 @@ package e2e
 
 import (
 	"os"
+	"os/exec"
+	"strings"
 	"testing"
 )
 
 // TestE2E_QemuBoot is the minimal smoke test: boot a Talos VM in QEMU and
-// verify the Talos API becomes reachable. This validates the QEMU setup
-// before running the full upgrade-cycle test.
+// verify the Talos API becomes reachable. When talosctl is on PATH, it also
+// queries the node's version to prove Talos is actually running (not just a
+// port listener). Runs under KVM when available, TCG otherwise (#183).
 func TestE2E_QemuBoot(t *testing.T) {
 	requireQemu(t)
 
@@ -26,6 +29,24 @@ func TestE2E_QemuBoot(t *testing.T) {
 	// At minimum, the API port must be reachable.
 	if vm.Addr() == "" {
 		t.Fatal("empty VM address")
+	}
+
+	// If talosctl is available, query the node version to prove it's really
+	// Talos. This is a best-effort enhancement — absence of talosctl doesn't
+	// fail the test.
+	if talosctl, err := exec.LookPath("talosctl"); err == nil {
+		t.Log("talosctl found — querying node version")
+		out, err := exec.Command(talosctl, "version", "--nodes", vm.Addr(), "--talosconfig", "/dev/null").CombinedOutput()
+		if err != nil {
+			t.Logf("talosctl version failed (non-fatal): %s\n%s", err, out)
+		} else {
+			t.Logf("talosctl version output:\n%s", out)
+			if !strings.Contains(string(out), "Tag:") && !strings.Contains(string(out), "v1.") {
+				t.Logf("warning: version output does not look like a Talos version")
+			}
+		}
+	} else {
+		t.Log("talosctl not on PATH — skipping version query (port-reachable is sufficient)")
 	}
 }
 

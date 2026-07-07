@@ -24,6 +24,9 @@ jobs:
       - name: Install C compiler
         run: which gcc || (sudo apt-get update -q && sudo apt-get install -y gcc)
 
+      - name: Install QEMU
+        run: which qemu-system-x86_64 || (sudo apt-get update -q && sudo apt-get install -y qemu-system-x86)
+
       - name: Install OpenTofu
         uses: opentofu/setup-opentofu@v2
         with:
@@ -32,8 +35,10 @@ jobs:
 
       - name: Check KVM availability
         run: |
-          if [ ! -e /dev/kvm ]; then
-            echo "::warning::KVM not available — QEMU E2E tests will be skipped"
+          if [ -e /dev/kvm ]; then
+            echo "KVM available — VMs will use hardware acceleration"
+          else
+            echo "::warning::KVM not available — VMs will use TCG software emulation (slower)"
           fi
 
       - name: Download Talos ISO
@@ -46,4 +51,4 @@ jobs:
           REZUSCLOUD_E2E_QEMU: "1"
           REZUSCLOUD_E2E_TALOS_ISO: "/tmp/talos.iso"
           CGO_ENABLED: "1"
-        run: go test -v -tags=e2e -run '^TestE2E' ./tests/e2e/...
+        run: go test -v -tags=e2e -run '^TestE2E' -timeout 20m ./tests/e2e/...
