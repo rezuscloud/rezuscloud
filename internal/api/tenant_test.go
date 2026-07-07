@@ -21,7 +21,7 @@ func setupTestAPI(t *testing.T) (*TenantAPI, *state.Store) {
 		t.Fatalf("Open: %v", err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
-	return NewTenantAPI(store, nil), store
+	return NewTenantAPI(store, nil, nil), store
 }
 
 func TestTenantAPI_Create(t *testing.T) {

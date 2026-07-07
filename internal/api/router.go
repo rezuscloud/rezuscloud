@@ -19,6 +19,7 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/state"
 	"github.com/rezuscloud/rezuscloud/internal/status"
 	"github.com/rezuscloud/rezuscloud/internal/upgrade"
+	"github.com/rezuscloud/rezuscloud/internal/validation"
 	"github.com/rezuscloud/rezuscloud/internal/watch"
 )
 
@@ -31,6 +32,10 @@ import (
 func Router(store state.StoreAPI, jwtManager *auth.JWTManager, auditComponent *audit.Component, backupComponent *backup.Component, upgradeManager *upgrade.Manager, projectionIdx *projection.Index, statusGatherer *status.Gatherer, bus watch.Bus) http.Handler {
 	mux := http.NewServeMux()
 
+	// Per-resource-type validation registry (#175). Each handler registers its
+	// own validator in its constructor and calls Validate before persisting.
+	registry := validation.NewRegistry()
+
 	// Public endpoints (no auth required).
 	authHandlers := auth.NewAuthHandlers(store, jwtManager)
 	authHandlers.RegisterRoutes(mux)
@@ -39,11 +44,11 @@ func Router(store state.StoreAPI, jwtManager *auth.JWTManager, auditComponent *a
 	protected := http.NewServeMux()
 
 	// Tenant endpoints — view role minimum.
-	tenantAPI := NewTenantAPI(store, bus)
+	tenantAPI := NewTenantAPI(store, bus, registry)
 	tenantAPI.RegisterRoutes(protected)
 
 	// NodeGroup endpoints — nested under tenants.
-	ngAPI := nodegroup.NewAPI(store, bus)
+	ngAPI := nodegroup.NewAPI(store, bus, registry)
 	ngAPI.RegisterRoutes(protected)
 
 	// Machine endpoints (cluster-wide + tenant-scoped).
@@ -55,7 +60,7 @@ func Router(store state.StoreAPI, jwtManager *auth.JWTManager, auditComponent *a
 	providerAPI.RegisterRoutes(protected)
 
 	// ConfigPatch endpoints — nested under tenants.
-	patchAPI := patch.NewAPI(store, bus)
+	patchAPI := patch.NewAPI(store, bus, registry)
 	patchAPI.RegisterRoutes(protected)
 
 	// Machine log streaming.
