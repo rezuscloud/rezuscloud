@@ -37,6 +37,7 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/credentials"
 	"github.com/rezuscloud/rezuscloud/internal/state"
 	"github.com/rezuscloud/rezuscloud/internal/upgrade"
+	"github.com/rezuscloud/rezuscloud/internal/watch"
 	"github.com/rezuscloud/rezuscloud/internal/web/layout"
 	"github.com/rezuscloud/rezuscloud/internal/web/pages"
 	"sigs.k8s.io/yaml"
@@ -59,13 +60,14 @@ type Host interface {
 // Handler serves the clusters routes.
 type Handler struct {
 	store      state.StoreAPI
+	bus        watch.Bus        // optional — enables /clusters/{name}/events SSE
 	upgradeMgr *upgrade.Manager // optional
 	host       Host
 }
 
-// New creates a clusters Handler. upgradeMgr may be nil.
-func New(store state.StoreAPI, upgradeMgr *upgrade.Manager, host Host) *Handler {
-	return &Handler{store: store, upgradeMgr: upgradeMgr, host: host}
+// New creates a clusters Handler. bus and upgradeMgr may be nil.
+func New(store state.StoreAPI, bus watch.Bus, upgradeMgr *upgrade.Manager, host Host) *Handler {
+	return &Handler{store: store, bus: bus, upgradeMgr: upgradeMgr, host: host}
 }
 
 // RegisterRoutes registers all cluster routes, gated by Host.AuthRequired.
@@ -77,6 +79,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /clusters/create", auth(h.ClusterCreateSubmit))
 	mux.HandleFunc("GET /clusters/{name}", auth(h.TenantDetail))
 	mux.HandleFunc("GET /clusters/{name}/{tab}", auth(h.TenantDetail))
+	mux.HandleFunc("GET /clusters/{name}/events", auth(h.ClusterEvents))
 	mux.HandleFunc("DELETE /clusters/{name}", auth(h.ClusterDelete))
 	mux.HandleFunc("POST /clusters/{name}/nodegroups/{ng}/scale", auth(h.NodeGroupScale))
 	mux.HandleFunc("POST /clusters/{name}/nodegroups/create", auth(h.NodeGroupCreate))
@@ -121,6 +124,18 @@ func (h *Handler) TenantDetail(w http.ResponseWriter, r *http.Request) {
 	meta, err := h.store.GetResource("tenant", name, &spec, nil)
 	if err != nil || meta.Name == "" {
 		http.NotFound(w, r)
+		return
+	}
+
+	// Partial renders: the live-update EventSource fetches just the affected
+	// section and swaps it in via HTMX (#178). Avoids re-rendering the whole
+	// page on every reconciliation/machine event.
+	switch r.URL.Query().Get("partial") {
+	case "reconcile":
+		h.renderReconcilePartial(w, r, name)
+		return
+	case "machines":
+		h.renderMachinesPartial(w, r, name)
 		return
 	}
 
@@ -246,6 +261,141 @@ func (h *Handler) TenantDetail(w http.ResponseWriter, r *http.Request) {
 		},
 		Toast: h.host.PopToast(r),
 	})
+}
+
+// renderReconcilePartial renders just the reconciliation banner for the
+// live-update EventSource HTMX swap (#178). Returns 200 with the banner HTML,
+// or 204 if there is no reconciliation status to show.
+func (h *Handler) renderReconcilePartial(w http.ResponseWriter, r *http.Request, name string) {
+	data := h.tenantDetailData(r, name)
+	if data.ReconcilePhase == "" {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	_ = pages.ReconciliationBanner(data).Render(r.Context(), w)
+}
+
+// renderMachinesPartial renders just the machines panel for the live-update
+// EventSource HTMX swap (#178).
+func (h *Handler) renderMachinesPartial(w http.ResponseWriter, r *http.Request, name string) {
+	data := h.tenantDetailData(r, name)
+	if len(data.Machines) == 0 {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	_ = pages.MachinesPanel(data).Render(r.Context(), w)
+}
+
+// tenantDetailData builds the TenantDetailData for a tenant (shared by the full
+// page render and the partial renders). It is a trimmed-down version of
+// TenantDetail — only the fields the partials need (reconciliation + machines).
+func (h *Handler) tenantDetailData(r *http.Request, name string) pages.TenantDetailData {
+	var spec state.TenantSpec
+	meta, _ := h.store.GetResource("tenant", name, &spec, nil)
+	machines, _, _ := h.store.ListMachinesByTenant(name)
+	nodeGroups := h.host.NodeGroupSummaries(name)
+	tenant, _ := h.store.GetTenant(name)
+	if tenant == nil {
+		tenant = &state.Tenant{Metadata: meta, Spec: spec}
+	}
+	status := state.ComputeTenantStatus(tenant, machines, nodeGroups)
+	data := pages.TenantDetailData{Name: name, Phase: string(status.Phase), CanMutate: h.host.CanMutate(r)}
+	if status.Reconciliation != nil {
+		data.ReconcilePhase = status.Reconciliation.Phase
+		data.ReconcileLastError = status.Reconciliation.LastError
+		if status.Reconciliation.UpdatedAt != nil {
+			data.ReconcileUpdatedAt = status.Reconciliation.UpdatedAt.Format("2006-01-02 15:04:05")
+		}
+	}
+	data.Machines = make([]pages.MachineRow, 0, len(machines))
+	for _, m := range machines {
+		role := m.Status.Role
+		if role == "" {
+			role = m.Metadata.Labels["rezuscloud.io/role"]
+		}
+		data.Machines = append(data.Machines, pages.MachineRow{
+			ID:        m.Metadata.Name,
+			Stage:     string(m.Status.Stage),
+			Connected: m.Spec.Connected,
+			Role:      role,
+			NodeGroup: m.Metadata.Labels["rezuscloud.io/nodegroup"],
+		})
+	}
+	return data
+}
+
+// ClusterEvents streams tenant + machine events for a cluster via SSE. The
+// client-side EventSource (liveUpdateScript) consumes this to trigger HTMX
+// partial swaps. Merges both subscriptions into one stream and filters machine
+// events to this tenant. Returns 503 if the bus is nil (#178).
+func (h *Handler) ClusterEvents(w http.ResponseWriter, r *http.Request) {
+	if h.bus == nil {
+		http.Error(w, "events bus unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	name := r.PathValue("name")
+	if name == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	tenantCh, tenantCancel := h.bus.Subscribe("tenant")
+	defer tenantCancel()
+	machineCh, machineCancel := h.bus.Subscribe("machine")
+	defer machineCancel()
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	flusher, canFlush := w.(http.Flusher)
+	if canFlush {
+		flusher.Flush()
+	}
+
+	// Initial handshake so the client knows the stream is live.
+	fmt.Fprintf(w, "data: {\"type\":\"READY\",\"object\":{\"metadata\":{\"name\":%q}}}\n\n", name)
+	if canFlush {
+		flusher.Flush()
+	}
+
+	ctx := r.Context()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case ev, ok := <-tenantCh:
+			if !ok {
+				return
+			}
+			// Only forward events for THIS tenant.
+			if obj, ok := ev.Object.(map[string]any); ok {
+				if md, ok := obj["metadata"].(state.Metadata); ok && md.Name != name {
+					continue
+				}
+			}
+			data, _ := json.Marshal(ev)
+			fmt.Fprintf(w, "data: %s\n\n", data)
+			if canFlush {
+				flusher.Flush()
+			}
+		case ev, ok := <-machineCh:
+			if !ok {
+				return
+			}
+			// Only forward machine events labelled with THIS tenant.
+			if obj, ok := ev.Object.(map[string]any); ok {
+				if md, ok := obj["metadata"].(state.Metadata); ok && md.Labels["rezuscloud.io/tenant"] != name {
+					continue
+				}
+			}
+			data, _ := json.Marshal(ev)
+			fmt.Fprintf(w, "data: %s\n\n", data)
+			if canFlush {
+				flusher.Flush()
+			}
+		}
+	}
 }
 
 // currentTab extracts the tab segment from the URL path. Returns "overview"

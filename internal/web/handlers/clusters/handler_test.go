@@ -1,15 +1,18 @@
 package clusters
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rezuscloud/rezuscloud/internal/auth"
 	"github.com/rezuscloud/rezuscloud/internal/state"
+	"github.com/rezuscloud/rezuscloud/internal/watch"
 	"github.com/rezuscloud/rezuscloud/internal/web/layout"
 	"github.com/rezuscloud/rezuscloud/internal/web/pages"
 )
@@ -58,7 +61,7 @@ func newHandler(t *testing.T) (*Handler, *state.Store, *stubHost) {
 	t.Helper()
 	store := newTestStore(t)
 	host := &stubHost{}
-	h := New(store, nil, host)
+	h := New(store, nil, nil, host)
 	return h, store, host
 }
 
@@ -74,7 +77,7 @@ func authedReq(method, target string, role string) *http.Request {
 func TestNew_HandlerConstructs(t *testing.T) {
 	store := newTestStore(t)
 	host := &stubHost{}
-	h := New(store, nil, host)
+	h := New(store, nil, nil, host)
 	if h == nil || h.store == nil || h.host == nil {
 		t.Fatal("New didn't wire dependencies")
 	}
@@ -347,7 +350,7 @@ func TestRegisterRoutes(t *testing.T) {
 	// wrapper to record before delegating.
 	dispatched := map[string]bool{}
 	recordingHost := &recordingHost{inner: h.host, dispatched: dispatched}
-	hRec := New(store, nil, recordingHost)
+	hRec := New(store, nil, nil, recordingHost)
 
 	mux := http.NewServeMux()
 	hRec.RegisterRoutes(mux)
@@ -409,5 +412,170 @@ func TestClusterCreateData_JSON(t *testing.T) {
 	data := pages.ClusterCreateData{Name: "foo", K8sVersion: "1.35.0"}
 	if _, err := json.Marshal(data); err != nil {
 		t.Errorf("Marshal: %v", err)
+	}
+}
+
+// TestClusterEvents_SSEHandshakeAndFilter proves the SSE endpoint (#178):
+// it sends a READY handshake, then forwards only events for the requested
+// tenant (tenant events filtered by name, machine events by tenant label).
+func TestClusterEvents_SSEHandshakeAndFilter(t *testing.T) {
+	store := newTestStore(t)
+	bus := watch.NewBus()
+	host := &stubHost{}
+	h := New(store, bus, nil, host)
+
+	_, _ = store.CreateTenant("prod", state.TenantSpec{KubernetesVersion: "1.35.0"}, nil, nil)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /clusters/{name}/events", h.ClusterEvents)
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Connect a streaming client.
+	req, _ := http.NewRequestWithContext(ctx, "GET", srv.URL+"/clusters/prod/events", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	// Read frames from the SSE stream into a channel.
+	frames := make(chan string, 16)
+	go func() {
+		buf := make([]byte, 0, 4096)
+		tmp := make([]byte, 512)
+		for {
+			n, err := resp.Body.Read(tmp)
+			if n > 0 {
+				buf = append(buf, tmp[:n]...)
+				for {
+					idx := strings.Index(string(buf), "\n\n")
+					if idx < 0 {
+						break
+					}
+					frames <- string(buf[:idx])
+					buf = buf[idx+2:]
+				}
+			}
+			if err != nil {
+				close(frames)
+				return
+			}
+		}
+	}()
+
+	// Wait for the READY handshake.
+	var collected []string
+	readyDeadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(readyDeadline) {
+		select {
+		case f := <-frames:
+			collected = append(collected, f)
+			if strings.Contains(f, "READY") {
+				goto publish
+			}
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	t.Fatal("timed out waiting for READY handshake")
+
+publish:
+	bus.Publish("tenant", watch.Event{
+		Type:   watch.EventModified,
+		Object: map[string]any{"metadata": state.Metadata{Name: "prod"}},
+	})
+	bus.Publish("tenant", watch.Event{
+		Type:   watch.EventModified,
+		Object: map[string]any{"metadata": state.Metadata{Name: "other"}},
+	})
+	bus.Publish("machine", watch.Event{
+		Type: watch.EventAdded,
+		Object: map[string]any{
+			"metadata": state.Metadata{Name: "m1", Labels: map[string]string{"rezuscloud.io/tenant": "prod"}},
+		},
+	})
+	bus.Publish("machine", watch.Event{
+		Type: watch.EventAdded,
+		Object: map[string]any{
+			"metadata": state.Metadata{Name: "m2", Labels: map[string]string{"rezuscloud.io/tenant": "other"}},
+		},
+	})
+
+	// Collect remaining frames.
+	collectDeadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(collectDeadline) {
+		select {
+		case f, ok := <-frames:
+			if !ok {
+				goto done
+			}
+			collected = append(collected, f)
+		case <-time.After(100 * time.Millisecond):
+			goto done
+		}
+	}
+done:
+	all := strings.Join(collected, "\n")
+	if !strings.Contains(all, "READY") {
+		t.Error("missing READY handshake")
+	}
+	if !strings.Contains(all, `"name":"prod"`) || !strings.Contains(all, `"type":"MODIFIED"`) {
+		t.Error("prod tenant event not forwarded")
+	}
+	if strings.Contains(all, `"name":"other"`) {
+		t.Error("other-tenant event was not filtered out")
+	}
+	if !strings.Contains(all, `"name":"m1"`) {
+		t.Error("prod machine event not forwarded")
+	}
+	if strings.Contains(all, `"name":"m2"`) {
+		t.Error("other-tenant machine event was not filtered out")
+	}
+}
+
+// TestClusterEvents_503WhenNoBus confirms graceful degradation when the bus is
+// not configured.
+func TestClusterEvents_503WhenNoBus(t *testing.T) {
+	store := newTestStore(t)
+	host := &stubHost{}
+	h := New(store, nil, nil, host) // no bus
+
+	req := authedReq("GET", "/clusters/prod/events", "view")
+	w := httptest.NewRecorder()
+	h.ClusterEvents(w, req)
+
+	if w.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503", w.Code)
+	}
+}
+
+// TestRenderReconcilePartial proves the partial render returns the banner HTML
+// when reconciliation status exists, 204 when it doesn't.
+func TestRenderReconcilePartial(t *testing.T) {
+	store := newTestStore(t)
+	host := &stubHost{}
+	h := New(store, nil, nil, host)
+
+	_, _ = store.CreateTenant("prod", state.TenantSpec{KubernetesVersion: "1.35.0"}, nil, nil)
+	// Set a reconciliation status so the banner has content.
+	_, _ = store.UpdateTenantStatus("prod", state.TenantStatus{
+		Reconciliation: &state.ReconciliationStatus{Phase: "applying"},
+	})
+
+	w := httptest.NewRecorder()
+	req := authedReq("GET", "/clusters/prod?partial=reconcile", "view")
+	h.renderReconcilePartial(w, req, "prod")
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "applying") {
+		t.Error("reconcile partial missing the phase text")
+	}
+	if !strings.Contains(w.Body.String(), "reconcile-banner") {
+		t.Error("reconcile partial missing the targetable id")
 	}
 }
