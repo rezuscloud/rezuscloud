@@ -80,22 +80,23 @@ story is a bad reference.
 docs/
 ├── adr/                    # 16 ADRs + README index — ✅ excellent
 ├── architecture-history/   # Archived ADRs — ✅ correct (Google: delete dead docs)
-├── concepts/               # architecture.md, api-design.md — ⚠️ mixed types
-├── getting-started/        # index.md, multi-cluster.md — ⚠️ feature overview, not tutorial
-├── integrations/           # home-assistant.md — ⚠️ orphan, should be a how-to
-├── operations/             # first-deployment.md — ✅ good how-to, needs peers
-├── reference/              # cli.md, versioning.md — ⚠️ missing API reference
-└── testing/                # e2e-qemu.md — ✅ internal, not user-facing
+├── concepts/               # architecture.md, components.md, api-design.md, multi-cluster.md — ✅ complete
+├── how-to/                 # 9 task-oriented guides — ✅ complete library
+├── operations/             # first-deployment.md, install-and-deploy.md — ✅ good
+├── reference/              # cli.md, versioning.md, api/ (7 per-resource pages) — ✅ complete
+├── testing/                # e2e-qemu.md — ✅ internal, not user-facing
+├── tutorials/              # install-and-first-cluster.md — ✅ real step-by-step tutorial
+└── documentation-standards.md  # This document
 ```
 
 ### 2.2 Assessment by Diátaxis Type
 
 | Type | Current State | Gaps |
 |------|---------------|------|
-| **Tutorials** | `getting-started/index.md` is a feature overview, not a step-by-step tutorial. It describes what RezusCloud is, lists prerequisites, shows install commands — but doesn't walk a new user through creating their first cluster with numbered atomic steps. | **No real tutorial exists.** Need: "Create your first tenant cluster" — from zero to `kubectl get nodes` in 10 numbered steps. |
-| **How-to guides** | `operations/first-deployment.md` is excellent. `integrations/home-assistant.md` is a how-to but orphaned. | **No how-to library.** Need: scale a node group, upgrade Talos, manage config patches, configure state encryption, set up backups, add a bare-metal node, manage users/API tokens. |
-| **Reference** | `reference/cli.md` covers the CLI. `reference/versioning.md` covers versioning. `concepts/api-design.md` mixes reference (endpoints, resource shapes) with explanation (lifecycle, patterns). | **No API reference.** The API endpoint listing in `api-design.md` is incomplete and mixed with conceptual content. Need: a structured API reference page per resource type (tenant, nodegroup, machine, configpatch). |
-| **Explanation** | `concepts/architecture.md` is a 125-line summary. `concepts/api-design.md` has conceptual sections mixed with reference. CONTEXT.md is agent-oriented, not user-oriented. | **No component breakdown** (like k8s `/concepts/overview/components/`). No deep architecture explanation. Need: components page, two-planes explanation, reconciliation lifecycle explanation. |
+| **Tutorials** | `tutorials/install-and-first-cluster.md` is a real step-by-step tutorial: zero to `kubectl get nodes` in numbered atomic steps. | ✅ Complete. |
+| **How-to guides** | `how-to/` contains 9 guides: deploy-on-oci, deploy-on-openstack, add-bare-metal-node, scale-node-group, upgrade-talos-version, manage-config-patches, enable-state-encryption, manage-users, integrate-home-assistant. | ✅ Complete. |
+| **Reference** | `reference/cli.md` covers the CLI. `reference/versioning.md` covers versioning. `reference/api/` contains 7 per-resource pages (overview, tenants, node-groups, machines, config-patches, health, projected-state). `concepts/api-design.md` explains API design rationale. | ✅ Complete. |
+| **Explanation** | `concepts/architecture.md` is a 125-line summary. `concepts/components.md` provides a k8s-style component breakdown. `concepts/multi-cluster.md` explains multi-cluster patterns. | ✅ Complete. |
 
 ### 2.3 Kubernetes Comparison
 
@@ -103,15 +104,15 @@ Kubernetes docs serve as the benchmark for a cloud-native infrastructure platfor
 
 | Kubernetes section | RezusCloud equivalent | Status |
 |--------------------|-----------------------|--------|
-| `/docs/setup/` (production setup) | `getting-started/` | ⚠️ Missing Helm/deployment guide |
-| `/docs/concepts/overview/` (what is k8s) | `concepts/architecture.md` | ⚠️ Too brief |
-| `/docs/concepts/overview/components/` | — | ❌ Does not exist |
+| `/docs/setup/` (production setup) | `operations/` | ✅ `first-deployment.md` + `install-and-deploy.md` |
+| `/docs/concepts/overview/` (what is k8s) | `concepts/architecture.md` | ✅ Exists |
+| `/docs/concepts/overview/components/` | `concepts/components.md` | ✅ Exists |
 | `/docs/concepts/architecture/` (deep arch) | `concepts/architecture.md` | ⚠️ Same 125-line page |
-| `/docs/tasks/` (task library) | — | ❌ Does not exist |
-| `/docs/tutorials/` (hello world) | — | ❌ Does not exist |
-| `/docs/reference/api/` | `concepts/api-design.md` | ⚠️ Mixed with concepts |
+| `/docs/tasks/` (task library) | `how-to/` | ✅ 9 guides |
+| `/docs/tutorials/` (hello world) | `tutorials/install-and-first-cluster.md` | ✅ Exists |
+| `/docs/reference/api/` | `reference/api/` | ✅ 7 per-resource pages |
 | `/docs/reference/kubectl/` | `reference/cli.md` | ✅ Exists |
-| `/docs/concepts/` (deep concepts) | `concepts/` | ⚠️ Only 2 pages |
+| `/docs/concepts/` (deep concepts) | `concepts/` | ✅ 4 pages (architecture, components, api-design, multi-cluster) |
 
 ## 3. Target Structure
 
@@ -316,22 +317,22 @@ The platform-website should:
 - [ ] Get approval
 
 ### Phase 2: Restructure existing docs
-- [ ] Rename `getting-started/` → `tutorials/` + `operations/`
-- [ ] Split `concepts/api-design.md` into reference (API endpoints) and explanation (API design rationale)
-- [ ] Move `integrations/home-assistant.md` → `how-to/`
-- [ ] Expand `concepts/architecture.md` into overview + components + architecture pages
-- [ ] Add Diátaxis type headers to every page
+- [x] Rename `getting-started/` → `tutorials/` + `operations/`
+- [x] Split `concepts/api-design.md` into reference (API endpoints) and explanation (API design rationale)
+- [x] Move `integrations/home-assistant.md` → `how-to/`
+- [x] Expand `concepts/architecture.md` into overview + components + architecture pages
+- [x] Add Diátaxis type headers to every page
 
 ### Phase 3: Fill gaps
-- [ ] Write the "Install and first cluster" tutorial (the missing "Hello World")
-- [ ] Write the components page (the missing k8s-style component breakdown)
-- [ ] Write the API reference pages (one per resource type)
-- [ ] Write the how-to library (10 guides)
+- [x] Write the "Install and first cluster" tutorial (the missing "Hello World")
+- [x] Write the components page (the missing k8s-style component breakdown)
+- [x] Write the API reference pages (one per resource type)
+- [x] Write the how-to library (9 guides)
 - [ ] Write the Helm deployment guide
 
 ### Phase 4: Platform-website
-- [ ] Build the docs sidebar navigation (by Diátaxis type)
-- [ ] Wire the docs pipeline to render the full rezuscloud docs set
+- [x] Build the docs sidebar navigation (by Diátaxis type)
+- [x] Wire the docs pipeline to render the full rezuscloud docs set
 - [ ] Add doc freshness CI check
 
 ### Phase 5: Doc-as-code practices
