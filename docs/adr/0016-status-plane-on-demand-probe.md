@@ -81,9 +81,14 @@ stays intact (ADR 0010 invariant).
 
 - **No background scraping goroutines.** No controller periodically polls tenant
   APIs.
-- **No timeseries store.** Status is a point-in-time snapshot, not historical
-  data. Historical trends (if ever needed) come from the tenant's own
-  Prometheus, not from RezusCloud.
+- **No timeseries store for the status plane.** Status is a point-in-time
+  snapshot, not historical data. Historical trends over *tenant resources*
+  (if ever needed) come from the tenant's own Prometheus, not from RezusCloud.
+  The analytics store ([ADR 0017](0017-duckdb-analytics-store.md)) is a
+  separate concern: it holds the management plane's *operational* history
+  (reconcile events, apply telemetry) and may optionally store derived
+  status samples — but it is never read as the source of current status, and
+  this ADR's amnesiac-status principle is unchanged.
 - **No metrics dependency.** The management-cluster path queries the in-cluster
   Prometheus that already exists; RezusCloud does not deploy or manage one.
 
@@ -113,3 +118,5 @@ Tenant-cluster status gathering and the secrets cache (#92) are not yet built.
   with status)
 - [ADR 0015](0015-read-only-surfacing.md) — how much status surfaces in the
   UI/CLI
+- [ADR 0017](0017-duckdb-analytics-store.md) — the analytics store is not the
+  status plane; status stays amnesiac, DuckDB holds only derived history
