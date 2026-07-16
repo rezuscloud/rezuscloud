@@ -36,7 +36,9 @@ This store holds the management plane's **own** state:
   lives here).
 
 It is **not** the source of truth for declared infrastructure — that is TF
-state (see [ADR 0005](0005-tf-state-single-source-of-truth.md)).
+state (see [ADR 0005](0005-tf-state-single-source-of-truth.md)). Nor is it
+the analytical store for append-only operational history — that is DuckDB
+(see [ADR 0017](0017-duckdb-analytics-store.md)).
 
 ### Evolution
 
@@ -55,9 +57,21 @@ touching callers. The initial cut keeps SQLite to minimise dependencies
 - **Pluggable later.** The interface leaves room for PostgreSQL/CRDs without
   an architecture change.
 
+### OLTP boundary (complemented by DuckDB)
+
+SQLite is the **OLTP** store: point reads/writes of current state, small rows,
+latest-write-wins. The management plane's **OLAP** workload — append-only
+operational history queried analytically (reconcile events, apply telemetry,
+audit aggregations) — is a different workload and lives in DuckDB
+([ADR 0017](0017-duckdb-analytics-store.md)), a separate single-file database
+on the same PVC. The two never overlap: SQLite holds current state, DuckDB
+holds history. Neither holds declared infrastructure (ADR 0005).
+
 ## See Also
 
 - [ADR 0001](0001-what-rezuscloud-is.md) — the self-contained / minimal-deps
   principle
 - [ADR 0005](0005-tf-state-single-source-of-truth.md) — what this store does
   *not* hold (declared infrastructure)
+- [ADR 0017](0017-duckdb-analytics-store.md) — the OLAP analytics store that
+  complements this OLTP store

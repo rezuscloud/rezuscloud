@@ -30,6 +30,7 @@ library, etc.) is preserved separately in
 | [0014](0014-configpatch-single-scope.md) | ConfigPatch — Single Tenant-Wide Scope | Accepted |
 | [0015](0015-read-only-surfacing.md) | Read-Only Surfacing of Lower-Layer State | Accepted |
 | [0016](0016-status-plane-on-demand-probe.md) | Status-Plane Gathering — On-Demand Probe with Short TTL | Accepted |
+| [0017](0017-duckdb-analytics-store.md) | DuckDB as the Analytics Store (Complement to SQLite) | Accepted |
 
 ## Numbering
 

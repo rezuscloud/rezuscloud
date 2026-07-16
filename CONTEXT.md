@@ -27,6 +27,7 @@
 | **Event Bus** | NATS, embedded in-process in the single-replica management plane. The single event/streaming primitive — both resource-change events (WebUI SSE) and async-controller events flow through it (ADR 0009). |
 | **State Encryption** | OpenTofu's native state encryption (`pbkdf2` + `aes_gcm`). Applied by `tofu` in the generated `.tf.json`, NOT by RezusCloud's HTTP backend. The backend stores opaque encrypted blobs. RezusCloud never reimplements crypto — every decrypt goes through `tofu state pull` with `TF_ENCRYPTION` set. |
 | **Status Plane** | Observed runtime state (node health, machine stage) — **best-effort, never authoritative, never written to TF state.** The principle (ADR 0010) and the mechanism are decided: **on-demand probe with short in-memory TTL** (ADR 0016, 15 s). No background scrapers — probes fire only when the health endpoint is hit. RezusCloud does not depend on an external observability stack and does not build one. |
+| **Analytics Store** | DuckDB — a single-file columnar analytical database complementing SQLite. Holds the management plane's **operational history**: reconcile lifecycle events, apply telemetry, audit-trail analytics, and (optionally) derived status samples. **Not** a replacement for SQLite (different workload: OLAP vs OLTP), **not** the status plane (status stays point-in-time/amnesiac per ADR 0016), **not** a tenant-observability backend (ADR 0010). Two single-file databases on one PVC: `state.db` (SQLite, OLTP) + `analytics.duckdb` (DuckDB, OLAP). Decision: ADR 0017. `[planned #187]` |
 
 ## Architecture
 
@@ -68,6 +69,23 @@ rezuscloud binary (server)                       rezusctl binary (CLI)
 The `metadata` + `spec` of an infrastructure resource come from TF state;
 `status` comes from observation. The two never mix. RezusCloud does not depend
 on an external observability stack and does not build one now.
+
+### OLTP vs OLAP stores (ADR 0004 + ADR 0017)
+
+The management plane runs **two single-file embedded databases** on one PVC,
+split by workload:
+
+- **SQLite** (ADR 0004) — the **OLTP** store: current state, point
+  reads/writes, latest-write-wins. Holds spec/status point-state, auth, API
+  tokens, bookkeeping, audit rows. `[built]`
+- **DuckDB** (ADR 0017) — the **OLAP** store: append-only operational history,
+  columnar-vectorized scans/aggregations. Holds reconcile lifecycle events,
+  apply telemetry, audit analytics, derived status samples. `[planned #187]`
+
+They never overlap: SQLite holds current state, DuckDB holds history. Neither
+holds declared infrastructure (that is TF state). DuckDB does not make
+RezusCloud a tenant-observability platform (ADR 0010) — it introspects the
+management plane's own behaviour.
 
 ### Events
 

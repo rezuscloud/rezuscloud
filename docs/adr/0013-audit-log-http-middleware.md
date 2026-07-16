@@ -36,6 +36,18 @@ controller-driven changes use resource watches (via NATS — see
 Default 90 days, configurable via `REZUSCLOUD_AUDIT_RETENTION_DAYS`. A periodic
 background job prunes old rows.
 
+### Analytics (DuckDB)
+
+The audit log is the canonical **append-only analytical** workload: rows are
+written once, ordered by time, and queried with filters and aggregations (by
+user, resource, verb, time range). SQLite stores the rows transactionally
+([ADR 0004](0004-sqlite-state-store.md)); the analytical queries over them are
+the first workload targeted at the DuckDB analytics store
+([ADR 0017](0017-duckdb-analytics-store.md)). DuckDB can read the SQLite table
+directly for ad-hoc analysis, or events are dual-written for indexed
+columnar scans. This does not change the audit seam above — only where heavy
+aggregation runs.
+
 ## Consequences
 
 - **Single well-defined seam** — the HTTP middleware chain. Every
@@ -49,3 +61,5 @@ background job prunes old rows.
 
 - [ADR 0012](0012-auth-local-jwt-and-api-tokens.md) — identity source
 - [ADR 0003](0003-rest-api-kubernetes-model.md) — the API surface audited
+- [ADR 0017](0017-duckdb-analytics-store.md) — where analytical queries over
+  the audit log run

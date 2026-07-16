@@ -29,10 +29,15 @@ it is deferred to a later phase.**
 - **`status` may lag, may be stale across restarts, and may be absent** if a
   tenant cluster is unreachable. The system degrades gracefully: declared
   `spec` stays intact and authoritative; only live observation goes dark.
-- **RezusCloud does not become an observability platform.** It does not build a
-  metrics system, a log aggregator, or a tracing backend. It surfaces enough
-  status to orchestrate tenants (did my apply succeed? is this node healthy?)
-  — nothing more. See [ADR 0015](0015-read-only-surfacing.md).
+- **RezusCloud does not become an observability platform for *tenants*.** It
+  does not build a metrics system, a log aggregator, or a tracing backend. It
+  surfaces enough status to orchestrate tenants (did my apply succeed? is this
+  node healthy?) — nothing more. See [ADR 0015](0015-read-only-surfacing.md).
+  This is specifically about *tenant* observability. The management plane
+  introspecting **its own** operational behaviour (reconcile lifecycle, apply
+  telemetry, audit analytics) is a different concern, addressed by the
+  analytics store in [ADR 0017](0017-duckdb-analytics-store.md) — it does not
+  observe tenants and does not change this ADR's principle.
 
 ### What is deferred (the mechanism)
 
@@ -63,3 +68,6 @@ handlers from ad-hoc observations. This is honest about where the project is.
   complements
 - [ADR 0015](0015-read-only-surfacing.md) — how much status surfaces in the
   UI/CLI
+- [ADR 0017](0017-duckdb-analytics-store.md) — the analytics store holds the
+  management plane's *operational* history; it is not the status plane and
+  does not observe tenants
