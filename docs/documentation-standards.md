@@ -1,7 +1,10 @@
 # Documentation Standards
 
-> **Status:** Proposed. This document defines the target standard for RezusCloud
-> documentation, the gap analysis, and the migration plan.
+> **Status:** Standards adopted; migration complete. User-facing Diátaxis docs
+> (tutorials, how-to, reference, concepts, operations) have moved to the
+> [rezuscloud wiki](https://github.com/rezuscloud/rezuscloud/wiki); this repo's
+> `docs/` retains ADRs, architecture-history, and contributor docs. Sections 2,
+> 4, and 5 below describe the pre-migration state for historical context.
 
 ## 1. The Standards
 

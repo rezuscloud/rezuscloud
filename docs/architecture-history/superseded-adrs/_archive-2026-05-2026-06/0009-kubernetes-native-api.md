@@ -37,5 +37,5 @@ The management plane runs standalone (SQLite) in Docker or Home Assistant — no
 
 ## See Also
 
-- [API Design Document](../concepts/api-design.md) — Full endpoint specification
+- [API Design Document](https://github.com/rezuscloud/rezuscloud/wiki/concepts/api-design.md) — Full endpoint specification
 - [ADR 13: SideroLink-Based Config Pull](0013-siderolink-config-pull.md)
