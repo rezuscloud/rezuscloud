@@ -21,7 +21,7 @@ library, etc.) is preserved separately in
 | [0005](0005-tf-state-single-source-of-truth.md) | TF State as the Single Source of Truth for Declared Infrastructure | Accepted |
 | [0006](0006-exec-tofu-binary.md) | Exec the `tofu` Binary for Infrastructure Reconciliation | Accepted |
 | [0007](0007-provider-as-tf-wrapper.md) | Provider — The RezusCloud Module Wrapping a Real TF Provider | Accepted |
-| [0008](0008-config-delivery-user-data-and-talos-api.md) | Config Delivery via `user_data` and Talos API (No SideroLink) | Accepted |
+| [0008](0008-config-delivery-user-data-and-talos-api.md) | Config Delivery via SideroLink Config-Pull | Accepted (reverses prior push; [planned #189](https://github.com/rezuscloud/rezuscloud/issues/189)) |
 | [0009](0009-event-bus-nats.md) | NATS as the Event/Streaming Primitive | Accepted |
 | [0010](0010-status-plane-best-effort.md) | Status Plane — Best-Effort, Never Authoritative | Accepted (mechanism in [ADR 0016](0016-status-plane-on-demand-probe.md)) |
 | [0011](0011-webui-templ-htmx.md) | WebUI — templ + HTMX + Tailwind | Accepted |
@@ -31,6 +31,8 @@ library, etc.) is preserved separately in
 | [0015](0015-read-only-surfacing.md) | Read-Only Surfacing of Lower-Layer State | Accepted |
 | [0016](0016-status-plane-on-demand-probe.md) | Status-Plane Gathering — On-Demand Probe with Short TTL | Accepted |
 | [0017](0017-duckdb-analytics-store.md) | DuckDB as the Analytics Store (Complement to SQLite) | Accepted |
+| [0018](0018-continuous-management-link-wireguard.md) | Continuous Management Link — SideroLink (Tunnel + Config-Pull) | Accepted ([planned #189](https://github.com/rezuscloud/rezuscloud/issues/189)) |
+| [0019](0019-embedded-cluster-discovery.md) | Embedded Cluster Discovery Service | Accepted |
 
 ## Numbering
 

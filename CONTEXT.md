@@ -14,13 +14,16 @@
 | **rezuscloud** | Server binary — the long-running management plane: HTTP API, WebUI, TF HTTP backend, TF execution engine, reconciliation. |
 | **rezusctl** | CLI binary — `boot` (standalone) + thin client commands against the REST API. Static binary, no container image. |
 | **Management Plane** | The running `rezuscloud` process. Owns cluster lifecycle, config delivery, state. |
+| **Management Node** | The role `rezuscloud` plays in the management mesh (ADR 0018): the WireGuard hub every node maintains a continuous, NAT-traversing link to. |
 | **Tenant** | A full Talos cluster under management. Has its own etcd, API server, kubelets. User-facing term: **cluster** (CLI uses `cluster`, API uses `tenant`). |
 | **NodeGroup** | A set of machines within a tenant sharing the same role (controlplane/worker) and provider. |
 | **Machine** | A physical or virtual machine running Talos. Identified by hardware UUID. |
 | **Provider** | The RezusCloud module that wraps a real Terraform provider (oci, openstack, talos, …) to maintain the infrastructure RezusCloud manages. One Provider per platform, living in `internal/provider/<name>/`. It generates the standard `.tf.json` that `tofu` applies (ADR 0006) and declares the mapping between TF resource types and RezusCloud resources. **There is no separate "RezusCloud provider" and "TF provider" — there is one TF-based Provider that wraps a real registry provider.** gRPC is used only if a given real TF provider requires it; otherwise RezusCloud generates config and execs `tofu` directly (ADR 0007). |
-| **Config Delivery** | How a Talos node receives its config. Two methods: **user_data** (cloud VMs — OCI metadata, OpenStack config_drive, cloud-init) at VM creation time, and **Talos API push** (`talosctl apply-config` / `talos_machine_configuration_apply`) for pre-booted bare metal in maintenance mode. No SideroLink (ADR 0008). Tenant assignment is determined by which TF state (tenant) the `tofu apply` runs against. |
+| **Config Delivery** | How a Talos node receives its config: the node **pulls** its full config from rezuscloud over the SideroLink tunnel (ADR 0008/0018). rezuscloud generates the config via the TF Talos provider during `tofu apply` (version-aware) and serves it; the node pulls and converges. Only the minimal bootstrap (SideroLink kernel arg + WireGuard key) is pushed once via user_data/boot image. Tenant assignment is still determined by which TF state apply targets. **[planned #189]** — today delivery is still push (user_data + Talos API). |
+| **SideroLink Tunnel** | The persistent, node-initiated WireGuard-over-gRPC tunnel (ADR 0018) connecting every node to the management node. Nodes dial outbound (NAT-friendly via STUN + relay); it carries config-pull (node←platform) and on-demand telemetry-pull (platform←node). Push nowhere. Cold-boot bootstrap still via user_data/boot image. **[planned #189]**. |
+| **Embedded Discovery** | The in-process cluster-discovery service (ADR 0019) by which tenant nodes learn their peers' reachable (SideroLink tunnel) addresses across networks, so etcd gossip and kube lookups work. Coordination, not transport; not the public discovery service. |
 | **ConfigPatch** | User-defined Talos config overlay applied during config generation. Single tenant-wide scope (ADR 0014). |
-| **JoinToken** | **Deprecated.** A concept from the rejected SideroLink model, where a token mapped a booting machine to a tenant via kernel args. Under the TF model there is nothing for a join token to do — tenant assignment is determined by which TF state apply targets. The JoinToken API resource, store methods, CLI subcommand, and WebUI pages are slated for removal. |
+| **JoinToken** | **Deprecated.** SideroLink is adopted (ADR 0018), but rezuscloud needs no join token: peers authenticate by WireGuard key, and the node→tenant mapping comes from the TF-created machine record (declare-first), not a token. The JoinToken API resource, store methods, CLI subcommand, and WebUI pages are slated for removal. |
 | **TF State** | The single source of truth for **declared infrastructure** (resource `metadata` + `spec`). One state per tenant, stored in RezusCloud's TF HTTP backend. K8s-style REST APIs project `spec` from TF state through provider-declared resource mappings. Does **not** hold observed/runtime state. |
 | **Reconciliation** | The async loop: spec change → controller detects drift → `tofu apply` → TF state updated → status updated. Events flow through NATS at each phase (ADR 0009). |
 | **Apply Queue** | Debounced, per-tenant queue. All spec writes for a tenant coalesce within a debounce window; when it drains, a single `tofu apply` reconciles the whole tenant. Serial within a tenant, parallel across tenants. A slow periodic resync re-enqueues every tenant to catch external drift. |
@@ -50,7 +53,9 @@ rezuscloud binary (server)                       rezusctl binary (CLI)
 ├── Store enrichment (projection → store) [built #139]
 ├── Tenant health (on-demand probe) [built #139]
 ├── Config generation (Talos) [built]
-└── Rolling upgrades [built]
+├── Rolling upgrades [built]
+├── SideroLink management tunnel [planned #189, ADR 0018]
+└── Embedded cluster discovery [planned #189, ADR 0019]
 ```
 
 ### Two data planes, never mixed (ADR 0005)
@@ -160,6 +165,24 @@ keyfile). Individual cloud passwords are fetched by tofu's `bitwarden` provider
 at apply time — RezusCloud never sees them. RezusCloud is self-contained: the
 only component needed to run the personal cloud. v1: single bootstrap set;
 evolution: per-tenant bootstrap sets.
+
+### Management connectivity & discovery
+
+**rezuscloud is the management node** (ADR 0018). Every node maintains a
+continuous, node-initiated **SideroLink** tunnel to it (outbound → NAT/CGNAT
+traversal via STUN + relay). The tunnel carries **pull in both directions**: the
+node pulls its config (ADR 0008, reversed to pull), and the platform pulls
+telemetry on demand (ADR 0010/0016). Nothing is continuously pushed. **[planned
+#189]** — not yet built; today reachability is direct (cloud endpoint IP /
+bare-metal IPv6 LAN, archived ADR 0020 v1) and config delivery is push. The
+cold-boot bootstrap (minimal `siderolink.api=` kernel arg + WireGuard key) is
+still pushed once via user_data/boot image; everything else flows over the
+tunnel.
+
+Tenant nodes find **each other** across networks via the embedded cluster
+discovery service (ADR 0019): each tenant gets a cluster ID + token, nodes
+register their SideroLink tunnel address and query for peers. **[planned #189]**
+— not yet built.
 
 ## CLI Design
 
