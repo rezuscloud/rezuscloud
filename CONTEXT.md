@@ -197,5 +197,6 @@ rezusctl follows the kubectl verb-driven model: `rezusctl <verb> <type> [<name>]
 
 ## Conventions
 
+- **Milestone-driven versioning** — patch releases are continuous (every merge to main); the minor or major version increases only when a milestone titled `vX.Y.Z` closes, which cuts the release tag (`.github/workflows/milestone-release.yml`). Commit messages never bump versions.
 - No references to commercial products or their vendors in code, docs, or ADRs.
 - Go import paths (`github.com/siderolabs/...`) are technical dependencies, not product references.
