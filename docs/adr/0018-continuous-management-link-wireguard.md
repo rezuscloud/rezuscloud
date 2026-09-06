@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (implementation [planned #189](https://github.com/rezuscloud/rezuscloud/issues/189))
+Accepted (implementation [planned #193](https://github.com/rezuscloud/rezuscloud/issues/193))
 
 ## Context
 

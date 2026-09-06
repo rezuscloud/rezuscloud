@@ -19,8 +19,8 @@
 | **NodeGroup** | A set of machines within a tenant sharing the same role (controlplane/worker) and provider. |
 | **Machine** | A physical or virtual machine running Talos. Identified by hardware UUID. |
 | **Provider** | The RezusCloud module that wraps a real Terraform provider (oci, openstack, talos, …) to maintain the infrastructure RezusCloud manages. One Provider per platform, living in `internal/provider/<name>/`. It generates the standard `.tf.json` that `tofu` applies (ADR 0006) and declares the mapping between TF resource types and RezusCloud resources. **There is no separate "RezusCloud provider" and "TF provider" — there is one TF-based Provider that wraps a real registry provider.** gRPC is used only if a given real TF provider requires it; otherwise RezusCloud generates config and execs `tofu` directly (ADR 0007). |
-| **Config Delivery** | How a Talos node receives its config: the node **pulls** its full config from rezuscloud over the SideroLink tunnel (ADR 0008/0018). rezuscloud generates the config via the TF Talos provider during `tofu apply` (version-aware) and serves it; the node pulls and converges. Only the minimal bootstrap (SideroLink kernel arg + WireGuard key) is pushed once via user_data/boot image. Tenant assignment is still determined by which TF state apply targets. **[planned #189]** — today delivery is still push (user_data + Talos API). |
-| **SideroLink Tunnel** | The persistent, node-initiated WireGuard-over-gRPC tunnel (ADR 0018) connecting every node to the management node. Nodes dial outbound (NAT-friendly via STUN + relay); it carries config-pull (node←platform) and on-demand telemetry-pull (platform←node). Push nowhere. Cold-boot bootstrap still via user_data/boot image. **[planned #189]**. |
+| **Config Delivery** | How a Talos node receives its config: the node **pulls** its full config from rezuscloud over the SideroLink tunnel (ADR 0008/0018). rezuscloud generates the config via the TF Talos provider during `tofu apply` (version-aware) and serves it; the node pulls and converges. Only the minimal bootstrap (SideroLink kernel arg + WireGuard key) is pushed once via user_data/boot image. Tenant assignment is still determined by which TF state apply targets. **[planned #194]** — today delivery is still push (user_data + Talos API). |
+| **SideroLink Tunnel** | The persistent, node-initiated WireGuard-over-gRPC tunnel (ADR 0018) connecting every node to the management node. Nodes dial outbound (NAT-friendly via STUN + relay); it carries config-pull (node←platform) and on-demand telemetry-pull (platform←node). Push nowhere. Cold-boot bootstrap still via user_data/boot image. **[planned #193]**. |
 | **Embedded Discovery** | The in-process cluster-discovery service (ADR 0019) by which tenant nodes learn their peers' reachable (SideroLink tunnel) addresses across networks, so etcd gossip and kube lookups work. Coordination, not transport; not the public discovery service. |
 | **ConfigPatch** | User-defined Talos config overlay applied during config generation. Single tenant-wide scope (ADR 0014). |
 | **JoinToken** | **Deprecated.** SideroLink is adopted (ADR 0018), but rezuscloud needs no join token: peers authenticate by WireGuard key, and the node→tenant mapping comes from the TF-created machine record (declare-first), not a token. The JoinToken API resource, store methods, CLI subcommand, and WebUI pages are slated for removal. |
@@ -30,7 +30,7 @@
 | **Event Bus** | NATS, embedded in-process in the single-replica management plane. The single event/streaming primitive — both resource-change events (WebUI SSE) and async-controller events flow through it (ADR 0009). |
 | **State Encryption** | OpenTofu's native state encryption (`pbkdf2` + `aes_gcm`). Applied by `tofu` in the generated `.tf.json`, NOT by RezusCloud's HTTP backend. The backend stores opaque encrypted blobs. RezusCloud never reimplements crypto — every decrypt goes through `tofu state pull` with `TF_ENCRYPTION` set. |
 | **Status Plane** | Observed runtime state (node health, machine stage) — **best-effort, never authoritative, never written to TF state.** The principle (ADR 0010) and the mechanism are decided: **on-demand probe with short in-memory TTL** (ADR 0016, 15 s). No background scrapers — probes fire only when the health endpoint is hit. RezusCloud does not depend on an external observability stack and does not build one. |
-| **Analytics Store** | DuckDB — a single-file columnar analytical database complementing SQLite. Holds the management plane's **operational history**: reconcile lifecycle events, apply telemetry, audit-trail analytics, and (optionally) derived status samples. **Not** a replacement for SQLite (different workload: OLAP vs OLTP), **not** the status plane (status stays point-in-time/amnesiac per ADR 0016), **not** a tenant-observability backend (ADR 0010). Two single-file databases on one PVC: `state.db` (SQLite, OLTP) + `analytics.duckdb` (DuckDB, OLAP). Decision: ADR 0017. `[planned #187]` |
+| **Analytics Store** | DuckDB — a single-file columnar analytical database complementing SQLite. Holds the management plane's **operational history**: reconcile lifecycle events, apply telemetry, audit-trail analytics, and (optionally) derived status samples. **Not** a replacement for SQLite (different workload: OLAP vs OLTP), **not** the status plane (status stays point-in-time/amnesiac per ADR 0016), **not** a tenant-observability backend (ADR 0010). Two single-file databases on one PVC: `state.db` (SQLite, OLTP) + `analytics.duckdb` (DuckDB, OLAP). Decision: ADR 0017. `[planned #196]` |
 
 ## Architecture
 
@@ -54,8 +54,8 @@ rezuscloud binary (server)                       rezusctl binary (CLI)
 ├── Tenant health (on-demand probe) [built #139]
 ├── Config generation (Talos) [built]
 ├── Rolling upgrades [built]
-├── SideroLink management tunnel [planned #189, ADR 0018]
-└── Embedded cluster discovery [planned #189, ADR 0019]
+├── SideroLink management tunnel [planned #193, ADR 0018]
+└── Embedded cluster discovery [planned #195, ADR 0019]
 ```
 
 ### Two data planes, never mixed (ADR 0005)
@@ -85,7 +85,7 @@ split by workload:
   tokens, bookkeeping, audit rows. `[built]`
 - **DuckDB** (ADR 0017) — the **OLAP** store: append-only operational history,
   columnar-vectorized scans/aggregations. Holds reconcile lifecycle events,
-  apply telemetry, audit analytics, derived status samples. `[planned #187]`
+  apply telemetry, audit analytics, derived status samples. `[planned #196]`
 
 They never overlap: SQLite holds current state, DuckDB holds history. Neither
 holds declared infrastructure (that is TF state). DuckDB does not make
@@ -181,7 +181,7 @@ tunnel.
 
 Tenant nodes find **each other** across networks via the embedded cluster
 discovery service (ADR 0019): each tenant gets a cluster ID + token, nodes
-register their SideroLink tunnel address and query for peers. **[planned #189]**
+register their SideroLink tunnel address and query for peers. **[planned #195]**
 — not yet built.
 
 ## CLI Design
