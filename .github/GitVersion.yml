@@ -1,9 +1,20 @@
-workflow: GitHubFlow/v1
+# Milestone-driven versioning:
+#   - patch: every merge to main releases the next patch (Mainline strategy;
+#     any commit message bumps patch unless it carries a reserved bump token)
+#   - minor/major: ONLY by closing a milestone titled vX.Y.Z — the
+#     milestone-release workflow cuts that tag. The reserved bump tokens below
+#     exist for GitVersion mechanics; using them by hand is forbidden, and the
+#     release pipeline's stable-guard additionally refuses any minor/major
+#     increase that has no matching vX.Y.0 milestone.
+# Legacy prerelease tags (v0.0.1-N … v0.1.0-3) are cut off by ignore.commits-before.
+strategies: [Mainline]
 tag-prefix: '[vV]'
 commit-message-incrementing: Enabled
-major-version-bump-message: "^(build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test)(\\([\\w\\s-,/\\\\]*\\))?(!:|:.*\\n\\n((.+\\n)+\\n)?BREAKING CHANGE:\\s.+)"
-minor-version-bump-message: "^(feat)(\\([\\w\\s-,/\\\\]*\\))?:"
-patch-version-bump-message: "^(fix|perf)(\\([\\w\\s-,/\\\\]*\\))?:"
+minor-version-bump-message: '^\[bump:minor\]'
+major-version-bump-message: '^\[bump:major\]'
+patch-version-bump-message: '.+'
+ignore:
+  commits-before: 2026-09-06T13:00:00Z
 branches:
   main:
     regex: ^main$

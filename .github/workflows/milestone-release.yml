@@ -1,0 +1,64 @@
+name: Milestone release
+
+# A milestone titled vX.Y.Z is the ONLY way the minor or major version
+# increases: closing it cuts the release tag at the current main HEAD and
+# publishes that exact version. Closing any other milestone is a no-op. All
+# other releases are patch bumps computed by GitVersion (.github/GitVersion.yml).
+
+on:
+  milestone:
+    types: [closed]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    name: Cut milestone version tag
+    runs-on: [self-hosted, Linux, X64]
+    outputs:
+      match: ${{ steps.match.outputs.match }}
+      version: ${{ steps.match.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Match semver milestone title
+        id: match
+        env:
+          TITLE: ${{ github.event.milestone.title }}
+        run: |
+          if [[ "$TITLE" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            v="${TITLE#v}"
+            echo "match=true" >> "$GITHUB_OUTPUT"
+            echo "version=$v" >> "$GITHUB_OUTPUT"
+            echo "Version milestone: v$v"
+          else
+            echo "match=false" >> "$GITHUB_OUTPUT"
+            echo "Milestone \"$TITLE\" is not a version (vX.Y.Z) — nothing to release"
+          fi
+
+      - name: Create tag
+        if: steps.match.outputs.match == 'true'
+        env:
+          VERSION: ${{ steps.match.outputs.version }}
+        run: |
+          TAG="v${VERSION}"
+          if git tag -l "$TAG" | grep -q .; then
+            echo "Tag $TAG already exists — skipping"
+          else
+            git tag "$TAG"
+            git push origin "refs/tags/$TAG"
+            echo "Tag $TAG created at $(git rev-parse --short HEAD)"
+          fi
+
+  release:
+    name: Release milestone version
+    needs: tag
+    if: needs.tag.outputs.match == 'true'
+    uses: ./.github/workflows/release.yml
