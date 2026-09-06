@@ -3,6 +3,7 @@ name: Release
 on:
   push:
     branches: [main]
+  workflow_call: {}
   workflow_dispatch:
     inputs:
       snapshot:
@@ -31,10 +32,15 @@ jobs:
       sha: ${{ steps.gitversion.outputs.sha }}
       shortSha: ${{ steps.gitversion.outputs.shortSha }}
       commitDate: ${{ steps.gitversion.outputs.commitDate }}
+      version: ${{ steps.gitversion.outputs.majorMinorPatch }}
+      stable: ${{ steps.stable-guard.outputs.stable }}
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          # Deterministic for push, dispatch, and workflow_call (the milestone
+          # release cuts its tag at main HEAD before calling this workflow).
+          ref: main
 
       - name: Ensure full git history
         run: |
@@ -73,12 +79,46 @@ jobs:
           echo "MajorMinorPatch: ${{ steps.gitversion.outputs.majorMinorPatch }}"
           echo "CommitDate: ${{ steps.gitversion.outputs.commitDate }}"
 
+      - name: Release gate (stable base + milestone rule)
+        id: stable-guard
+        env:
+          VERSION: ${{ steps.gitversion.outputs.majorMinorPatch }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Milestone-driven versioning: patch is continuous, minor/major only
+          # via a vX.Y.0 milestone. Before the first stable tag exists, every
+          # push skips — cut the bootstrap tag via milestone-release instead.
+          LAST=$(git tag -l --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)
+          if [ -z "$LAST" ]; then
+            echo "stable=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No stable version tag exists yet — release skipped. Cut the first stable tag via the milestone-release workflow."
+            exit 0
+          fi
+          echo "stable=true" >> "$GITHUB_OUTPUT"
+          echo "Release version: $VERSION (last stable: $LAST)"
+
+          # Hard gate: a minor/major increase over the last stable tag must be
+          # backed by a milestone titled vX.Y.0 (or the exact version).
+          cmaj=${VERSION%%.*}; cmin=$(cut -d. -f2 <<<"$VERSION")
+          ver=${LAST#v}; lmaj=${ver%%.*}; lmin=$(cut -d. -f2 <<<"$ver")
+          if [ "$cmaj" -gt "$lmaj" ] || { [ "$cmaj" -eq "$lmaj" ] && [ "$cmin" -gt "$lmin" ]; }; then
+            titles=$(gh api "repos/$REPO/milestones?state=all" --paginate -q '.[].title')
+            if echo "$titles" | grep -qx "v${cmaj}.${cmin}.0" || echo "$titles" | grep -qx "v$VERSION"; then
+              echo "Minor/major increase is backed by milestone ✓"
+            else
+              echo "::error::$VERSION increases minor/major over $LAST without a milestone titled v${cmaj}.${cmin}.0 (or v$VERSION). Version lines only increase via milestones."
+              exit 1
+            fi
+          fi
+
       - name: Check if tag exists
+        if: steps.stable-guard.outputs.stable == 'true'
         id: check_tag
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="v${{ steps.gitversion.outputs.semVer }}"
+          TAG="v${{ steps.gitversion.outputs.majorMinorPatch }}"
           if git tag -l "$TAG" | grep -q .; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
             echo "Tag $TAG already exists, skipping"
@@ -88,11 +128,11 @@ jobs:
           fi
 
       - name: Create git tag
-        if: steps.check_tag.outputs.exists == 'false'
+        if: steps.stable-guard.outputs.stable == 'true' && steps.check_tag.outputs.exists == 'false'
         uses: actions/github-script@v7
         with:
           script: |
-            const tag = `v${{ steps.gitversion.outputs.semVer }}`;
+            const tag = `v${{ steps.gitversion.outputs.majorMinorPatch }}`;
             const sha = '${{ steps.gitversion.outputs.sha }}';
             console.log(`Creating tag ${tag} at ${sha}`);
             await github.rest.git.createRef({
@@ -106,13 +146,13 @@ jobs:
   release:
     name: Release
     needs: version
-    if: github.event.inputs.snapshot != 'true' && needs.version.outputs.semVer != ''
+    if: github.event.inputs.snapshot != 'true' && needs.version.outputs.semVer != '' && needs.version.outputs.version != '' && needs.version.outputs.stable == 'true' && needs.version.outputs.stable == 'true'
     runs-on: [self-hosted, Linux, X64]
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          ref: v${{ needs.version.outputs.semVer }}
+          ref: v${{ needs.version.outputs.version }}
 
       - uses: actions/setup-go@v6
         with:

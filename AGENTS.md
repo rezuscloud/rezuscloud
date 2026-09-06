@@ -33,6 +33,7 @@ removed.
 
 - **61 tested packages, 788 test functions** — all passing
 - CI + release pipelines green. Single version, single release.
+- **Versioning is milestone-driven** (issue #202): every merge to `main` releases the next **patch**; the **minor/major increase only when a milestone titled `vX.Y.Z` closes** (the `milestone-release` workflow cuts that tag). Commit messages never change the version.
 
 ## Repository Layout
 
