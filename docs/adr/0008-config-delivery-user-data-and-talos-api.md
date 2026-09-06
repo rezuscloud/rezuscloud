@@ -3,7 +3,7 @@
 ## Status
 
 Accepted — **reverses the prior push decision.** Implementation is
-[planned #189](https://github.com/rezuscloud/rezuscloud/issues/189); today config
+[planned #194](https://github.com/rezuscloud/rezuscloud/issues/194); today config
 delivery is still push (`user_data` + Talos API). This ADR records the adopted
 direction.
 
