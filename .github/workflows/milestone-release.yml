@@ -4,10 +4,19 @@ name: Milestone release
 # increases: closing it cuts the release tag at the current main HEAD and
 # publishes that exact version. Closing any other milestone is a no-op. All
 # other releases are patch bumps computed by GitVersion (.github/GitVersion.yml).
+#
+# workflow_dispatch exists for deliberate manual cuts — e.g. bootstrapping the
+# first stable tag after the versioning cutover (0.0.2).
 
 on:
   milestone:
     types: [closed]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to cut (X.Y.Z)"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -21,32 +30,38 @@ jobs:
     name: Cut milestone version tag
     runs-on: [self-hosted, Linux, X64]
     outputs:
-      match: ${{ steps.match.outputs.match }}
-      version: ${{ steps.match.outputs.version }}
+      match: ${{ steps.resolve.outputs.match }}
+      version: ${{ steps.resolve.outputs.version }}
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - name: Match semver milestone title
-        id: match
+      - name: Resolve version (milestone title or dispatch input)
+        id: resolve
         env:
           TITLE: ${{ github.event.milestone.title }}
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          if [[ "$TITLE" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          v=""
+          if [ -n "$INPUT_VERSION" ]; then
+            v="$INPUT_VERSION"
+          elif [[ "$TITLE" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             v="${TITLE#v}"
+          fi
+          if [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "match=true" >> "$GITHUB_OUTPUT"
             echo "version=$v" >> "$GITHUB_OUTPUT"
-            echo "Version milestone: v$v"
+            echo "Version release: v$v"
           else
             echo "match=false" >> "$GITHUB_OUTPUT"
             echo "Milestone \"$TITLE\" is not a version (vX.Y.Z) — nothing to release"
           fi
 
       - name: Create tag
-        if: steps.match.outputs.match == 'true'
+        if: steps.resolve.outputs.match == 'true'
         env:
-          VERSION: ${{ steps.match.outputs.version }}
+          VERSION: ${{ steps.resolve.outputs.version }}
         run: |
           TAG="v${VERSION}"
           if git tag -l "$TAG" | grep -q .; then
