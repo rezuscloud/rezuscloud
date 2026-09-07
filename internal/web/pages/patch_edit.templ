@@ -1,14 +1,16 @@
 package pages
 
 type PatchEditData struct {
-	Cluster    string
-	Name       string
-	Format     string
-	TargetRole string
-	Enabled    bool
-	Patch      string
-	CanMutate  bool
-	FormError  string
+	Cluster       string
+	Name          string
+	Format        string
+	Scope         string
+	TargetMachine string
+	TargetRole    string
+	Enabled       bool
+	Patch         string
+	CanMutate     bool
+	FormError     string
 }
 
 templ PatchEdit(data PatchEditData) {
@@ -51,6 +53,43 @@ templ PatchEdit(data PatchEditData) {
 					}
 				>text</option>
 			</select>
+		</div>
+		<div class="ds-input-group">
+			<label class="ds-label" for="patch-scope">Scope</label>
+			<select
+				id="patch-scope"
+				name="scope"
+				class="ds-input"
+				if !data.CanMutate {
+					disabled
+				}
+			>
+				<option
+					value="cluster"
+					if data.Scope != "machine" {
+						selected
+					}
+				>cluster (all machines)</option>
+				<option
+					value="machine"
+					if data.Scope == "machine" {
+						selected
+					}
+				>machine (single machine)</option>
+			</select>
+		</div>
+		<div class="ds-input-group">
+			<label class="ds-label" for="patch-machine">Target machine</label>
+			<input
+				id="patch-machine"
+				name="targetMachine"
+				class="ds-input"
+				placeholder="required only for machine scope"
+				value={ data.TargetMachine }
+				if !data.CanMutate {
+					disabled
+				}
+			/>
 		</div>
 		<div class="ds-input-group">
 			<label class="ds-label" for="patch-target">Target role</label>

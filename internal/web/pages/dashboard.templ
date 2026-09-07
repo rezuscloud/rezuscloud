@@ -295,7 +295,7 @@ templ pressureTile(label string, usage, capacity int64, unit string) {
 			<span class="ds-pressure-tile-label">{ label }</span>
 		</div>
 		<div class="ds-pressure-tile-value">
-			{ formatMillicores(usage) }<span class="ds-pressure-tile-unit"> / { formatMillicores(capacity) }</span>
+			{ formatMillicores(usage) }<span class="ds-pressure-tile-unit">/ { formatMillicores(capacity) }</span>
 		</div>
 		@pressureBar(pctInt(usage, capacity))
 	</div>
@@ -308,7 +308,7 @@ templ pressureTileBytes(label string, usage, capacity int64) {
 			<span class="ds-pressure-tile-label">{ label }</span>
 		</div>
 		<div class="ds-pressure-tile-value">
-			{ formatBytes(usage) }<span class="ds-pressure-tile-unit"> / { formatBytes(capacity) }</span>
+			{ formatBytes(usage) }<span class="ds-pressure-tile-unit">/ { formatBytes(capacity) }</span>
 		</div>
 		@pressureBar(pctInt(usage, capacity))
 	</div>
@@ -321,7 +321,7 @@ templ pressureTilePods(label string, running, capacity int) {
 			<span class="ds-pressure-tile-label">{ label }</span>
 		</div>
 		<div class="ds-pressure-tile-value">
-			{ fmt.Sprintf("%d", running) }<span class="ds-pressure-tile-unit"> / { fmt.Sprintf("%d", capacity) }</span>
+			{ fmt.Sprintf("%d", running) }<span class="ds-pressure-tile-unit">/ { fmt.Sprintf("%d", capacity) }</span>
 		</div>
 		@pressureBar(pctInt(int64(running), int64(capacity)))
 	</div>
@@ -334,7 +334,7 @@ templ pressureTileCount(label string, count int64, unit string) {
 			<span class="ds-pressure-tile-label">{ label }</span>
 		</div>
 		<div class="ds-pressure-tile-value">
-			{ fmt.Sprintf("%d", count) }<span class="ds-pressure-tile-unit"> { unit }</span>
+			{ fmt.Sprintf("%d", count) }<span class="ds-pressure-tile-unit">{ unit }</span>
 		</div>
 	</div>
 }
