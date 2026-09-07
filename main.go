@@ -18,6 +18,7 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/applyqueue"
 	"github.com/rezuscloud/rezuscloud/internal/audit"
 	"github.com/rezuscloud/rezuscloud/internal/auth"
+	oidc "github.com/rezuscloud/rezuscloud/internal/auth/oidc"
 	"github.com/rezuscloud/rezuscloud/internal/backup"
 	"github.com/rezuscloud/rezuscloud/internal/credentials"
 	"github.com/rezuscloud/rezuscloud/internal/ingress"
@@ -227,6 +228,17 @@ func main() {
 		WithBackupComponent(backupComponent).
 		WithUpgradeManager(upgradeMgr).
 		WithMachineActions(machineUpgrader)
+
+	// Federated sign-in (ADR 0021): enabled by REZUSCLOUD_OIDC_* env vars.
+	oidcHandler, err := oidc.NewHandler(oidc.FromEnv(), store, jwtManager)
+	if err != nil {
+		slog.Error("invalid OIDC configuration", "err", err)
+		os.Exit(1)
+	}
+	if oidcHandler.Enabled() {
+		webHandler.WithOIDC(oidcHandler)
+		slog.Info("OIDC federated sign-in enabled", "issuer", oidc.FromEnv().Issuer)
+	}
 
 	// Resource pressure visualization (optional — requires Prometheus + K8s API access).
 	if cfg.PrometheusURL != "" && cfg.K8sAPIURL != "" {

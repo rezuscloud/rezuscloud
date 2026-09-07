@@ -33,6 +33,7 @@ library, etc.) is preserved separately in
 | [0017](0017-duckdb-analytics-store.md) | DuckDB as the Analytics Store (Complement to SQLite) | Accepted |
 | [0018](0018-continuous-management-link-wireguard.md) | Continuous Management Link — SideroLink (Tunnel + Config-Pull) | Accepted ([planned #193](https://github.com/rezuscloud/rezuscloud/issues/193)) |
 | [0019](0019-embedded-cluster-discovery.md) | Embedded Cluster Discovery Service | Accepted |
+| [0021](0021-oidc-federated-login.md) | OIDC Federated Login for Browser Users | Accepted (amends [0012](0012-auth-local-jwt-and-api-tokens.md)) |
 
 ## Numbering
 
