@@ -63,8 +63,8 @@ func newTestIdP(t *testing.T) *testIdP {
 	})
 
 	mux.HandleFunc("/jwks", func(w http.ResponseWriter, _ *http.Request) {
-		b := key.PublicKey.N.Bytes()
-		eBig := big.NewInt(int64(key.PublicKey.E))
+		b := key.N.Bytes()
+		eBig := big.NewInt(int64(key.E))
 		json.NewEncoder(w).Encode(jwks{Keys: []jwk{{
 			Kty: "RSA", Kid: "test-key", Alg: "RS256",
 			N: base64.RawURLEncoding.EncodeToString(b),
