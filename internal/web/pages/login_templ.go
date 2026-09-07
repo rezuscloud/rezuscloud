@@ -10,6 +10,9 @@ import templruntime "github.com/a-h/templ/runtime"
 
 type LoginData struct {
 	Error string
+	// OIDCProvider is the federated sign-in button label source (issuer
+	// host, e.g. "sso.example.com"); empty disables the button.
+	OIDCProvider string
 }
 
 func Login(data LoginData) templ.Component {
@@ -45,7 +48,7 @@ func Login(data LoginData) templ.Component {
 			var templ_7745c5c3_Var2 string
 			templ_7745c5c3_Var2, templ_7745c5c3_Err = templ.JoinStringErrs(data.Error)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/login.templ`, Line: 14, Col: 38}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/login.templ`, Line: 17, Col: 38}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var2))
 			if templ_7745c5c3_Err != nil {
@@ -56,7 +59,30 @@ func Login(data LoginData) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<form method=\"POST\" action=\"/login\"><div class=\"ds-input-group\"><label class=\"ds-label\" for=\"username\">Username</label> <input class=\"ds-input\" type=\"text\" id=\"username\" name=\"username\" required autocomplete=\"username\"></div><div class=\"ds-input-group\"><label class=\"ds-label\" for=\"password\">Password</label> <input class=\"ds-input\" type=\"password\" id=\"password\" name=\"password\" required autocomplete=\"current-password\"></div><button type=\"submit\" class=\"ds-btn\" style=\"width: 100%; margin-top: 0.5rem;\">Sign In</button></form></div></div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "<form method=\"POST\" action=\"/login\"><div class=\"ds-input-group\"><label class=\"ds-label\" for=\"username\">Username</label> <input class=\"ds-input\" type=\"text\" id=\"username\" name=\"username\" required autocomplete=\"username\"></div><div class=\"ds-input-group\"><label class=\"ds-label\" for=\"password\">Password</label> <input class=\"ds-input\" type=\"password\" id=\"password\" name=\"password\" required autocomplete=\"current-password\"></div><button type=\"submit\" class=\"ds-btn\" style=\"width: 100%; margin-top: 0.5rem;\">Sign In</button></form>")
+		if templ_7745c5c3_Err != nil {
+			return templ_7745c5c3_Err
+		}
+		if data.OIDCProvider != "" {
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "<div style=\"display: flex; align-items: center; gap: 0.75rem; margin-top: 1rem;\"><div style=\"flex: 1; height: 1px; background: var(--ds-border, #ccc);\"></div><span style=\"font-size: 0.75rem; opacity: 0.6;\">or</span><div style=\"flex: 1; height: 1px; background: var(--ds-border, #ccc);\"></div></div><a class=\"ds-btn ds-btn--secondary\" href=\"/auth/oidc/login\" style=\"width: 100%; margin-top: 1rem; display: block; text-align: center; text-decoration: none;\">Sign in with ")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			var templ_7745c5c3_Var3 string
+			templ_7745c5c3_Var3, templ_7745c5c3_Err = templ.JoinStringErrs(data.OIDCProvider)
+			if templ_7745c5c3_Err != nil {
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/pages/login.templ`, Line: 37, Col: 37}
+			}
+			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var3))
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</a>")
+			if templ_7745c5c3_Err != nil {
+				return templ_7745c5c3_Err
+			}
+		}
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</div></div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

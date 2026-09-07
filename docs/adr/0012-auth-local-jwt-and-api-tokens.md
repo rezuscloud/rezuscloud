@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted
+Accepted. **Amended by [ADR 0021](0021-oidc-federated-login.md)** — OIDC
+federated sign-in for browser users now exists alongside local users; the
+local-JWT + API-token core and the rejected SAML/PGP tiers are unchanged.
 
 ## Context
 
