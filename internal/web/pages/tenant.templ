@@ -54,11 +54,26 @@ type MachineRow struct {
 }
 
 type PatchRow struct {
-	Name       string
-	Format     string
-	TargetRole string
-	Enabled    bool
-	UpdatedAt  string
+	Name          string
+	Format        string
+	Scope         string
+	TargetMachine string
+	TargetRole    string
+	Enabled       bool
+	UpdatedAt     string
+}
+
+// patchTargetDisplay renders the Target column: the role filter for
+// cluster-scoped patches, the machine name (plus role) for machine-scoped.
+func patchTargetDisplay(p PatchRow) string {
+	if p.Scope == "machine" {
+		t := "machine " + p.TargetMachine
+		if p.TargetRole != "all" && p.TargetRole != "" {
+			t += " (" + p.TargetRole + ")"
+		}
+		return t
+	}
+	return p.TargetRole
 }
 
 // tabItemsFor returns the tab set for the cluster detail page with the given
@@ -206,7 +221,7 @@ templ clusterOverview(data TenantDetailData) {
 						</tr>
 					}
 				</tbody>
-		</table>
+			</table>
 		</div>
 	}
 	if data.CanMutate {
@@ -232,7 +247,7 @@ templ clusterOverview(data TenantDetailData) {
 						<tr class="ds-table-row">
 							<td class="ds-table-td">{ p.Name }</td>
 							<td class="ds-table-td"><span class="ds-table-mono">{ p.Format }</span></td>
-							<td class="ds-table-td">{ p.TargetRole }</td>
+							<td class="ds-table-td">{ patchTargetDisplay(p) }</td>
 							<td class="ds-table-td">
 								if p.Enabled {
 									<span class="ds-status-dot ds-status-dot--positive"></span>
@@ -383,7 +398,7 @@ templ clusterPatchesTab(data TenantDetailData) {
 								<a href={ templ.URL("/clusters/" + data.Name + "/patches/" + p.Name) }>{ p.Name }</a>
 							</td>
 							<td class="ds-table-td"><span class="ds-table-mono">{ p.Format }</span></td>
-							<td class="ds-table-td">{ p.TargetRole }</td>
+							<td class="ds-table-td">{ patchTargetDisplay(p) }</td>
 							<td class="ds-table-td">
 								if p.Enabled {
 									<span class="ds-status-dot ds-status-dot--positive"></span>
@@ -448,6 +463,17 @@ templ createPatchModal(cluster string) {
 					<option value="json6902">json6902</option>
 					<option value="text">text</option>
 				</select>
+			</div>
+			<div class="ds-input-group">
+				<label class="ds-label" for="patch-scope">Scope</label>
+				<select id="patch-scope" name="scope" class="ds-input">
+					<option value="cluster">cluster (all machines)</option>
+					<option value="machine">machine (single machine)</option>
+				</select>
+			</div>
+			<div class="ds-input-group">
+				<label class="ds-label" for="patch-machine">Target machine</label>
+				<input id="patch-machine" name="targetMachine" class="ds-input" placeholder="required only for machine scope"/>
 			</div>
 			<div class="ds-input-group">
 				<label class="ds-label" for="patch-target">Target Role</label>
@@ -657,8 +683,14 @@ templ addNodeGroupForm(data TenantDetailData) {
 		<div class="ds-grid ds-grid-4" style="gap: 0.75rem; align-items: end;">
 			<div class="ds-form-group">
 				<label class="ds-form-label" for={ "ng-name-" + data.Name }>Name</label>
-				<input class="ds-input" type="text" id={ "ng-name-" + data.Name } name="name"
-					placeholder="controlplane" required />
+				<input
+					class="ds-input"
+					type="text"
+					id={ "ng-name-" + data.Name }
+					name="name"
+					placeholder="controlplane"
+					required
+				/>
 			</div>
 			<div class="ds-form-group">
 				<label class="ds-form-label" for={ "ng-role-" + data.Name }>Role</label>
@@ -669,20 +701,38 @@ templ addNodeGroupForm(data TenantDetailData) {
 			</div>
 			<div class="ds-form-group">
 				<label class="ds-form-label" for={ "ng-count-" + data.Name }>Count</label>
-				<input class="ds-input" type="number" id={ "ng-count-" + data.Name } name="count"
-					value="1" min="1" max="100" required />
+				<input
+					class="ds-input"
+					type="number"
+					id={ "ng-count-" + data.Name }
+					name="count"
+					value="1"
+					min="1"
+					max="100"
+					required
+				/>
 			</div>
 			<div class="ds-form-group">
 				<label class="ds-form-label" for={ "ng-class-" + data.Name }>Provider Class</label>
-				<input class="ds-input" type="text" id={ "ng-class-" + data.Name } name="providerClass"
-					placeholder="oci:VM.Standard.A1.Flex" />
+				<input
+					class="ds-input"
+					type="text"
+					id={ "ng-class-" + data.Name }
+					name="providerClass"
+					placeholder="oci:VM.Standard.A1.Flex"
+				/>
 			</div>
 		</div>
 		<div class="ds-form-group" style="margin-top: 0.75rem;">
 			<label class="ds-form-label" for={ "ng-config-" + data.Name }>Provider Config (JSON, optional)</label>
-			<textarea class="ds-input" id={ "ng-config-" + data.Name } name="providerConfig" rows="3"
+			<textarea
+				class="ds-input"
+				id={ "ng-config-" + data.Name }
+				name="providerConfig"
+				rows="3"
 				placeholder='{"region":"us-phoenix-1","compartmentOcid":"ocid1...","subnetId":"ocid1..."}'
-				style="font-family: monospace; font-size: 0.8125rem;"></textarea>
+				style="font-family: monospace; font-size: 0.8125rem;"
+			></textarea>
 		</div>
 		<div class="ds-form-actions" style="margin-top: 0.75rem;">
 			<button type="submit" class="ds-btn ds-btn--primary">Create Node Group</button>

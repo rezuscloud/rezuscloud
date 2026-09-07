@@ -231,24 +231,30 @@ func TestCurrentTab(t *testing.T) {
 // TestValidatePatchInput verifies patch validation rules.
 func TestValidatePatchInput(t *testing.T) {
 	cases := []struct {
-		name               string
-		format, role, body string
-		wantErr            bool
+		name                    string
+		format, scope, tm, role string
+		body                    string
+		wantErr                 bool
 	}{
-		{"empty body", "strategic", "controlplane", "", true},
-		{"invalid format", "badformat", "controlplane", "spec:", true},
-		{"invalid role", "strategic", "badrole", "spec:", true},
-		{"valid strategic", "strategic", "controlplane", "spec:\n  foo: bar", false},
-		{"valid json6902", "json6902", "controlplane", `[{"op":"add","path":"/spec/foo","value":"bar"}]`, false},
-		{"json6902 empty", "json6902", "controlplane", "[]", true},
-		{"json6902 invalid", "json6902", "controlplane", "not json", true},
-		{"valid text", "text", "controlplane", "machine:", false},
+		{"empty body", "strategic", "", "", "controlplane", "", true},
+		{"invalid format", "badformat", "", "", "controlplane", "spec:", true},
+		{"invalid role", "strategic", "", "", "badrole", "spec:", true},
+		{"invalid scope", "strategic", "machinegroup", "", "controlplane", "spec:", true},
+		{"machine scope without target", "strategic", "machine", "", "", "spec:", true},
+		{"machine scope with target", "strategic", "machine", "node-1", "", "spec:", false},
+		{"cluster scope with target", "strategic", "cluster", "node-1", "", "spec:", true},
+		{"empty scope with target", "strategic", "", "node-1", "", "spec:", true},
+		{"valid strategic", "strategic", "", "", "controlplane", "spec:\n  foo: bar", false},
+		{"valid json6902", "json6902", "", "", "controlplane", `[{"op":"add","path":"/spec/foo","value":"bar"}]`, false},
+		{"json6902 empty", "json6902", "", "", "controlplane", "[]", true},
+		{"json6902 invalid", "json6902", "", "", "controlplane", "not json", true},
+		{"valid text", "text", "", "", "controlplane", "machine:", false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			err := validatePatchInput(c.format, c.role, c.body)
+			err := validatePatchInput(c.format, c.scope, c.tm, c.role, c.body)
 			if (err != nil) != c.wantErr {
-				t.Errorf("validatePatchInput(%q,%q,%q) err = %v, wantErr = %v", c.format, c.role, c.body, err, c.wantErr)
+				t.Errorf("validatePatchInput(%q,%q,%q,%q,%q) err = %v, wantErr = %v", c.format, c.scope, c.tm, c.role, c.body, err, c.wantErr)
 			}
 		})
 	}

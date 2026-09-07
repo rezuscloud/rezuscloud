@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/siderolabs/talos/pkg/machinery/config"
+	"github.com/siderolabs/talos/pkg/machinery/config/configpatcher"
 	"github.com/siderolabs/talos/pkg/machinery/config/generate"
 	"github.com/siderolabs/talos/pkg/machinery/config/generate/secrets"
 	"github.com/siderolabs/talos/pkg/machinery/config/machine"
@@ -138,6 +139,24 @@ func GenerateConfig(req ConfigRequest) (*ConfigResult, error) {
 	yamlBytes, err := cfg.Bytes()
 	if err != nil {
 		return nil, fmt.Errorf("render config: %w", err)
+	}
+
+	// Apply user config patches in list order — the last writer wins, and the
+	// resolver's order carries scope precedence (cluster-scoped first,
+	// machine-scoped last, name-ordered within a scope).
+	if len(req.ConfigPatches) > 0 {
+		patches, err := configpatcher.LoadPatches(req.ConfigPatches)
+		if err != nil {
+			return nil, fmt.Errorf("load config patches: %w", err)
+		}
+		patched, err := configpatcher.Apply(configpatcher.WithBytes(yamlBytes), patches)
+		if err != nil {
+			return nil, fmt.Errorf("apply config patches: %w", err)
+		}
+		yamlBytes, err = patched.Bytes()
+		if err != nil {
+			return nil, fmt.Errorf("render patched config: %w", err)
+		}
 	}
 
 	return &ConfigResult{

@@ -217,32 +217,36 @@ func (h *Handler) TenantDetail(w http.ResponseWriter, r *http.Request) {
 	// Patches.
 	data.Patches, _, _ = state.ListTypedByTenant(h.store, "configpatch", name,
 		func(meta state.Metadata, specRaw, _ json.RawMessage) (pages.PatchRow, error) {
-			var ps struct {
-				Format     string `json:"format"`
-				TargetRole string `json:"targetRole"`
-				Enabled    bool   `json:"enabled"`
-			}
+			var ps patch.PatchSpec
 			_ = json.Unmarshal(specRaw, &ps)
 			tr := ps.TargetRole
 			if tr == "" {
 				tr = "all"
 			}
+			scope := ps.Scope
+			if scope == "" {
+				scope = patch.ScopeCluster
+			}
 			return pages.PatchRow{
-				Name:       meta.Name,
-				Format:     ps.Format,
-				TargetRole: tr,
-				Enabled:    ps.Enabled,
-				UpdatedAt:  meta.UpdatedAt.Format("2006-01-02 15:04"),
+				Name:          meta.Name,
+				Format:        ps.Format,
+				Scope:         scope,
+				TargetMachine: ps.TargetMachine,
+				TargetRole:    tr,
+				Enabled:       ps.Enabled,
+				UpdatedAt:     meta.UpdatedAt.Format("2006-01-02 15:04"),
 			}, nil
 		})
 
-	// Effective patch preview (for patches tab).
+	// Effective patch preview (for patches tab). Optional ?machine= narrows
+	// machine-scoped patches to that machine (empty = cluster-scope view).
 	previewRole := r.URL.Query().Get("role")
 	if previewRole == "" {
 		previewRole = "controlplane"
 	}
+	previewMachine := r.URL.Query().Get("machine")
 	data.PreviewRole = previewRole
-	resolved, err := patch.ResolvePatches(h.store, name, previewRole)
+	resolved, err := patch.ResolvePatches(h.store, name, previewRole, previewMachine)
 	if err != nil {
 		data.PatchPreview = "# failed to resolve patches: " + err.Error()
 	} else if len(resolved) == 0 {
@@ -751,17 +755,22 @@ func (h *Handler) ClusterPatchCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	patchName := strings.TrimSpace(r.FormValue("name"))
 	format := strings.TrimSpace(r.FormValue("format"))
+	scope := strings.TrimSpace(r.FormValue("scope"))
+	targetMachine := strings.TrimSpace(r.FormValue("targetMachine"))
 	targetRole := strings.TrimSpace(r.FormValue("targetRole"))
 	enabled := r.FormValue("enabled") == "true"
 	body := r.FormValue("patch")
 	if targetRole == "all" {
 		targetRole = ""
 	}
-	if err := validatePatchInput(format, targetRole, body); err != nil {
+	if err := validatePatchInput(format, scope, targetMachine, targetRole, body); err != nil {
 		http.Redirect(w, r, "/clusters/"+name+"/patches?toast="+url.QueryEscape(err.Error())+"&toast-type=error", http.StatusSeeOther)
 		return
 	}
-	spec := patch.PatchSpec{Patch: body, Format: format, TargetRole: targetRole, Enabled: enabled}
+	if scope == string(patch.ScopeCluster) {
+		scope = ""
+	}
+	spec := patch.PatchSpec{Patch: body, Format: format, Scope: scope, TargetMachine: targetMachine, TargetRole: targetRole, Enabled: enabled}
 	labels := map[string]string{"rezuscloud.io/tenant": name}
 	if targetRole != "" {
 		labels["rezuscloud.io/role"] = targetRole
@@ -786,17 +795,23 @@ func (h *Handler) ClusterPatchEditPage(w http.ResponseWriter, r *http.Request) {
 	if tr == "" {
 		tr = "all"
 	}
+	scope := spec.Scope
+	if scope == "" {
+		scope = patch.ScopeCluster
+	}
 	h.host.Render(w, r, layout.BaseProps{
 		Title: "Patch " + patchName,
 		Page:  "cluster",
 		Content: pages.PatchEdit(pages.PatchEditData{
-			Cluster:    cluster,
-			Name:       patchName,
-			Format:     spec.Format,
-			TargetRole: tr,
-			Enabled:    spec.Enabled,
-			Patch:      spec.Patch,
-			CanMutate:  h.host.CanMutate(r),
+			Cluster:       cluster,
+			Name:          patchName,
+			Format:        spec.Format,
+			Scope:         scope,
+			TargetMachine: spec.TargetMachine,
+			TargetRole:    tr,
+			Enabled:       spec.Enabled,
+			Patch:         spec.Patch,
+			CanMutate:     h.host.CanMutate(r),
 		}),
 		Breadcrumb: []layout.BreadcrumbItem{
 			{Name: "Clusters", URL: "/clusters"},
@@ -819,15 +834,20 @@ func (h *Handler) ClusterPatchSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	format := strings.TrimSpace(r.FormValue("format"))
+	scope := strings.TrimSpace(r.FormValue("scope"))
+	targetMachine := strings.TrimSpace(r.FormValue("targetMachine"))
 	targetRole := strings.TrimSpace(r.FormValue("targetRole"))
 	if targetRole == "all" {
 		targetRole = ""
 	}
 	enabled := r.FormValue("enabled") == "true"
 	body := r.FormValue("patch")
-	if err := validatePatchInput(format, targetRole, body); err != nil {
+	if err := validatePatchInput(format, scope, targetMachine, targetRole, body); err != nil {
 		http.Redirect(w, r, "/clusters/"+cluster+"/patches/"+patchName+"?toast="+url.QueryEscape(err.Error())+"&toast-type=error", http.StatusSeeOther)
 		return
+	}
+	if scope == string(patch.ScopeCluster) {
+		scope = ""
 	}
 	var old patch.PatchSpec
 	md, err := h.store.GetResource("configpatch", patchName, &old, nil)
@@ -835,7 +855,7 @@ func (h *Handler) ClusterPatchSave(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	newSpec := patch.PatchSpec{Patch: body, Format: format, TargetRole: targetRole, Enabled: enabled}
+	newSpec := patch.PatchSpec{Patch: body, Format: format, Scope: scope, TargetMachine: targetMachine, TargetRole: targetRole, Enabled: enabled}
 	labels := md.Labels
 	if labels == nil {
 		labels = map[string]string{}
@@ -900,7 +920,8 @@ func (h *Handler) ClusterPatchesPreview(w http.ResponseWriter, r *http.Request) 
 	if role == "" {
 		role = "controlplane"
 	}
-	resolved, err := patch.ResolvePatches(h.store, cluster, role)
+	machine := r.URL.Query().Get("machine")
+	resolved, err := patch.ResolvePatches(h.store, cluster, role, machine)
 	if err != nil {
 		http.Error(w, "resolve patches: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -913,14 +934,17 @@ func (h *Handler) ClusterPatchesPreview(w http.ResponseWriter, r *http.Request) 
 	_, _ = w.Write([]byte(strings.Join(resolved, "\n---\n")))
 }
 
-// validatePatchInput validates patch format/target/body before saving.
-func validatePatchInput(format, targetRole, body string) error {
+// validatePatchInput validates patch format/scope/target/body before saving.
+func validatePatchInput(format, scope, targetMachine, targetRole, body string) error {
 	if strings.TrimSpace(body) == "" {
 		return fmt.Errorf("patch body must not be empty")
 	}
 	validFormats := map[string]bool{"": true, "strategic": true, "json6902": true, "text": true}
 	if !validFormats[format] {
 		return fmt.Errorf("format must be strategic, json6902, or text")
+	}
+	if err := patch.ValidateScope(scope, targetMachine); err != nil {
+		return err
 	}
 	validTargets := map[string]bool{"": true, "all": true, "controlplane": true, "worker": true, "kernel": true}
 	if !validTargets[targetRole] {
