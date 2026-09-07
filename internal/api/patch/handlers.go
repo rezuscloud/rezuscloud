@@ -28,6 +28,12 @@ type PatchSpec struct {
 	Patch string `json:"patch"`
 	// Format is the patch format: "strategic" (default) or "json6902".
 	Format string `json:"format,omitempty"`
+	// Scope selects what the patch applies to: "cluster" (default, every
+	// machine in the tenant) or "machine" (only TargetMachine).
+	Scope string `json:"scope,omitempty"`
+	// TargetMachine is the machine resource name a machine-scoped patch
+	// applies to. Required when Scope is "machine"; forbidden otherwise.
+	TargetMachine string `json:"targetMachine,omitempty"`
 	// TargetRole filters which machine types the patch applies to.
 	// Empty means all roles. Values: "controlplane", "worker".
 	TargetRole string `json:"targetRole,omitempty"`
@@ -50,6 +56,21 @@ var ValidTargetRoles = map[string]bool{
 	"controlplane": true,
 	"worker":       true,
 	"kernel":       true,
+}
+
+// ValidateScope checks the scope/targetMachine pair. Machine-scoped patches
+// must name their target; cluster-scoped patches must not.
+func ValidateScope(scope, targetMachine string) error {
+	if !ValidScopes[scope] {
+		return fmt.Errorf("spec.scope must be one of: cluster, machine")
+	}
+	if effectiveScope(scope) == ScopeMachine && strings.TrimSpace(targetMachine) == "" {
+		return fmt.Errorf("spec.targetMachine is required when spec.scope is %q", ScopeMachine)
+	}
+	if scope != ScopeMachine && targetMachine != "" {
+		return fmt.Errorf("spec.targetMachine is only valid when spec.scope is %q", ScopeMachine)
+	}
+	return nil
 }
 
 // API provides HTTP handlers for ConfigPatch CRUD.
@@ -75,6 +96,9 @@ func NewAPI(store state.StoreAPI, bus watch.Bus, registry *validation.Registry) 
 			}
 			if !ValidTargetRoles[s.TargetRole] {
 				return fmt.Errorf("spec.targetRole must be one of: all, controlplane, worker, kernel, or empty")
+			}
+			if err := ValidateScope(s.Scope, s.TargetMachine); err != nil {
+				return err
 			}
 			switch s.Format {
 			case "", "strategic":

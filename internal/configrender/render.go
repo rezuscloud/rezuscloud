@@ -25,12 +25,12 @@ type StoreReader interface {
 	LoadTenantSecrets(name string) ([]byte, error)
 }
 
-// PatchResolver resolves the ConfigPatch list for a tenant + role.
+// PatchResolver resolves the ConfigPatch list for a tenant + role + machine.
 // api/patch.ResolvePatches satisfies this signature.
 //
 // Note: takes state.StoreAPI because patch.ResolvePatches uses the concrete
 // store type today. Future refactors of patch/ may switch this to StoreReader.
-type PatchResolver func(store state.StoreAPI, tenant, role string) ([]string, error)
+type PatchResolver func(store state.StoreAPI, tenant, role, machine string) ([]string, error)
 
 // MachineConfigRequest identifies a machine for which to render a Talos config.
 type MachineConfigRequest struct {
@@ -89,7 +89,7 @@ func GenerateMachineConfig(ctx context.Context, store StoreReader, stateStore st
 
 	patches := req.Patches
 	if patches == nil && resolver != nil {
-		patches, err = resolver(stateStore, req.TenantName, m.Status.Role)
+		patches, err = resolver(stateStore, req.TenantName, m.Status.Role, m.Metadata.Name)
 		if err != nil {
 			return nil, fmt.Errorf("resolve patches: %w", err)
 		}
