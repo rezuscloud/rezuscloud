@@ -2,6 +2,9 @@ package pages
 
 type LoginData struct {
 	Error string
+	// OIDCProvider is the federated sign-in button label source (issuer
+	// host, e.g. "sso.example.com"); empty disables the button.
+	OIDCProvider string
 }
 
 templ Login(data LoginData) {
@@ -24,6 +27,16 @@ templ Login(data LoginData) {
 				</div>
 				<button type="submit" class="ds-btn" style="width: 100%; margin-top: 0.5rem;">Sign In</button>
 			</form>
+			if data.OIDCProvider != "" {
+				<div style="display: flex; align-items: center; gap: 0.75rem; margin-top: 1rem;">
+					<div style="flex: 1; height: 1px; background: var(--ds-border, #ccc);"></div>
+					<span style="font-size: 0.75rem; opacity: 0.6;">or</span>
+					<div style="flex: 1; height: 1px; background: var(--ds-border, #ccc);"></div>
+				</div>
+				<a class="ds-btn ds-btn--secondary" href="/auth/oidc/login" style="width: 100%; margin-top: 1rem; display: block; text-align: center; text-decoration: none;">
+					Sign in with { data.OIDCProvider }
+				</a>
+			}
 		</div>
 	</div>
 }

@@ -1,6 +1,7 @@
 package authn
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/rezuscloud/rezuscloud/internal/auth"
+	oidc "github.com/rezuscloud/rezuscloud/internal/auth/oidc"
 	"github.com/rezuscloud/rezuscloud/internal/state"
 	"github.com/rezuscloud/rezuscloud/internal/web/layout"
 )
@@ -173,5 +175,88 @@ func TestRegisterRoutes(t *testing.T) {
 		if w.Code == http.StatusNotFound {
 			t.Errorf("%s %s not registered (got 404)", c.method, c.path)
 		}
+	}
+}
+
+// testOIDCHandler builds a real flow handler pointed at an unreachable
+// issuer — construction is offline; only the button label is exercised.
+// renderContent renders the captured templ component to HTML for
+// content-level assertions.
+func renderContent(t *testing.T, r *stubRenderer) string {
+	t.Helper()
+	var sb strings.Builder
+	if err := r.last.Content.Render(context.Background(), &sb); err != nil {
+		t.Fatalf("render content: %v", err)
+	}
+	return sb.String()
+}
+
+func testOIDCHandler() *oidc.Handler {
+	h, _ := oidc.NewHandler(oidc.Config{
+		Issuer:       "https://127.0.0.1:1/app", // unreachable by construction
+		ClientID:     "cid",
+		ClientSecret: "csecret",
+	}, nil, nil)
+	return h
+}
+
+func TestLoginPage_ShowsOIDCButtonWhenEnabled(t *testing.T) {
+	store := newTestStore(t)
+	r := &stubRenderer{}
+	h := New(store, auth.NewJWTManager("k"), r).WithOIDC(testOIDCHandler())
+
+	req := httptest.NewRequest(http.MethodGet, "/login", nil)
+	w := httptest.NewRecorder()
+	h.LoginPage(w, req)
+
+	body := renderContent(t, r)
+	if !strings.Contains(body, "/auth/oidc/login") {
+		t.Error("login page must link the OIDC flow when enabled")
+	}
+	if !strings.Contains(body, "127.0.0.1") {
+		t.Error("login page must show the provider name (issuer host)")
+	}
+}
+
+func TestLoginPage_HidesOIDCButtonWhenDisabled(t *testing.T) {
+	store := newTestStore(t)
+	r := &stubRenderer{}
+	h := New(store, auth.NewJWTManager("k"), r)
+
+	req := httptest.NewRequest(http.MethodGet, "/login", nil)
+	w := httptest.NewRecorder()
+	h.LoginPage(w, req)
+
+	if strings.Contains(renderContent(t, r), "/auth/oidc/login") {
+		t.Error("login page must not offer OIDC when disabled")
+	}
+}
+
+func TestLoginPage_ErrorParamSurfaced(t *testing.T) {
+	store := newTestStore(t)
+	r := &stubRenderer{}
+	h := New(store, auth.NewJWTManager("k"), r).WithOIDC(testOIDCHandler())
+
+	req := httptest.NewRequest(http.MethodGet, "/login?error=id+token+rejected", nil)
+	w := httptest.NewRecorder()
+	h.LoginPage(w, req)
+
+	if !strings.Contains(renderContent(t, r), "id token rejected") {
+		t.Error("the OIDC error banner must surface on the login page")
+	}
+}
+
+func TestRegisterRoutes_OIDCWiring(t *testing.T) {
+	store := newTestStore(t)
+	h := New(store, auth.NewJWTManager("k"), &stubRenderer{}).WithOIDC(testOIDCHandler())
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
+
+	req := httptest.NewRequest(http.MethodGet, "/auth/oidc/login", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	// Discovery against the unreachable issuer fails fast → bounce to login.
+	if w.Code != http.StatusSeeOther || !strings.Contains(w.Header().Get("Location"), "error=") {
+		t.Errorf("/auth/oidc/login via mux = %d %q, want a 303 bounce to /login?error=", w.Code, w.Header().Get("Location"))
 	}
 }

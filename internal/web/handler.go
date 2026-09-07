@@ -21,6 +21,7 @@ import (
 
 	"github.com/rezuscloud/rezuscloud/internal/audit"
 	"github.com/rezuscloud/rezuscloud/internal/auth"
+	oidc "github.com/rezuscloud/rezuscloud/internal/auth/oidc"
 	"github.com/rezuscloud/rezuscloud/internal/backup"
 	"github.com/rezuscloud/rezuscloud/internal/dashboard"
 	"github.com/rezuscloud/rezuscloud/internal/state"
@@ -48,6 +49,7 @@ type Handler struct {
 	upgradeMgr     *upgrade.Manager                    // optional — enables cluster upgrade endpoints
 	metricsAgg_    dashhandler.MetricsAggregator       // optional — enables resource pressure on dashboard
 	machineActions machineshandler.MachineActionRunner // optional — enables reboot/shutdown/logs
+	oidc           *oidc.Handler                       // optional — enables federated sign-in (ADR 0021)
 }
 
 // NewHandler creates a WebUI handler.
@@ -110,6 +112,13 @@ func (h *Handler) WithMachineActions(r machineshandler.MachineActionRunner) *Han
 	return h
 }
 
+// WithOIDC injects the federated sign-in flow (ADR 0021). Optional —
+// without it, only local sign-in is offered.
+func (h *Handler) WithOIDC(o *oidc.Handler) *Handler {
+	h.oidc = o
+	return h
+}
+
 // WithAuditComponent injects the audit subsystem component.
 func (h *Handler) WithAuditComponent(c *audit.Component) *Handler {
 	if c == nil {
@@ -124,7 +133,7 @@ func (h *Handler) WithAuditComponent(c *audit.Component) *Handler {
 // RegisterRoutes registers all WebUI routes by delegating to the section
 // sub-packages. The Handler itself owns no routes; it only composes them.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
-	authn.New(h.store, h.jwtManager, h).RegisterRoutes(mux)
+	authn.New(h.store, h.jwtManager, h).WithOIDC(h.oidc).RegisterRoutes(mux)
 	dashhandler.New(h.store, h.bus, h.auditStore, h.backupAdapter(), h.upgradeAdapter(), h.metricsAgg(), h).RegisterRoutes(mux)
 	clusters.New(h.store, h.bus, h.upgradeMgr, h).RegisterRoutes(mux)
 	mh := machineshandler.New(h.store, h.bus, h)
