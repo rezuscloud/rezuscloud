@@ -51,6 +51,42 @@ every node maintains a continuous, node-initiated SideroLink tunnel to it.**
   - **platform → node (pull by node)** — the node's Talos config, pulled over
     SideroLink ([ADR 0008](0008-config-delivery-user-data-and-talos-api.md)).
 
+## Implementation (amendment, #193)
+
+**The server is implemented from scratch in `internal/mgmtlink`, speaking the
+stock node contract. The node side is untouched stock Talos.**
+
+Rationale (the decomposition that made this tractable): SideroLink is three
+things — a one-RPC provisioning contract (`sidero.link.ProvisionService`), a
+plain WireGuard data plane, and what rides it. Only the server is ours to
+build; the contract is ~40 lines of proto.
+
+- **Wire contract**: the generated `siderolink/api` protobuf package is used
+  as a dependency (not vendored) — it is the node's API stub; duplicating it
+  would risk descriptor drift for zero benefit.
+- **Transport**: hand-written — a `wireguard-go` `conn.Bind` routing kernel-
+  mode nodes over UDP and tunnel-mode nodes over per-peer queues served by a
+  from-scratch `WireGuardOverGRPCService` (metadata header
+  `x-siderolink-ipv6-addr`, single-use peer slots, replacement semantics).
+  Interop with the stock node stack is proven by tests that drive the
+  upstream client bind + relay against this server (real WG handshake, real
+  TCP through the tunnel).
+- **Data plane termination**: `wireguard-go` over an in-process gVisor
+  netstack — no kernel TUN, no host privileges, CGO-free; management code
+  dials node ULAs through `Server.DialContext`.
+- **Addressing**: one /64 per node carved from a configured ULA prefix
+  (`REZUSCLOUD_MGMTLINK_PREFIX`, default /48 → 65536 nodes); allocations are
+  keyed by node identity (machine UUID, unique-token fallback) and persist
+  in SQLite, as does the server WG key (node-visible identity survives
+  restarts).
+- **Enrollment**: single join token (`REZUSCLOUD_MGMTLINK_JOIN_TOKEN`);
+  token-checked at provision, stream addresses validated against the
+  allocation.
+- **Deferred deliberately**: STUN endpoint discovery (an optimization — the
+  node-initiated gRPC tunnel already traverses NAT, incl. symmetric; UDP is
+  the fast path when reachable) and the log/event sink services (status
+  stays on-demand pull per ADR 0010/0016). File separately when needed.
+
 ### What this is, precisely
 
 - **Config delivery is pull** over this tunnel
