@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -23,6 +24,7 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/credentials"
 	"github.com/rezuscloud/rezuscloud/internal/ingress"
 	"github.com/rezuscloud/rezuscloud/internal/metrics"
+	"github.com/rezuscloud/rezuscloud/internal/mgmtlink"
 	operationalmetrics "github.com/rezuscloud/rezuscloud/internal/operationalmetrics"
 	"github.com/rezuscloud/rezuscloud/internal/projection"
 	"github.com/rezuscloud/rezuscloud/internal/provider"
@@ -228,6 +230,31 @@ func main() {
 		WithBackupComponent(backupComponent).
 		WithUpgradeManager(upgradeMgr).
 		WithMachineActions(machineUpgrader)
+
+	// Management link (ADR 0018): embedded SideroLink-compatible server,
+	// enabled by REZUSCLOUD_MGMTLINK_* env vars.
+	mgmtCfg := mgmtlink.FromEnv(os.Getenv)
+	if mgmtCfg.Enabled() {
+		if err := mgmtCfg.Validate(); err != nil {
+			slog.Error("invalid management-link configuration", "err", err)
+			os.Exit(1)
+		}
+		mgmtSrv, err := mgmtlink.NewServer(mgmtCfg, store.DB())
+		if err != nil {
+			slog.Error("management link startup failed", "err", err)
+			os.Exit(1)
+		}
+		mgmtLis, err := net.Listen("tcp", mgmtCfg.Listen)
+		if err != nil {
+			slog.Error("management link listen failed", "addr", mgmtCfg.Listen, "err", err)
+			os.Exit(1)
+		}
+		slog.Info("management link enabled",
+			"listen", mgmtCfg.Listen,
+			"wg_udp", mgmtCfg.WGListen,
+			"prefix", mgmtCfg.Prefix.String())
+		go func() { _ = mgmtSrv.Listen(ctx, mgmtLis) }()
+	}
 
 	// Federated sign-in (ADR 0021): enabled by REZUSCLOUD_OIDC_* env vars.
 	oidcHandler, err := oidc.NewHandler(oidc.FromEnv(), store, jwtManager)
