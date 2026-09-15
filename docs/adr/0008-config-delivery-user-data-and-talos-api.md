@@ -77,6 +77,45 @@ node → tenant mapping, so there is nothing for a join token to do. The depreca
 model uses join tokens to map ad-hoc booting nodes to clusters; rezuscloud's
 declare-first / TF model does not need them.)
 
+## Implementation (amendment, #194)
+
+Two facts about the **stock** node reshape the mechanism (verified against the
+Talos fork source):
+
+1. **The node's SideroLink WG key is runtime-generated** (`siderolink`
+   controller, `wgtypes.GeneratePrivateKey()`) — it is not in the machine
+   config, secrets bundle, or TF state. Nothing declarative can know it
+   before first boot, so "keyed by the machine's WireGuard key" above is not
+   implementable with a stock node. The identity a stock node presents at
+   provision is: `node_uuid` (hardware UUID), the kernel-arg join token, and
+   `node_unique_token`.
+2. A stock node cannot fetch config itself once running — the config
+   AcquireController consults its sources once at boot, before any tunnel
+   exists. What a stock node **does** do: an incomplete config drops it into
+   **maintenance mode**, where it waits for config while the SideroLink
+   controller runs on kernel args.
+
+The implemented mechanism therefore:
+
+- **Machine mapping via a per-machine binding token** — TF generates one per
+  machine resource, the bootstrap carries it in `siderolink.api=…?jointoken=`
+  kernel args, and the node presents it verbatim in the Provision request.
+  rezuscloud maps binding token → TF-created machine record → tenant
+  (declare-first, unchanged). This reuses the wire field; the deprecated
+  SideroLink *JoinToken resource* (ad-hoc enrollment) is unrelated and stays
+  deprecated. (This is the same mapping scheme Omni uses.)
+- **Delivery over the tunnel, converged by the platform engine**
+  (`internal/converge`): a node's connect triggers rendering via the
+  `configrender` pipeline (generation unchanged) and an `ApplyConfiguration`
+  (NO_REBOOT) to the node's Talos API (`apid` :1024) through the management
+  tunnel — the **maintenance API** (self-signed) for a bootstrapping node,
+  the authenticated API (an `os:admin` client certificate minted from the
+  tenant secrets bundle) for a configured node. Config changes re-deliver to
+  connected machines. The wire is platform→node, but nothing is scheduled:
+  the node's own connect is the trigger and re-apply is idempotent — the
+  reconcile model this ADR adopts. Delivery never reboots; version-requiring
+  transitions belong to the upgrade engine.
+
 ## Consequences
 
 - rezuscloud gains a SideroLink config-pull endpoint (part of the SideroLink server
