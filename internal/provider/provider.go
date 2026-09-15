@@ -66,25 +66,6 @@ type RenderRequest struct {
 	// NodeGroups are the node groups this provider must materialize, already
 	// filtered to those routing to this provider (ProviderClass prefix match).
 	NodeGroups []state.NodeGroupSpec
-
-	// BootstrapConfig is the platform-rendered minimal bootstrap machine
-	// config (ADR 0008: no cluster secrets — the node boots, joins the
-	// management link, and pulls its full config). Injected as a tfvars
-	// variable; providers wire it into user_data / machine_configuration_input.
-	BootstrapConfig string
-
-	// BindingTokens maps machine key → binding token. The key convention is
-	// per provider: metal keys by management address (the for_each key),
-	// cloud providers by machine slot index ("0", "1", ...). A node presents
-	// its token at Provision; the converge engine maps it to the machine
-	// record (declare-first tenant assignment). Empty when the management
-	// link is disabled.
-	BindingTokens map[string]string
-
-	// MgmtEndpoint is the management link's gRPC endpoint nodes dial, e.g.
-	// "grpc.rezus.cloud:51800" (host:port, no scheme). Empty when the link
-	// is disabled.
-	MgmtEndpoint string
 }
 
 // TFResourceMapping links a TF resource type to a RezusCloud resource Kind.

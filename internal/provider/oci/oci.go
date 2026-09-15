@@ -106,6 +106,7 @@ func (p *Provider) Render(req provider.RenderRequest) ([]byte, error) {
 	// --- terraform block: required providers (off-the-shelf registry only) ---
 	root.AddRequiredProviders(
 		provider.ReqProvider{Name: "oci", Source: "oracle/oci", Version: ">= 6.0"},
+		provider.ReqProvider{Name: "talos", Source: "siderolabs/talos"},
 		provider.ReqProvider{Name: "random", Source: "hashicorp/random"},
 	)
 
@@ -121,6 +122,14 @@ func (p *Provider) Render(req provider.RenderRequest) ([]byte, error) {
 	root.AddDataSource("oci_identity_availability_domains", "ads", obj{
 		"compartment_id": strVar("compartment_ocid"),
 	})
+
+	// --- data: talos_machine_configuration per role ---
+	// Each role gets one data source (shared across all node groups of that
+	// role). The instances reference it via userDataRef(). The secrets bundle
+	// (machine_secrets, client_configuration) is injected via terraform.tfvars.json.
+	for _, role := range rolesPresent(req.NodeGroups) {
+		renderTalosConfigDataSource(&root, role)
+	}
 
 	// Render each node group → random_pet + oci_core_instance pair.
 	for _, ng := range req.NodeGroups {
@@ -203,7 +212,7 @@ func renderNodeGroup(root *provider.TFConfig, tenantName string, ng state.NodeGr
 		}},
 		"display_name": displayName,
 		"metadata": obj{
-			"user_data": userDataRef(),
+			"user_data": userDataRef(role, tenantName),
 		},
 	}
 	// shape_config only for Flex shapes (fixed shapes reject it).
@@ -297,13 +306,17 @@ func imageRef(ocid string) string {
 	return strVar("talos_image_ocid")
 }
 
-// userDataRef returns the TF expression for instance user_data: the
-// platform-rendered minimal bootstrap (ADR 0008 — no cluster secrets in
-// user_data; the node pulls its config over the management link). The node
-// image must carry the management-link kernel args via an Image Factory
-// schematic (preinstalled cloud images ignore install-time kernel args).
-func userDataRef() string {
-	return "${var.bootstrap_config}"
+// userDataRef returns the TF expression for instance user_data. The talos
+// provider generates the machine config; this references the
+// talos_machine_configuration data source rendered in Render(). The role
+// selects controlplane vs worker config.
+func userDataRef(role, tenant string) string {
+	cfgType := "worker"
+	if role == "controlplane" {
+		cfgType = "controlplane"
+	}
+	_ = tenant
+	return fmt.Sprintf("${data.talos_machine_configuration.%s.machine_configuration}", cfgType)
 }
 
 // petRef returns the TF expression for a pet's id (used in display_name).
@@ -327,6 +340,21 @@ func rolesPresent(ngs []state.NodeGroupSpec) []string {
 		}
 	}
 	return roles
+}
+
+// renderTalosConfigDataSource emits a data.talos_machine_configuration.<role>
+// data source. Each role gets one (shared across all node groups of that role).
+// The cluster secrets bundle (machine_secrets, client_configuration) is injected
+// via terraform.tfvars.json written to the tenant workdir at apply time.
+func renderTalosConfigDataSource(root *provider.TFConfig, role string) {
+	root.AddDataSource("talos_machine_configuration", role, obj{
+		"cluster_name":       "${var.cluster_name}",
+		"cluster_endpoint":   "${var.cluster_endpoint}",
+		"machine_type":       role,
+		"machine_secrets":    "${talos_machine_secrets.this.machine_secrets}",
+		"kubernetes_version": strVar("kubernetes_version"),
+		"talos_version":      strVar("talos_version"),
+	})
 }
 
 func strVar(name string) string { return "${var." + name + "}" }

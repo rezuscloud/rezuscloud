@@ -48,7 +48,7 @@ func TestRender_DeclaresRequiredProviders(t *testing.T) {
 	for name, body := range rps {
 		sources[name] = body.(map[string]interface{})["source"].(string)
 	}
-	for _, want := range []string{"oci", "random"} {
+	for _, want := range []string{"oci", "talos", "random"} {
 		if _, ok := sources[want]; !ok {
 			t.Errorf("missing required provider %q (have %v)", want, sources)
 		}
@@ -56,10 +56,8 @@ func TestRender_DeclaresRequiredProviders(t *testing.T) {
 	if sources["oci"] != "oracle/oci" {
 		t.Errorf("oci source = %q, want oracle/oci", sources["oci"])
 	}
-	if _, ok := sources["talos"]; ok {
-		// ADR 0008: config delivery is pull — the cloud renderer no longer
-		// generates talos configs, so the talos provider must be gone.
-		t.Errorf("talos provider must not be required (have %v)", sources)
+	if sources["talos"] != "siderolabs/talos" {
+		t.Errorf("talos source = %q, want siderolabs/talos", sources["talos"])
 	}
 }
 

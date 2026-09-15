@@ -26,26 +26,6 @@ type MachineSpec struct {
 	Region string `json:"region,omitempty"`
 }
 
-// ExtractMachineBinding pulls a binding record's spec: the machine key and
-// its binding token (terraform_data input, ADR 0008). Exported for main's
-// extractor registration.
-func ExtractMachineBinding(tfType string, attrs map[string]interface{}) map[string]interface{} {
-	if attrs == nil {
-		return nil
-	}
-	spec := map[string]interface{}{}
-	if m, ok := attrs["machine"].(string); ok {
-		spec["machine"] = m
-	}
-	if t, ok := attrs["token"].(string); ok {
-		spec["token"] = t
-	}
-	if len(spec) == 0 {
-		return nil
-	}
-	return spec
-}
-
 // extractMachine pulls Machine spec fields from a TF instance's attributes,
 // handling the three provider shapes (oci / openstack / metal). The tfType arg
 // selects which fields to read — each provider writes a different schema.

@@ -102,38 +102,6 @@ func (e *StoreEnricher) enrich(ctx context.Context, tenant string) {
 		}
 		slog.Info("enrich: created machine from projection", "machine", name, "tenant", tenant, "addr", addr)
 	}
-
-	e.applyBindingTokens(tenant)
-}
-
-// applyBindingTokens copies binding tokens from projected MachineBinding
-// records (terraform_data in TF state) onto machine records — including
-// machines that already existed, so tokens attach on every enrichment pass.
-// The converge engine maps a connecting node's presented token to its record
-// through these (ADR 0008).
-func (e *StoreEnricher) applyBindingTokens(tenant string) {
-	bindings := e.index.List(tenant, "MachineBinding")
-	for _, b := range bindings {
-		token := stringFromSpec(b.Spec, "token")
-		if token == "" {
-			continue
-		}
-		m, err := e.store.GetMachine(b.Name)
-		if err != nil || m == nil {
-			// Machine record not yet enriched (or already gone) — the next
-			// pass joins it.
-			continue
-		}
-		if m.Spec.BindingToken == token {
-			continue
-		}
-		m.Spec.BindingToken = token
-		if _, err := e.store.UpdateMachineSpec(m.Metadata.Name, m.Metadata.ResourceVersion, m.Spec, m.Metadata.Labels, m.Metadata.Annotations); err != nil {
-			slog.Error("enrich: binding token not persisted", "machine", b.Name, "err", err)
-			continue
-		}
-		slog.Info("enrich: binding token attached", "machine", b.Name, "tenant", tenant)
-	}
 }
 
 // stringFromSpec returns the first non-empty string value from a projected

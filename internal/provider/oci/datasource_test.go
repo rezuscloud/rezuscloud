@@ -2,6 +2,7 @@ package oci
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/rezuscloud/rezuscloud/internal/provider"
@@ -37,32 +38,86 @@ func renderForTest(t *testing.T, role string) map[string]any {
 	return cfg
 }
 
-func TestRender_UserDataIsBootstrapVariable(t *testing.T) {
-	// ADR 0008: cloud instances boot with the minimal bootstrap (no cluster
-	// secrets); the full config is pulled over the management link.
+func TestRender_EmitsTalosConfigDataSource_PerRole(t *testing.T) {
 	for _, role := range []string{"controlplane", "worker"} {
 		t.Run(role, func(t *testing.T) {
 			cfg := renderForTest(t, role)
-			inst := firstInstance(t, cfg)
-			meta := inst["metadata"].(map[string]any)
-			if meta["user_data"] != "${var.bootstrap_config}" {
-				t.Errorf("user_data = %v, want the bootstrap variable", meta["user_data"])
+			data, ok := cfg["data"].(map[string]any)
+			if !ok {
+				t.Fatal("no data block in config")
+			}
+			talosDS, ok := data["talos_machine_configuration"].(map[string]any)
+			if !ok {
+				t.Fatal("no talos_machine_configuration data source")
+			}
+			body, ok := talosDS[role].(map[string]any)
+			if !ok {
+				t.Fatalf("no data source named %q", role)
+			}
+			if body["machine_type"] != role {
+				t.Errorf("machine_type = %v, want %q", body["machine_type"], role)
+			}
+			if body["machine_secrets"] != "${talos_machine_secrets.this.machine_secrets}" {
+				t.Errorf("machine_secrets = %v, want talos_machine_secrets.this reference", body["machine_secrets"])
+			}
+			if body["cluster_endpoint"] != "${var.cluster_endpoint}" {
+				t.Errorf("cluster_endpoint = %v, want var reference", body["cluster_endpoint"])
 			}
 		})
 	}
 }
 
-func TestRender_NoTalosDataSourceOrProvider(t *testing.T) {
-	// The talos provider rode the full-config data source; with pull delivery
-	// it has no reason to be in a cloud workspace at all.
-	cfg := renderForTest(t, "worker")
-	if data, ok := cfg["data"].(map[string]any); ok {
-		if _, bad := data["talos_machine_configuration"]; bad {
-			t.Errorf("talos_machine_configuration data source must be gone: %v", data)
-		}
+func TestRender_TalosConfigRequiredProviderDeclared(t *testing.T) {
+	out, err := New().Render(provider.RenderRequest{
+		Tenant: &state.Tenant{Metadata: state.Metadata{Name: "demo"}},
+		NodeGroups: []state.NodeGroupSpec{{
+			Name: "cp", Role: "controlplane", Count: 1, ProviderClass: "oci:test",
+			ProviderConfig: []byte(`{"compartmentOcid":"x","subnetId":"y","imageOcid":"z"}`),
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
-	rp := cfg["terraform"].(map[string]any)["required_providers"].(map[string]any)
-	if _, ok := rp["talos"]; ok {
-		t.Errorf("talos provider must not be required by the cloud renderer: %v", rp)
+	// The talos provider must be in required_providers so the data source resolves.
+	if !strings.Contains(string(out), `"talos"`) {
+		t.Error("talos provider not declared in required_providers")
+	}
+}
+
+func TestRender_MultipleNodeGroupsShareDataSourceByRole(t *testing.T) {
+	p := New()
+	tenant := &state.Tenant{}
+	tenant.Metadata.Name = "demo"
+	ngs := []state.NodeGroupSpec{
+		{Name: "cp-a", Role: "controlplane", Count: 1, ProviderClass: "oci:test",
+			ProviderConfig: []byte(`{"compartmentOcid":"x","subnetId":"y","imageOcid":"z"}`)},
+		{Name: "cp-b", Role: "controlplane", Count: 1, ProviderClass: "oci:test",
+			ProviderConfig: []byte(`{"compartmentOcid":"x","subnetId":"y","imageOcid":"z"}`)},
+		{Name: "workers", Role: "worker", Count: 2, ProviderClass: "oci:test",
+			ProviderConfig: []byte(`{"compartmentOcid":"x","subnetId":"y","imageOcid":"z"}`)},
+	}
+	out, err := p.Render(provider.RenderRequest{Tenant: tenant, NodeGroups: ngs})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Parse the config and verify the data block has exactly one entry per role.
+	var cfg map[string]any
+	if err := json.Unmarshal(out, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	data := cfg["data"].(map[string]any)
+	talosDS := data["talos_machine_configuration"].(map[string]any)
+
+	// Two node groups with role=controlplane must share ONE data source.
+	if _, ok := talosDS["controlplane"]; !ok {
+		t.Error("missing controlplane data source")
+	}
+	if _, ok := talosDS["worker"]; !ok {
+		t.Error("missing worker data source")
+	}
+	// The data source map should have exactly 2 keys (controlplane + worker).
+	if len(talosDS) != 2 {
+		t.Errorf("expected exactly 2 talos_machine_configuration data sources, got %d: %v", len(talosDS), talosDS)
 	}
 }

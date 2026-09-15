@@ -123,7 +123,6 @@ func main() {
 	// Apply queue: debounced per-tenant reconciliation scheduler (#87a). Driven
 	// by the production Applier (#87b/#99) which renders .tf.json + runs tofu.
 	applier := reconcile.NewApplier(tfExec, registry, store, reconcile.WithUpgradeRunner(upgradeMgr))
-	applier.MgmtEndpoint = os.Getenv("REZUSCLOUD_MGMTLINK_ADVERTISE_URL")
 
 	// Projection index: TF state → K8s-style resource read model (#91). Rebuilt
 	// after each successful apply by the queue's listener.
@@ -132,7 +131,6 @@ func main() {
 		registry,
 	)
 	projIndex.RegisterExtractor("Machine", machineExtractor)
-	projIndex.RegisterExtractor("MachineBinding", projection.ExtractMachineBinding)
 
 	tenantLister := func() ([]string, error) {
 		tenants, _, err := store.ListTenants()
