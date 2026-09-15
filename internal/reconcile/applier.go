@@ -20,15 +20,20 @@ package reconcile
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/rezuscloud/rezuscloud/internal/logging"
 	"github.com/rezuscloud/rezuscloud/internal/provider"
 	"github.com/rezuscloud/rezuscloud/internal/state"
+	"github.com/rezuscloud/rezuscloud/internal/talosconfig"
 	"github.com/rezuscloud/rezuscloud/internal/tfexec"
 )
 
@@ -42,6 +47,10 @@ type Applier struct {
 	store    state.StoreAPI
 	upgrades UpgradeRunner // optional pre-apply upgrade hook
 	logf     func(format string, args ...any)
+	// MgmtEndpoint is the management link's gRPC endpoint nodes dial
+	// (host:port, no scheme). Empty = link disabled; providers that need it
+	// (metal) then refuse to render — config delivery is pull (ADR 0008).
+	MgmtEndpoint string
 }
 
 // UpgradeRunner runs a synchronous rolling upgrade for a tenant before the
@@ -129,7 +138,12 @@ func (a *Applier) Apply(ctx context.Context, tenant string) error {
 		return fmt.Errorf("reconcile: workdir for %q: %w", tenant, err)
 	}
 
-	if err := a.renderConfig(dir, t, ngs); err != nil {
+	req, err := a.renderInputs(tenant, ngs)
+	if err != nil {
+		return fmt.Errorf("reconcile: render inputs for %q: %w", tenant, err)
+	}
+
+	if err := a.renderConfig(dir, t, ngs, req); err != nil {
 		return fmt.Errorf("reconcile: render config for %q: %w", tenant, err)
 	}
 
@@ -142,7 +156,7 @@ func (a *Applier) Apply(ctx context.Context, tenant string) error {
 		if err := renderCommonConfig(dir); err != nil {
 			return fmt.Errorf("reconcile: common config for %q: %w", tenant, err)
 		}
-		if err := renderTFVars(dir, t); err != nil {
+		if err := a.renderTFVars(dir, t, req); err != nil {
 			return fmt.Errorf("reconcile: tfvars for %q: %w", tenant, err)
 		}
 	}
@@ -183,14 +197,18 @@ func (a *Applier) destroy(ctx context.Context, tenant string, t *state.Tenant) e
 	// Render the same config as apply so tofu can resolve the providers that
 	// own the resources in state. tofu destroy removes every resource in state
 	// regardless of the config, but it must be able to load the configuration.
-	if err := a.renderConfig(dir, t, ngs); err != nil {
+	req, err := a.renderInputs(tenant, ngs)
+	if err != nil {
+		return fmt.Errorf("reconcile: render inputs for destroy %q: %w", tenant, err)
+	}
+	if err := a.renderConfig(dir, t, ngs, req); err != nil {
 		return fmt.Errorf("reconcile: render config for destroy %q: %w", tenant, err)
 	}
 	if configReferencesTalos(dir) {
 		if err := renderCommonConfig(dir); err != nil {
 			return fmt.Errorf("reconcile: common config for destroy %q: %w", tenant, err)
 		}
-		if err := renderTFVars(dir, t); err != nil {
+		if err := a.renderTFVars(dir, t, req); err != nil {
 			return fmt.Errorf("reconcile: tfvars for destroy %q: %w", tenant, err)
 		}
 	}
@@ -227,7 +245,7 @@ func (a *Applier) destroy(ctx context.Context, tenant string, t *state.Tenant) e
 // deleted node groups or unregistered providers. If no provider has matching
 // node groups, a minimal empty config is written so tofu apply is a safe no-op
 // (or destroys previously-created resources that are now gone).
-func (a *Applier) renderConfig(dir string, tenant *state.Tenant, ngs []state.NodeGroupSpec) error {
+func (a *Applier) renderConfig(dir string, tenant *state.Tenant, ngs []state.NodeGroupSpec, req provider.RenderRequest) error {
 	// Clean stale provider configs. Keep backend.tf.json (managed by tfexec).
 	if err := cleanProviderConfigs(dir); err != nil {
 		return fmt.Errorf("clean stale configs: %w", err)
@@ -239,7 +257,13 @@ func (a *Applier) renderConfig(dir string, tenant *state.Tenant, ngs []state.Nod
 		if len(matching) == 0 {
 			continue
 		}
-		raw, err := p.Render(provider.RenderRequest{Tenant: tenant, NodeGroups: matching})
+		raw, err := p.Render(provider.RenderRequest{
+			Tenant:          tenant,
+			NodeGroups:      matching,
+			BootstrapConfig: req.BootstrapConfig,
+			BindingTokens:   req.BindingTokens,
+			MgmtEndpoint:    req.MgmtEndpoint,
+		})
 		if err != nil {
 			return fmt.Errorf("provider %s render: %w", p.Type(), err)
 		}
@@ -297,6 +321,117 @@ type ngSpecJSON struct {
 
 // loadNodeGroups reads every node group resource for a tenant and converts each
 // to a state.NodeGroupSpec (pulling Name from metadata).
+// renderInputs computes everything the providers and tfvars need: the minimal
+// bootstrap config (ADR 0008 — no secrets) and the stable per-machine binding
+// tokens (generated once, persisted on node group annotations).
+func (a *Applier) renderInputs(tenant string, ngs []state.NodeGroupSpec) (provider.RenderRequest, error) {
+	tokens, err := a.ensureBindingTokens(tenant, ngs)
+	if err != nil {
+		return provider.RenderRequest{}, fmt.Errorf("binding tokens: %w", err)
+	}
+	bootstrap, err := talosconfig.BootstrapConfig(talosconfig.BootstrapParams{
+		InstallDisk: "/dev/sda",
+	})
+	if err != nil {
+		return provider.RenderRequest{}, fmt.Errorf("bootstrap config: %w", err)
+	}
+	return provider.RenderRequest{
+		BootstrapConfig: bootstrap,
+		BindingTokens:   tokens,
+		MgmtEndpoint:    a.MgmtEndpoint,
+	}, nil
+}
+
+// bindingTokenAnnotation is the node group annotation key holding a machine's
+// binding token (machine key sanitized — IPv6 colons are not annotation-safe).
+func bindingTokenAnnotation(machineKey string) string {
+	safe := strings.NewReplacer(":", "-", "/", "_", ".", "-").Replace(machineKey)
+	return "rezuscloud.io/binding-token/" + safe
+}
+
+// ensureBindingTokens returns the machine key → binding token map for the
+// given node groups. Tokens are generated once (crypto/rand) and persisted as
+// node group annotations; subsequent renders reuse them so a node's kernel
+// argument keeps working across applies.
+func (a *Applier) ensureBindingTokens(tenant string, ngs []state.NodeGroupSpec) (map[string]string, error) {
+	tokens := map[string]string{}
+	for _, ng := range ngs {
+		keys := machineKeysFor(ng)
+		if len(keys) == 0 {
+			continue
+		}
+		var specJSON json.RawMessage
+		md, err := a.store.GetResource("nodegroup", ng.Name, &specJSON, nil)
+		if err != nil {
+			return nil, fmt.Errorf("node group %q: %w", ng.Name, err)
+		}
+		if md.Annotations == nil {
+			md.Annotations = map[string]string{}
+		}
+		changed := false
+		for _, key := range keys {
+			ann := bindingTokenAnnotation(key)
+			if tok := md.Annotations[ann]; tok != "" {
+				tokens[key] = tok
+				continue
+			}
+			tok, err := newBindingToken()
+			if err != nil {
+				return nil, err
+			}
+			md.Annotations[ann] = tok
+			tokens[key] = tok
+			changed = true
+		}
+		if changed {
+			var spec state.NodeGroupSpec
+			if err := json.Unmarshal(specJSON, &spec); err != nil {
+				return nil, fmt.Errorf("node group %q spec: %w", ng.Name, err)
+			}
+			if _, err := a.store.UpdateResource("nodegroup", ng.Name, md.ResourceVersion, specJSON, md.Labels, md.Annotations); err != nil {
+				return nil, fmt.Errorf("persist binding tokens on %q: %w", ng.Name, err)
+			}
+		}
+	}
+	return tokens, nil
+}
+
+// newBindingToken generates a 128-bit URL-safe token.
+func newBindingToken() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generate binding token: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+// machineKeysFor lists the machine keys a provider's node group expands to:
+// metal keys machines by management address (ProviderConfig), cloud providers
+// by slot index ("0".."count-1").
+func machineKeysFor(ng state.NodeGroupSpec) []string {
+	if providerTypeOf(ng.ProviderClass) != "metal" {
+		keys := make([]string, 0, max(ng.Count, 0))
+		for i := 0; i < ng.Count; i++ {
+			keys = append(keys, strconv.Itoa(i))
+		}
+		return keys
+	}
+	var cfg struct {
+		Machines map[string]json.RawMessage `json:"machines"`
+	}
+	if len(ng.ProviderConfig) > 0 {
+		if err := json.Unmarshal(ng.ProviderConfig, &cfg); err != nil {
+			return nil
+		}
+	}
+	keys := make([]string, 0, len(cfg.Machines))
+	for k := range cfg.Machines {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 func loadNodeGroups(store state.StoreAPI, tenant string) ([]state.NodeGroupSpec, error) {
 	items, _, err := state.ListTypedByTenant(store, "nodegroup", tenant,
 		func(meta state.Metadata, specRaw, _ json.RawMessage) (state.NodeGroupSpec, error) {
@@ -406,6 +541,11 @@ func commonVariables() map[string]any {
 		"region":           optionalStrVar("OCI region"),
 		"compartment_ocid": optionalStrVar("OCI compartment OCID"),
 		"talos_image_ocid": optionalStrVar("Talos image OCID (OCI)"),
+		// Management link (ADR 0008): the bootstrap config nodes boot with
+		// (no secrets) and the link endpoint for the binding kernel args.
+		"bootstrap_config": strVar("Minimal bootstrap machine config (no secrets)"),
+		"mgmtlink_endpoint": optionalStrVar(
+			"Management link gRPC endpoint (host:port) nodes dial"),
 	}
 }
 
@@ -413,12 +553,14 @@ func commonVariables() map[string]any {
 // Cluster-level values come from the tenant spec; provider-specific values
 // (e.g. OCI compartment OCID, image OCID) are extracted from the first
 // matching node group's ProviderConfig.
-func renderTFVars(dir string, t *state.Tenant) error {
+func (a *Applier) renderTFVars(dir string, t *state.Tenant, req provider.RenderRequest) error {
 	tfvars := map[string]string{
 		"cluster_name":       t.Metadata.Name,
 		"cluster_endpoint":   t.Spec.ControlPlaneEndpoint,
 		"talos_version":      t.Spec.TalosVersion,
 		"kubernetes_version": t.Spec.KubernetesVersion,
+		"bootstrap_config":   req.BootstrapConfig,
+		"mgmtlink_endpoint":  req.MgmtEndpoint,
 	}
 
 	// Extract OCI-specific values from the first OCI node group's config.
