@@ -3,6 +3,7 @@
 package machine
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,15 +17,30 @@ import (
 )
 
 // API provides HTTP handlers for Machine CRUD.
+// NodeConfigFetcher fetches a machine's applied config from the node over
+// the management link (ADR 0008 desired-vs-applied diff). The converge
+// engine implements it; nil disables the diff endpoint (503).
+type NodeConfigFetcher interface {
+	CurrentNodeConfig(ctx context.Context, machineID string) (string, error)
+}
+
 type API struct {
-	store state.StoreAPI
-	bus   watch.Bus // optional: enables ?watch=true on List/ListByTenant
+	store   state.StoreAPI
+	bus     watch.Bus // optional: enables ?watch=true on List/ListByTenant
+	fetcher NodeConfigFetcher
 }
 
 // NewAPI creates a Machine API handler. bus may be nil — when nil,
-// ?watch=true returns 503.
+// ?watch=true returns 503. fetcher may be nil — when nil, config-diff
+// returns 503 (management link disabled).
 func NewAPI(store state.StoreAPI, bus watch.Bus) *API {
 	return &API{store: store, bus: bus}
+}
+
+// WithNodeConfigFetcher wires the management-link config fetcher.
+func (a *API) WithNodeConfigFetcher(f NodeConfigFetcher) *API {
+	a.fetcher = f
+	return a
 }
 
 // RegisterRoutes registers machine routes on the given mux.
@@ -37,6 +53,7 @@ func (a *API) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/tenants/{tenant}/machines", a.ListByTenant)
 	mux.HandleFunc("GET /api/v1/tenants/{tenant}/machines/{id}", a.GetByTenant)
 	mux.HandleFunc("GET /api/v1/tenants/{tenant}/machines/{id}/config", a.Config)
+	mux.HandleFunc("GET /api/v1/tenants/{tenant}/machines/{id}/config-diff", a.ConfigDiff)
 	mux.HandleFunc("PUT /api/v1/tenants/{tenant}/machines/{id}/status", a.UpdateStatus)
 	mux.HandleFunc("DELETE /api/v1/tenants/{tenant}/machines/{id}", a.Delete)
 }
@@ -233,6 +250,49 @@ func (a *API) Config(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/yaml")
 	_, _ = w.Write([]byte(result.YAML))
+}
+
+// ConfigDiff handles GET /api/v1/tenants/{tenant}/machines/{id}/config-diff.
+// Returns the desired (rendered) vs applied (node-fetched) config, plus a
+// unified diff — the per-machine "what would change" surface from the
+// configuration-management spec (#199, ADR 0008/0014).
+func (a *API) ConfigDiff(w http.ResponseWriter, r *http.Request) {
+	tenantName := r.PathValue("tenant")
+	id := r.PathValue("id")
+
+	m, err := a.store.GetMachine(id)
+	if err != nil || m == nil || m.Metadata.Labels["rezuscloud.io/tenant"] != tenantName {
+		writeError(w, "machine not found in tenant", "NotFound", http.StatusNotFound)
+		return
+	}
+	if a.fetcher == nil {
+		writeError(w, "management link is not enabled", "Unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	desired, err := configrender.GenerateMachineConfig(r.Context(), a.store, a.store, patch.ResolvePatches,
+		configrender.MachineConfigRequest{TenantName: tenantName, MachineID: id})
+	if err != nil {
+		if errors.Is(err, configrender.ErrNotFound) {
+			writeError(w, err.Error(), "NotFound", http.StatusNotFound)
+			return
+		}
+		writeError(w, err.Error(), "InternalError", http.StatusInternalServerError)
+		return
+	}
+
+	current, err := a.fetcher.CurrentNodeConfig(r.Context(), id)
+	if err != nil {
+		writeError(w, "node config unavailable: "+err.Error(), "Unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"desired": desired.YAML,
+		"current": current,
+		"diff":    unifiedDiff(desired.YAML, current),
+	})
 }
 
 // Delete handles DELETE /api/v1/tenants/{tenant}/machines/{id}.
