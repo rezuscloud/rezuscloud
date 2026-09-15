@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/rezuscloud/rezuscloud/internal/applyqueue"
+	"github.com/rezuscloud/rezuscloud/internal/provider"
 	"github.com/rezuscloud/rezuscloud/internal/state"
 )
 
@@ -274,7 +275,7 @@ func TestRenderTFVars_ClusterLevelOnly(t *testing.T) {
 			ControlPlaneEndpoint: "https://10.0.0.1:6443",
 		},
 	}
-	if err := renderTFVars(dir, tenant); err != nil {
+	if err := renderTFVarsForTest(t, dir, tenant); err != nil {
 		t.Fatal(err)
 	}
 	//nolint:errcheck
@@ -315,7 +316,7 @@ func TestRenderTFVars_OCIProviderConfig(t *testing.T) {
 			}},
 		},
 	}
-	if err := renderTFVars(dir, tenant); err != nil {
+	if err := renderTFVarsForTest(t, dir, tenant); err != nil {
 		t.Fatal(err)
 	}
 	data, _ := os.ReadFile(filepath.Join(dir, "terraform.tfvars.json"))
@@ -420,4 +421,13 @@ func TestStatusTracker_ApplyPhaseUntouchedForLiveTenant(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatal("PhaseApplying was not recorded as 'applying' for a live tenant")
+}
+
+// renderTFVarsForTest adapts the method signature for the older call sites:
+// the store-backed pieces (binding tokens) are skipped in these unit tests.
+func renderTFVarsForTest(t *testing.T, dir string, tenant *state.Tenant) error {
+	t.Helper()
+	a := &Applier{store: openTestStore(t)}
+	req := provider.RenderRequest{BootstrapConfig: "machine:\n    install:\n", MgmtEndpoint: ""}
+	return a.renderTFVars(dir, tenant, req)
 }

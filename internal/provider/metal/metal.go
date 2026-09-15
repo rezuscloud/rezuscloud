@@ -48,6 +48,9 @@ func (p *Provider) Type() string { return "metal" }
 func (p *Provider) Mappings() []provider.TFResourceMapping {
 	return []provider.TFResourceMapping{
 		{TFType: "talos_machine_configuration_apply", Kind: "Machine"},
+		// terraform_data binding records (this provider only) — each carries
+		// one machine's binding token for the converge engine's identity map.
+		{TFType: "terraform_data", Kind: "MachineBinding"},
 	}
 }
 
@@ -102,8 +105,12 @@ func (p *Provider) Render(req provider.RenderRequest) ([]byte, error) {
 		provider.ReqProvider{Name: "random", Source: "hashicorp/random"},
 	)
 
+	if req.MgmtEndpoint == "" || len(req.BindingTokens) == 0 {
+		return nil, fmt.Errorf("metal: the management link must be enabled (REZUSCLOUD_MGMTLINK_*) — config delivery is pull (ADR 0008): nodes bootstrap without secrets and pull their config over the link")
+	}
+
 	for _, ng := range req.NodeGroups {
-		if err := renderNodeGroup(&root, ng); err != nil {
+		if err := renderNodeGroup(&root, ng, req); err != nil {
 			return nil, fmt.Errorf("metal: node group %q: %w", ng.Name, err)
 		}
 	}
@@ -111,10 +118,11 @@ func (p *Provider) Render(req provider.RenderRequest) ([]byte, error) {
 	return json.Marshal(root)
 }
 
-// renderNodeGroup emits the data source + random_pet + apply resource for one
-// node group. One data.talos_machine_configuration per role; one apply resource
-// for_each over the machines map (keyed by IP).
-func renderNodeGroup(root *provider.TFConfig, ng state.NodeGroupSpec) error {
+// renderNodeGroup emits the random_pet + bootstrap apply + binding records for
+// one node group. The pushed config is the platform-rendered minimal bootstrap
+// (no secrets — ADR 0008: the node pulls its full config over the management
+// link); the per-machine binding token rides an extraKernelArgs patch.
+func renderNodeGroup(root *provider.TFConfig, ng state.NodeGroupSpec, req provider.RenderRequest) error {
 	cfg, err := parseNodeGroupConfig(ng)
 	if err != nil {
 		return err
@@ -128,21 +136,18 @@ func renderNodeGroup(root *provider.TFConfig, ng state.NodeGroupSpec) error {
 	}
 	prefix := rolePrefix(role)
 	base := sanitize(ng.Name)
-	dsName := base + "_config"
 	petName := base + "_pet"
-	applyName := base + "_apply"
+	// The apply resource and the binding records share a TF resource name so
+	// their projections compose identical machine names (<name>-<key>) — the
+	// enricher joins binding tokens onto machines by that name.
+	applyName := base
+	bindingName := base
+	tokenVar := "metal_binding_tokens_" + base
 
-	// data.talos_machine_configuration.<role> — the cluster config for this role.
-	// machine_secrets / client_configuration come from var.* (RezusCloud writes
-	// a terraform.tfvars.json with the tenant's secrets bundle at apply time).
-	root.AddDataSource("talos_machine_configuration", dsName, obj{
-		"cluster_name":       "${var.cluster_name}",
-		"cluster_endpoint":   "${var.cluster_endpoint}",
-		"machine_type":       role,
-		"machine_secrets":    "${talos_machine_secrets.this.machine_secrets}",
-		"talos_version":      strVar("talos_version"),
-		"kubernetes_version": strVar("kubernetes_version"),
-	})
+	tokens := bindingTokensFor(req, ng)
+	if len(tokens) == 0 {
+		return fmt.Errorf("no binding tokens for node group %q (machine keys: providerconfig machines)", ng.Name)
+	}
 
 	// random_pet: one per machine, keyed by IP, stable keeper (the IP).
 	// Without a keeper, a re-apply regenerates the pet → stale hostname →
@@ -159,10 +164,10 @@ func renderNodeGroup(root *provider.TFConfig, ng state.NodeGroupSpec) error {
 	apply := obj{
 		"for_each":                    fmt.Sprintf("${var.metal_machines_%s}", base),
 		"client_configuration":        "${talos_machine_secrets.this.client_configuration}",
-		"machine_configuration_input": fmt.Sprintf("${data.talos_machine_configuration.%s.machine_configuration}", dsName),
+		"machine_configuration_input": "${var.bootstrap_config}",
 		"node":                        "${each.key}",
 		"apply_mode":                  "auto",
-		"config_patches":              patches,
+		"config_patches":              append(patches, bindingPatch(tokenVar)),
 		"on_destroy": obj{
 			"reset":    true,
 			"graceful": true,
@@ -173,7 +178,46 @@ func renderNodeGroup(root *provider.TFConfig, ng state.NodeGroupSpec) error {
 		}},
 	}
 	root.AddResource("talos_machine_configuration_apply", applyName, apply)
+
+	// terraform_data: records each machine's binding token in TF state so the
+	// projection can map a connecting node (which presents its token at
+	// Provision) to this machine record. Built-in resource — no provider.
+	// (Named identically to the apply resource — see above.)
+	root.AddResource("terraform_data", bindingName, obj{
+		"for_each": fmt.Sprintf("${%s}", tokenVar),
+		"input": obj{
+			"machine": "${each.key}",
+			"token":   "${each.value}",
+		},
+	})
 	return nil
+}
+
+// bindingTokensFor filters the request's binding tokens to this node group's
+// machine keys (the ProviderConfig machines map, keyed by management address).
+func bindingTokensFor(req provider.RenderRequest, ng state.NodeGroupSpec) map[string]string {
+	out := map[string]string{}
+	var cfg NodeGroupConfig
+	if len(ng.ProviderConfig) > 0 {
+		if err := json.Unmarshal(ng.ProviderConfig, &cfg); err != nil {
+			return out
+		}
+	}
+	for ip := range cfg.Machines {
+		if t, ok := req.BindingTokens[ip]; ok {
+			out[ip] = t
+		}
+	}
+	return out
+}
+
+// bindingPatch renders the extraKernelArgs patch carrying the management-link
+// kernel argument with the per-machine binding token (each.key = machine IP).
+func bindingPatch(tokenVar string) string {
+	return fmt.Sprintf(`machine:
+    install:
+        extraKernelArgs:
+            - "siderolink.api=grpc://${var.mgmtlink_endpoint}?jointoken=${%s[each.key]}"`, tokenVar)
 }
 
 // buildConfigPatches returns the per-machine config_patches list. Patches are
