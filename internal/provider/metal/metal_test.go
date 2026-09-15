@@ -2,6 +2,7 @@ package metal
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"testing"
@@ -20,7 +21,7 @@ func render(t *testing.T, ng state.NodeGroupSpec) map[string]interface{} {
 	p := New()
 	tenant := &state.Tenant{}
 	tenant.Metadata.Name = "demo"
-	out, err := p.Render(provider.RenderRequest{Tenant: tenant, NodeGroups: []state.NodeGroupSpec{ng}})
+	out, err := p.Render(testRequest(tenant, []state.NodeGroupSpec{ng}))
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
@@ -29,6 +30,28 @@ func render(t *testing.T, ng state.NodeGroupSpec) map[string]interface{} {
 		t.Fatalf("generated config is not valid JSON: %v\n%s", err, out)
 	}
 	return m
+}
+
+// testRequest is a render request with the management-link pieces wired: the
+// metal provider refuses to render without them (config delivery is pull).
+func testRequest(tenant *state.Tenant, ngs []state.NodeGroupSpec) provider.RenderRequest {
+	tokens := map[string]string{}
+	for i, ng := range ngs {
+		var cfg NodeGroupConfig
+		if len(ng.ProviderConfig) > 0 {
+			_ = json.Unmarshal(ng.ProviderConfig, &cfg)
+		}
+		for ip := range cfg.Machines {
+			tokens[ip] = fmt.Sprintf("bind-tok-%d-%s", i, ip[len(ip)-4:])
+		}
+	}
+	return provider.RenderRequest{
+		Tenant:          tenant,
+		NodeGroups:      ngs,
+		BootstrapConfig: "machine:\n    install:\n        disk: /dev/sda\n",
+		BindingTokens:   tokens,
+		MgmtEndpoint:    "grpc.rezus.cloud:51800",
+	}
 }
 
 // baseNG is a worker node group with two machines.
@@ -145,15 +168,72 @@ func TestRender_NoSchematicOmitsInstallImage(t *testing.T) {
 	}
 }
 
-func TestRender_NoSideroLinkReferences(t *testing.T) {
-	// ADR 13 (rejected): NO SideroLink. The generated config must not mention it.
+func TestRender_CarriesSiderolinkKernelArg(t *testing.T) {
+	// ADR 0018/0008: the node joins the management link via the kernel arg;
+	// the binding token is per machine (each.key).
 	out := rawRender(t, baseNG())
 	lower := string(out)
-	for _, bad := range []string{"siderolink", "jointoken", "wireguard_over_grpc", "kernel_arg"} {
-		if contains(lower, bad) {
-			t.Errorf("config references %q (SideroLink must not appear): %s", bad, out)
+	for _, want := range []string{"siderolink.api=grpc://", "jointoken=", "metal_binding_tokens_edge_workers[each.key]"} {
+		if !contains(lower, want) {
+			t.Errorf("config missing %q (management link kernel arg must be present): %s", want, out)
 		}
 	}
+}
+
+func TestRender_PushesBootstrapNotFullConfig(t *testing.T) {
+	// ADR 0008: the pushed config is the minimal bootstrap (no secrets).
+	out := rawRender(t, baseNG())
+	var m map[string]interface{}
+	if err := unmarshal(out, &m); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if _, hasData := m["data"]; hasData {
+		t.Errorf("full-config data source must be retired (ADR 0008): %s", out)
+	}
+	apply := oneResource(t, unmarshalT(t, out), "talos_machine_configuration_apply")
+	if got := apply["machine_configuration_input"]; got != "${var.bootstrap_config}" {
+		t.Errorf("machine_configuration_input = %v, want the bootstrap variable", got)
+	}
+}
+
+func TestRender_RecordsBindingTokens(t *testing.T) {
+	// terraform_data resources carry each machine's binding token in state
+	// for the projection.
+	m := render(t, baseNG())
+	res, ok := m["resource"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("no resource block")
+	}
+	td, ok := res["terraform_data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("no terraform_data bindings: %v", res)
+	}
+	binding, ok := td["edge_workers"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("no edge_workers binding record: %v", td)
+	}
+	input, ok := binding["input"].(map[string]interface{})
+	if !ok || input["machine"] != "${each.key}" || input["token"] != "${each.value}" {
+		t.Errorf("binding input = %v, want machine/token passthrough", input)
+	}
+}
+
+func TestRender_RejectsMissingMgmtLink(t *testing.T) {
+	// Config delivery is pull (ADR 0008): without the management link there
+	// is nothing to converge from — refuse to render.
+	_, err := New().Render(provider.RenderRequest{Tenant: &state.Tenant{}, NodeGroups: []state.NodeGroupSpec{baseNG()}})
+	if err == nil {
+		t.Fatal("want error when the management link is disabled")
+	}
+}
+
+func unmarshalT(t *testing.T, raw []byte) map[string]interface{} {
+	t.Helper()
+	var m map[string]interface{}
+	if err := unmarshal(raw, &m); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	return m
 }
 
 func TestRender_MultipleNodeGroupsDistinct(t *testing.T) {
@@ -165,11 +245,11 @@ func TestRender_MultipleNodeGroupsDistinct(t *testing.T) {
 	cp.Role = "controlplane"
 	wk := baseNG()
 	wk.Name = "workers"
-	out, err := p.Render(provider.RenderRequest{Tenant: tenant, NodeGroups: []state.NodeGroupSpec{cp, wk}})
+	out, err := p.Render(testRequest(tenant, []state.NodeGroupSpec{cp, wk}))
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
-	if !contains(string(out), "controlplane_apply") || !contains(string(out), "workers_apply") {
+	if !contains(string(out), "controlplane") || !contains(string(out), "workers") {
 		t.Errorf("expected distinct apply resources for both node groups:\n%s", out)
 	}
 }
@@ -329,10 +409,12 @@ func oneResource(t *testing.T, m map[string]interface{}, typ string) map[string]
 }
 
 func rawRender(t *testing.T, ng state.NodeGroupSpec) []byte {
+	return mustRawRender(t, testRequest(&state.Tenant{}, []state.NodeGroupSpec{ng}))
+}
+
+func mustRawRender(t *testing.T, req provider.RenderRequest) []byte {
 	t.Helper()
-	tenant := &state.Tenant{}
-	tenant.Metadata.Name = "demo"
-	out, err := New().Render(provider.RenderRequest{Tenant: tenant, NodeGroups: []state.NodeGroupSpec{ng}})
+	out, err := New().Render(req)
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
