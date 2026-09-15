@@ -44,6 +44,8 @@ type StoreAPI interface {
 	GetMachine(id string) (*Machine, error)
 	ListMachines(opts ...ListOption) ([]*Machine, int, error)
 	ListMachinesByTenant(tenantName string, opts ...ListOption) ([]*Machine, int, error)
+	FindMachineByBindingToken(token string) (*Machine, error)
+	UpdateMachineSpec(id string, currentVersion int64, spec MachineSpec, labels, annotations map[string]string) (*Machine, error)
 	UpdateMachineStatus(id string, status MachineStatus) (*Machine, error)
 	DeleteMachine(id string) error
 

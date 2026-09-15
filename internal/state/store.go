@@ -132,6 +132,12 @@ type Machine struct {
 type MachineSpec struct {
 	ManagementAddress string `json:"managementAddress,omitempty"`
 	Connected         bool   `json:"connected"`
+	// BindingToken is the per-machine token the node presents in its
+	// SideroLink Provision request (kernel-arg jointoken). The converge
+	// engine maps a connecting node to this machine record through it
+	// (ADR 0008 amendment: the node's WG key is runtime-generated and
+	// cannot serve as the declarative identity).
+	BindingToken string `json:"bindingToken,omitempty"`
 }
 
 // MachineStage represents the lifecycle stage of a machine.
@@ -1068,10 +1074,41 @@ func (s *Store) ListMachines(opts ...ListOption) ([]*Machine, int, error) {
 	return machines, total, nil
 }
 
+// FindMachineByBindingToken returns the machine whose BindingToken matches,
+// or nil when no record declares it.
+func (s *Store) FindMachineByBindingToken(token string) (*Machine, error) {
+	if token == "" {
+		return nil, nil
+	}
+	machines, _, err := s.ListMachines()
+	if err != nil {
+		return nil, err
+	}
+	for _, m := range machines {
+		if m.Spec.BindingToken == token {
+			return m, nil
+		}
+	}
+	return nil, nil
+}
+
 // ListMachinesByTenant returns machines for a specific tenant.
 func (s *Store) ListMachinesByTenant(tenantName string, opts ...ListOption) ([]*Machine, int, error) {
 	opts = append(opts, WithLabelSelector("rezuscloud.io/tenant="+tenantName))
 	return s.ListMachines(opts...)
+}
+
+// UpdateMachineSpec updates a machine's spec (optimistic on ResourceVersion).
+func (s *Store) UpdateMachineSpec(id string, currentVersion int64, spec MachineSpec, labels, annotations map[string]string) (*Machine, error) {
+	md, err := s.UpdateResource("machine", id, currentVersion, spec, labels, annotations)
+	if err != nil {
+		return nil, err
+	}
+
+	var status MachineStatus
+	_, _ = s.GetResource("machine", id, nil, &status)
+
+	return &Machine{Metadata: md, Spec: spec, Status: status}, nil
 }
 
 // UpdateMachineStatus updates a machine's status.

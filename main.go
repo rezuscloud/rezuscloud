@@ -21,6 +21,7 @@ import (
 	"github.com/rezuscloud/rezuscloud/internal/auth"
 	oidc "github.com/rezuscloud/rezuscloud/internal/auth/oidc"
 	"github.com/rezuscloud/rezuscloud/internal/backup"
+	"github.com/rezuscloud/rezuscloud/internal/converge"
 	"github.com/rezuscloud/rezuscloud/internal/credentials"
 	"github.com/rezuscloud/rezuscloud/internal/ingress"
 	"github.com/rezuscloud/rezuscloud/internal/metrics"
@@ -254,6 +255,10 @@ func main() {
 			"wg_udp", mgmtCfg.WGListen,
 			"prefix", mgmtCfg.Prefix.String())
 		go func() { _ = mgmtSrv.Listen(ctx, mgmtLis) }()
+
+		// Config delivery is pull (ADR 0008): nodes converge to their
+		// rendered config over the management link.
+		go converge.New(store, mgmtSrv, slog.Default()).Run(ctx)
 	}
 
 	// Federated sign-in (ADR 0021): enabled by REZUSCLOUD_OIDC_* env vars.

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/netip"
+	"sync"
 	"time"
 
 	"golang.zx2c4.com/wireguard/conn"
@@ -24,7 +25,49 @@ import (
 // netstack (no host privileges, no kernel interfaces), and exposes
 // DialContext for management→node connections (status probes, `talosctl`
 // reachability, later config-pull callbacks).
+// PeerEvent notifies the platform of tunnel lifecycle: a node provisioned
+// (connected) or its stream went away (disconnected). JoinToken is the token
+// the node presented — the platform's binding-token → machine key.
+type PeerEvent struct {
+	Kind PeerEventKind
+
+	NodeUUID     string
+	JoinToken    string
+	NodeAddrPort string // virtual stream address (tunnel mode)
+}
+
+// PeerEventKind discriminates PeerEvent.
+type PeerEventKind string
+
+const (
+	// PeerConnected — the node provisioned successfully and may attach its
+	// stream.
+	PeerConnected PeerEventKind = "connected"
+	// PeerDisconnected — the node's stream detached.
+	PeerDisconnected PeerEventKind = "disconnected"
+)
+
+// peerEvents fans peer lifecycle out to the platform (single listener — the
+// converge engine; ordering matters, so no fan-out to many).
+type peerEvents struct {
+	mu sync.Mutex
+	fn func(PeerEvent)
+}
+
+// emit invokes the listener on its own goroutine: listeners (the converge
+// engine) drive delivery, which must never block the provision RPC — the
+// node's controller can't finish provisioning until the response returns.
+func (e *peerEvents) emit(ev PeerEvent) {
+	e.mu.Lock()
+	fn := e.fn
+	e.mu.Unlock()
+	if fn != nil {
+		go fn(ev)
+	}
+}
+
 type Server struct {
+	events  *peerEvents
 	cfg     Config
 	store   *peerStore
 	bind    *serverBind
@@ -33,9 +76,26 @@ type Server struct {
 	grpc    *grpc.Server
 	prov    *provisionService
 	streams *streamService
+	cancel  context.CancelFunc
+	done    chan struct{}
+}
 
-	cancel context.CancelFunc
-	done   chan struct{}
+// SetPeerListener registers the platform's peer-lifecycle listener (connected
+// / disconnected). Call before Listen.
+func (s *Server) SetPeerListener(fn func(PeerEvent)) {
+	s.events.mu.Lock()
+	s.events.fn = fn
+	s.events.mu.Unlock()
+}
+
+// SetTokenAcceptor extends join-token authorization beyond the configured
+// global link token — the platform accepts its machines' binding tokens
+// here. The accepted token is passed verbatim in PeerEvent.JoinToken.
+// Call before Listen.
+func (s *Server) SetTokenAcceptor(fn func(token string) bool) {
+	s.prov.mu.Lock()
+	s.prov.acceptToken = fn
+	s.prov.mu.Unlock()
 }
 
 // NewServer assembles the server. It does not listen — call Listen.
@@ -117,14 +177,16 @@ func NewServer(cfg Config, db *sql.DB) (*Server, error) {
 		}
 	}
 
-	prov := newProvisionService(cfg, store, &wgDeviceMutator{device}, serverKey, serverAP)
-	streams := newStreamService(prov, bind)
+	events := &peerEvents{}
+	prov := newProvisionService(cfg, store, &wgDeviceMutator{device}, serverKey, serverAP, events)
+	streams := newStreamService(prov, bind, events)
 
 	gsrv := grpc.NewServer()
 	pb.RegisterProvisionServiceServer(gsrv, prov)
 	pb.RegisterWireGuardOverGRPCServiceServer(gsrv, streams)
 
 	return &Server{
+		events:  events,
 		cfg:     cfg,
 		store:   store,
 		bind:    bind,
