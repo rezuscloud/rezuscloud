@@ -29,7 +29,7 @@ import (
 // upgradeManager is required — owns upgrade run lifecycle.
 // projectionIdx may be nil — if nil, /api/v1/.../projected returns 503.
 // statusGatherer may be nil — if nil, /api/v1/.../health returns 503.
-func Router(store state.StoreAPI, jwtManager *auth.JWTManager, auditComponent *audit.Component, backupComponent *backup.Component, upgradeManager *upgrade.Manager, projectionIdx *projection.Index, statusGatherer *status.Gatherer, bus watch.Bus) http.Handler {
+func Router(store state.StoreAPI, jwtManager *auth.JWTManager, auditComponent *audit.Component, backupComponent *backup.Component, upgradeManager *upgrade.Manager, projectionIdx *projection.Index, statusGatherer *status.Gatherer, bus watch.Bus, nodeConfigFetcher machine.NodeConfigFetcher) http.Handler {
 	mux := http.NewServeMux()
 
 	// Per-resource-type validation registry (#175). Each handler registers its
@@ -53,6 +53,9 @@ func Router(store state.StoreAPI, jwtManager *auth.JWTManager, auditComponent *a
 
 	// Machine endpoints (cluster-wide + tenant-scoped).
 	machineAPI := machine.NewAPI(store, bus)
+	if nodeConfigFetcher != nil {
+		machineAPI.WithNodeConfigFetcher(nodeConfigFetcher)
+	}
 	machineAPI.RegisterRoutes(protected)
 
 	// Provider endpoints.

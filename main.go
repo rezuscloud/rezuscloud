@@ -12,10 +12,12 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/rezuscloud/rezuscloud/internal/api"
+	machineapi "github.com/rezuscloud/rezuscloud/internal/api/machine"
 	"github.com/rezuscloud/rezuscloud/internal/applyqueue"
 	"github.com/rezuscloud/rezuscloud/internal/audit"
 	"github.com/rezuscloud/rezuscloud/internal/auth"
@@ -125,6 +127,10 @@ func main() {
 	applier := reconcile.NewApplier(tfExec, registry, store, reconcile.WithUpgradeRunner(upgradeMgr))
 	applier.MgmtEndpoint = os.Getenv("REZUSCLOUD_MGMTLINK_ADVERTISE_URL")
 
+	// nodeConfigFetcher is wired by the management-link block below (nil when
+	// the link is disabled — the config-diff endpoint then reports 503).
+	nodeConfigFetcher := newLazyFetcher()
+
 	// Projection index: TF state → K8s-style resource read model (#91). Rebuilt
 	// after each successful apply by the queue's listener.
 	projIndex := projection.New(
@@ -222,7 +228,7 @@ func main() {
 	// Registered with explicit methods because the WebUI registers method-scoped
 	// routes ("GET /", "GET /tenants", ...) and Go 1.22+ ServeMux panics when
 	// method-scoped and method-less patterns share a path prefix.
-	apiRouter := api.Router(store, jwtManager, auditComponent, backupComponent, upgradeMgr, projIndex, statusGatherer, bus)
+	apiRouter := api.Router(store, jwtManager, auditComponent, backupComponent, upgradeMgr, projIndex, statusGatherer, bus, nodeConfigFetcher)
 	for _, method := range []string{"GET", "POST", "PUT", "DELETE", "PATCH"} {
 		mux.Handle(method+" /api/", apiRouter)
 	}
@@ -260,7 +266,10 @@ func main() {
 
 		// Config delivery is pull (ADR 0008): nodes converge to their
 		// rendered config over the management link.
-		go converge.New(store, mgmtSrv, slog.Default()).Run(ctx)
+		convEngine := converge.New(store, mgmtSrv, slog.Default())
+		nodeConfigFetcher.setE(convEngine)
+		go convEngine.Run(ctx)
+		nodeConfigFetcher.setE(convEngine)
 	}
 
 	// Federated sign-in (ADR 0021): enabled by REZUSCLOUD_OIDC_* env vars.
@@ -476,4 +485,30 @@ func machineExtractor(tfType string, attrs map[string]interface{}) map[string]in
 		return nil
 	}
 	return spec
+}
+
+// lazyFetcher defers the converge engine binding: the API router is built
+// before the management-link block runs, and the link may be disabled
+// entirely (config-diff then reports 503).
+type lazyFetcher struct {
+	mu sync.Mutex
+	e  machineapi.NodeConfigFetcher
+}
+
+func newLazyFetcher() *lazyFetcher { return &lazyFetcher{} }
+
+func (l *lazyFetcher) setE(e machineapi.NodeConfigFetcher) {
+	l.mu.Lock()
+	l.e = e
+	l.mu.Unlock()
+}
+
+func (l *lazyFetcher) CurrentNodeConfig(ctx context.Context, machineID string) (string, error) {
+	l.mu.Lock()
+	e := l.e
+	l.mu.Unlock()
+	if e == nil {
+		return "", fmt.Errorf("management link is not enabled")
+	}
+	return e.CurrentNodeConfig(ctx, machineID)
 }
