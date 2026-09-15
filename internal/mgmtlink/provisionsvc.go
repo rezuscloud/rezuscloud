@@ -27,6 +27,12 @@ type provisionService struct {
 
 	mu           sync.Mutex
 	streamTokens map[string]string // virtual addr:port → node identity
+	events       *peerEvents
+	// acceptToken authorizes a presented join token. When nil, only the
+	// configured global link token is accepted. A platform wiring machine
+	// binding tokens extends this (the presented token is passed verbatim
+	// in the peer event so the platform can resolve it). Guarded by mu.
+	acceptToken func(token string) bool
 }
 
 // deviceMutator is the slice of the wireguard-go device the provisioner
@@ -36,7 +42,7 @@ type deviceMutator interface {
 	ApplyPeer(pubKey wgtypes.Key, allowed netip.Prefix) error
 }
 
-func newProvisionService(cfg Config, store *peerStore, device deviceMutator, serverKey wgtypes.Key, serverAP netip.Addr) *provisionService {
+func newProvisionService(cfg Config, store *peerStore, device deviceMutator, serverKey wgtypes.Key, serverAP netip.Addr, events *peerEvents) *provisionService {
 	return &provisionService{
 		cfg:          cfg,
 		store:        store,
@@ -44,12 +50,22 @@ func newProvisionService(cfg Config, store *peerStore, device deviceMutator, ser
 		serverKey:    serverKey,
 		serverAP:     serverAP,
 		streamTokens: map[string]string{},
+		events:       events,
 	}
 }
 
 // Provision implements pb.ProvisionServiceServer.
 func (s *provisionService) Provision(_ context.Context, req *pb.ProvisionRequest) (*pb.ProvisionResponse, error) {
-	if !constantTimeToken(req.GetJoinToken(), s.cfg.JoinToken) {
+	accepted := constantTimeToken(req.GetJoinToken(), s.cfg.JoinToken)
+	if !accepted {
+		s.mu.Lock()
+		accept := s.acceptToken
+		s.mu.Unlock()
+		if accept != nil {
+			accepted = accept(req.GetJoinToken())
+		}
+	}
+	if !accepted {
 		return nil, fmt.Errorf("invalid join token")
 	}
 	pubKey, err := wgtypes.ParseKey(req.NodePublicKey)
@@ -82,6 +98,12 @@ func (s *provisionService) Provision(_ context.Context, req *pb.ProvisionRequest
 		NodeAddressPrefix: peer.Prefix,
 		ServerAddress:     s.serverAP.String(),
 	}
+	s.events.emit(PeerEvent{
+		Kind:         PeerConnected,
+		NodeUUID:     peer.NodeUUID,
+		JoinToken:    req.GetJoinToken(),
+		NodeAddrPort: peer.StreamAddr,
+	})
 	if req.GetWireguardOverGrpc() {
 		s.mu.Lock()
 		s.streamTokens[peer.StreamAddr] = peer.Identity

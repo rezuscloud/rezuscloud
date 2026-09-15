@@ -85,7 +85,8 @@ func TestIdentityFor(t *testing.T) {
 	if got := identityFor("00000000-0000-0000-0000-000000000000", "tok"); got == "" || len(got) != 4+32 {
 		t.Errorf("zero uuid must hash the unique token, got %q", got)
 	}
-	if identityFor("", "") != identityFor("", "") {
+	a, b := identityFor("x", "y"), identityFor("x", "y")
+	if a != b {
 		t.Error("identity must be deterministic")
 	}
 }

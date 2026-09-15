@@ -181,7 +181,7 @@ func (s *peerStore) list() ([]*peer, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var out []*peer
 	for rows.Next() {

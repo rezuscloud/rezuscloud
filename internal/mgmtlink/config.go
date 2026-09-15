@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"net/netip"
 	"strings"
-
-	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 )
 
 // Config configures the management-link server. Sourced from
@@ -32,9 +30,6 @@ type Config struct {
 	StreamPort uint16
 	// MTU for the tunnel. Talos uses 1280 (wireguard.LinkMTU) — keep equal.
 	MTU int
-
-	// serverKey is set by the Server assembly (persisted in the store).
-	serverKey wgtypes.Key
 }
 
 // Enabled reports whether the server should be wired up.

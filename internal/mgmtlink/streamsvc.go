@@ -30,6 +30,8 @@ var (
 // Inbound packets are handed to the WG device via the bind's inbound queue;
 // outbound packets flow from the device into the node's per-peer send queue.
 type streamService struct {
+	events *peerEvents
+
 	pb.UnimplementedWireGuardOverGRPCServiceServer
 
 	provisions *provisionService
@@ -43,11 +45,12 @@ type streamHandle struct {
 	cancel context.CancelCauseFunc
 }
 
-func newStreamService(provisions *provisionService, bind *serverBind) *streamService {
+func newStreamService(provisions *provisionService, bind *serverBind, events *peerEvents) *streamService {
 	return &streamService{
 		provisions: provisions,
 		bind:       bind,
 		streams:    map[string]*streamHandle{},
+		events:     events,
 	}
 }
 
@@ -65,6 +68,7 @@ func (s *streamService) CreateStream(srv pb.WireGuardOverGRPCService_CreateStrea
 		slog.Warn("mgmtlink stream from unallocated address", "addr", peerAddr)
 		return errPeerNotAllowed
 	}
+	slog.Debug("mgmtlink stream attach", "addr", peerAddr)
 	s.provisions.noteStream(peerAddr)
 	sendQueue, ok := s.bind.getSendQueue(peerAddr, true)
 	if !ok {
@@ -91,6 +95,7 @@ func (s *streamService) CreateStream(srv pb.WireGuardOverGRPCService_CreateStrea
 		s.mu.Unlock()
 		if owns {
 			s.bind.dropPeer(peerAddr)
+			s.events.emit(PeerEvent{Kind: PeerDisconnected, NodeAddrPort: peerAddr})
 		}
 	}()
 
