@@ -206,8 +206,7 @@ func (s *Server) Listen(ctx context.Context, lis net.Listener) error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		s.grpc.Serve(lis)
-		errCh <- nil
+		errCh <- s.grpc.Serve(lis)
 	}()
 
 	select {
