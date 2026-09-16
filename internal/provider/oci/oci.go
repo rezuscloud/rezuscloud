@@ -311,5 +311,4 @@ func petRef(petResource string) string {
 	return fmt.Sprintf("random_pet.%s[each.value].id", petResource)
 }
 
-
 func strVar(name string) string { return "${var." + name + "}" }
