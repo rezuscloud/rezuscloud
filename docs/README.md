@@ -9,7 +9,7 @@ This directory holds **architecture decision records and contributor docs** only
 | `adr/` | Live Architectural Decision Records (co-versioned with the code). Start at the [ADR index](adr/README.md). |
 | `architecture-history/` | Superseded/archived ADRs (frozen history). |
 | `testing/` | Internal testing docs (e.g. the QEMU E2E harness). |
-| `documentation-standards.md` | The Diátaxis standards this project follows. |
+| `internal/documentation-standards.md` | The Diátaxis standards this project follows. |
 
 ## Where the user-facing docs went
 
