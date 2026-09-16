@@ -311,22 +311,5 @@ func petRef(petResource string) string {
 	return fmt.Sprintf("random_pet.%s[each.value].id", petResource)
 }
 
-// rolesPresent returns the distinct set of roles across the given node groups
-// ("controlplane" and/or "worker"), preserving first-seen order.
-func rolesPresent(ngs []state.NodeGroupSpec) []string {
-	seen := make(map[string]bool, 2)
-	var roles []string
-	for _, ng := range ngs {
-		role := ng.Role
-		if role == "" {
-			continue
-		}
-		if !seen[role] {
-			seen[role] = true
-			roles = append(roles, role)
-		}
-	}
-	return roles
-}
 
 func strVar(name string) string { return "${var." + name + "}" }
