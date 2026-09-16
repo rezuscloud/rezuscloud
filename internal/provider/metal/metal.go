@@ -282,8 +282,6 @@ func sanitize(s string) string {
 	return string(out)
 }
 
-func strVar(name string) string { return "${var." + name + "}" }
-
 // jsonUnmarshal is a thin wrapper used by tests (keeps test files from
 // importing encoding/json directly).
 func jsonUnmarshal(b []byte, v interface{}) error {
