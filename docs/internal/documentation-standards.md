@@ -1,10 +1,29 @@
 # Documentation Standards
 
-> **Status:** Standards adopted; migration complete. User-facing Diátaxis docs
-> (tutorials, how-to, reference, concepts, operations) have moved to the
-> [rezuscloud wiki](https://github.com/rezuscloud/rezuscloud/wiki); this repo's
-> `docs/` retains ADRs, architecture-history, and contributor docs. Sections 2,
-> 4, and 5 below describe the pre-migration state for historical context.
+> **Audience: internal.** This page is contributor documentation — it is not
+> published on rezus.cloud/docs. It lives in `docs/internal/`, which the
+> public docs pipeline never fetches.
+
+## 0. The Two Tiers
+
+Documentation is split by **audience**, per the standard docs-as-code pattern
+(Diátaxis + Write the Docs guidance): the people *using* the platform read the
+public tier; the people *building* it read the internal tier.
+
+| | Public tier | Internal tier |
+|---|---|---|
+| **Audience** | platform users, evaluators | contributors, maintainers, agents |
+| **Content** | tutorials, how-to guides, reference, explanation (Diátaxis quadrants) | ADRs, architecture history, standards, runbooks, contributor docs |
+| **Lives in** | the project GitHub wikis (`rezuscloud.wiki`, `platform-website.wiki`) | each repo's `docs/` (incl. this `docs/internal/` subtree) |
+| **Published at** | [rezus.cloud/docs](https://rezus.cloud/docs) (via `fetch-docs.sh`) | **never** — `fetch-docs.sh` only reads the wikis; repo `docs/` cannot reach the public site |
+
+Placement rule: if a page answers "how do I *use* it?", it goes to the wiki
+(public). If it answers "why is it built this way?" or "how do I *work on*
+it?", it goes here — `docs/` or `docs/internal/` (private).
+
+This page was previously published on rezus.cloud/docs (it lived in the wiki);
+it was moved here because contributor standards are internal documentation
+(#214).
 
 ## 1. The Standards
 
