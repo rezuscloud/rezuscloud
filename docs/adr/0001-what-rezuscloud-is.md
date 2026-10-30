@@ -87,3 +87,32 @@ teardown.
   infrastructure APIs
 - [`../architecture-history/`](../architecture-history/README.md) — why CAPI,
   Crossplane, and standalone gRPC provider binaries were rejected
+
+## Evolution addendum (2026-10-05): Profile #1 of the sovereign cloud marketplace
+
+The platform decision record
+([llm-wiki: sovereign-cloud-marketplace](https://github.com/rezuscloud/llm-wiki/blob/main/wiki/concepts/sovereign-cloud-marketplace.md))
+ratifies the next phase of this identity: the personal cloud **remains**, and
+RezusCloud becomes the **reference implementation — Profile #1 — of an open
+marketplace of sovereign cloud blueprints**.
+
+The layering rule above is unchanged and is exactly what the marketplace
+model formalizes:
+
+- The marketplace's units (Component / Solution / Profile) are
+  **pipeline-resident**: they render into the same lower layers
+  (OpenTofu, Flux+Helm, OAM) that RezusCloud already orchestrates. The
+  marketplace never adds a layer below or beside `talosctl`/`kubectl`.
+- A Component is a **use case realized by a product choice** — products are
+  swappable, digest-pinned properties bound to capability contracts (CSI,
+  CNI, Gateway API, OIDC, OTLP, Flux sources, SCS shapes). RezusCloud
+  remains the orchestrator that reconciles the rendered declaration.
+- Substitution is **render-time**: swapping a product re-enters through the
+  same declared-state reconciliation this ADR set up, guided by
+  machine-checkable migration recipes. There is no runtime marketplace
+  layer; the runtime is Kubernetes plus the tools the profile delivered.
+
+The authoritative record lives in the llm-wiki (cross-repo layer); this
+addendum anchors the repo-local consequence: nothing about RezusCloud's
+scope changes — its scope becomes shareable.
+

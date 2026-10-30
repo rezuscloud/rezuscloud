@@ -92,3 +92,29 @@ is what is written above.
 - [ADR 0006](0006-exec-tofu-binary.md) — how declared state is realised
 - [ADR 0007](0007-provider-as-tf-wrapper.md) — the mappings
 - [ADR 0010](0010-status-plane-best-effort.md) — the status plane
+
+## Evolution addendum (2026-10-05): marketplace rendering lands on the spec plane
+
+The sovereign cloud marketplace model
+([llm-wiki](https://github.com/rezuscloud/llm-wiki/blob/main/wiki/concepts/sovereign-cloud-marketplace.md))
+composes clouds at render time: Profiles (CUE) validate against capability
+contracts and render into the industry-native artifacts each layer already
+speaks — OpenTofu modules for infrastructure, Flux+Helm and OAM above.
+
+This strengthens, rather than revising, this ADR:
+
+- **Render output enters through the spec plane.** A rendered profile is a
+  declaration like any other; TF state remains the single source of truth
+  for declared infrastructure. Product substitution changes a digest-pinned
+  property, re-renders, and reconciles through `tofu apply` — never by
+  mutating live state directly.
+- **Managed vs owned surfaces extend the spec/status separation.** Every
+  capability contract declares what the pipeline owns (deployment, version,
+  config schema, upgrade, backup) versus what the product owns at runtime
+  (users, apps, buckets). Product-owned state is fenced out of the spec
+  plane exactly as observed state is — an observation can never silently
+  override a declaration, and neither can a product's internal mutation.
+- **Export recipes** (per contract) bridge the two planes during product
+  swaps, so migrations are reproducible pipeline events rather than
+  out-of-band surgery.
+
