@@ -120,8 +120,8 @@ func (a *Applier) Apply(ctx context.Context, tenant string) error {
 	}
 
 	// Pre-apply upgrade hook: converge machines to the declared version BEFORE
-	// regenerating version-specific config (the only safe ordering — see
-	// CONTEXT.md "Upgrades").
+	// regenerating version-specific config (the only safe ordering — see the
+	// "Upgrades" domain invariant).
 	if a.upgrades != nil {
 		if err := a.runUpgradesIfNeeded(ctx, tenant, t); err != nil {
 			return fmt.Errorf("reconcile: pre-apply upgrade for %q: %w", tenant, err)

@@ -80,7 +80,7 @@ func (r *recordingUpgrader) calls_() []upgradeCall {
 }
 
 // TestIntegration_UpgradeHookFiresBeforeApply proves the core ADR 0006 /
-// CONTEXT.md "Upgrades" invariant: when a tenant spec declares a version that
+// "Upgrades" domain invariant: when a tenant spec declares a version that
 // differs from what machines report, the pre-apply upgrade hook runs BEFORE
 // tofu apply. The apply must not proceed until the upgrade completes.
 //

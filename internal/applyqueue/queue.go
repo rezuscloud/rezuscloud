@@ -1,5 +1,5 @@
 // Package applyqueue is the reconciliation scheduler for RezusCloud's TF-state
-// model (CONTEXT.md "Apply Queue", ADR 21).
+// model ("Apply Queue" domain model, ADR 0021).
 //
 // One debounced queue PER TENANT: spec writes (a NodeGroup PUT, a tenant edit)
 // coalesce within a window (default 5s), then a single `tofu apply` reconciles
