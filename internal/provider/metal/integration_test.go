@@ -87,8 +87,8 @@ func TestIntegration_RenderedConfigIsValidTF(t *testing.T) {
 	out, err := p.Render(provider.RenderRequest{
 		Tenant: tenant, NodeGroups: []state.NodeGroupSpec{ng},
 		// ADR 0008: the management link is mandatory for metal (pull config delivery).
-		MgmtEndpoint:   "mgmt.rezus.cloud:443",
-		BindingTokens:  map[string]string{"2a01:e11:2440:2430:216:96ff:feec:93b6": "tok-1", "2a01:e11:2440:2430:216:96ff:feec:93b7": "tok-2"},
+		MgmtEndpoint:  "mgmt.rezus.cloud:443",
+		BindingTokens: map[string]string{"2a01:e11:2440:2430:216:96ff:feec:93b6": "tok-1", "2a01:e11:2440:2430:216:96ff:feec:93b7": "tok-2"},
 	})
 	if err != nil {
 		t.Fatalf("Render: %v", err)
