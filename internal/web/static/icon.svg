@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" role="img" aria-label="RezusCloud icon">
+<title>RezusCloud icon</title>
+<rect width="48" height="48" fill="#F2A618"/>
+<rect x="0.5" y="0.5" width="47" height="47" fill="none" stroke="#0B0806" stroke-width="1"/>
+<g transform="translate(9,9) scale(0.625)">
+<path d="M9 30 L43 26 L41 34 L7 38 Z" fill="#0B0806"/><path d="M10 26 A7 7 0 0 1 15.5 13.5 A8.5 8.5 0 0 1 30.5 12.5 A7 7 0 0 1 37 24.5 L37.5 26 Z" fill="#0B0806"/></g>
+</svg>

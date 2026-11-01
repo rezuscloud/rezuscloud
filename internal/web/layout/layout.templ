@@ -82,6 +82,7 @@ templ Base(props BaseProps) {
 			<meta charset="UTF-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 			<title>{ props.Title } — RezusCloud</title>
+			<link rel="icon" href="/static/icon.svg" type="image/svg+xml"/>
 			@templ.Raw("<style>" + CSS() + "</style>")
 			<script>
 				// Pre-paint theme application. Runs synchronously in <head> before <body>
@@ -94,9 +95,9 @@ templ Base(props BaseProps) {
 				(function () {
 					var dark;
 					try {
-						var stored = localStorage.getItem("rezuscloud-theme");
-						if (stored === "mac" || stored === "next") {
-							dark = stored === "next";
+						var stored = localStorage.getItem('rezuscloud-theme');
+						if (stored === 'mac' || stored === 'next') {
+							dark = (stored === 'next');
 						} else {
 							dark =
 								window.matchMedia &&
@@ -104,11 +105,9 @@ templ Base(props BaseProps) {
 						}
 					} catch (e) {
 						// localStorage disabled (private mode, etc.) — fall through to OS pref.
-						dark =
-							window.matchMedia &&
-							window.matchMedia("(prefers-color-scheme: dark)").matches;
+						dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
 					}
-					if (dark) document.documentElement.classList.add("dark");
+					if (dark) document.documentElement.classList.add('dark');
 				})();
 			</script>
 			<script src="https://unpkg.com/htmx.org@2.0.4"></script>
@@ -161,6 +160,7 @@ templ Base(props BaseProps) {
 				<aside class="ds-sidebar">
 					<div class="ds-sidebar-header">
 						<div class="ds-sidebar-logo">
+							<span class="ds-sidebar-logo-mark"><svg viewBox="0 0 48 48" fill="currentColor" aria-hidden="true"><path d="M13.5 42 L20.5 41.2 M5.5 45.6 L10.5 45" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M9 30 L16 29 L14 37 L7 38 Z M18.5 29 L27 28 L25 35.5 L16.5 36.5 Z M29.5 27.5 L43 26 L41 34 L27.5 35.5 Z"/><path d="M10 26 A7 7 0 0 1 15.5 13.5 A8.5 8.5 0 0 1 30.5 12.5 A7 7 0 0 1 37 24.5 L37.5 26 Z"/></svg></span>
 							<span class="ds-sidebar-logo-rezus">Rezus</span>
 							<span class="ds-sidebar-logo-cloud">Cloud</span>
 						</div>
