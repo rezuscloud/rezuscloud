@@ -147,6 +147,15 @@ code, kbd, samp, pre {
   font-size: 0.875rem;
   font-weight: 700;
 }
+.ds-sidebar-logo { display: flex; align-items: center; gap: 0.5rem; }
+.ds-sidebar-logo-mark {
+  display: flex; align-items: center; justify-content: center;
+  width: 1.75rem; height: 1.75rem; flex-shrink: 0;
+  background: var(--accent); color: var(--fg);
+  border: 1px solid var(--fg);
+}
+.ds-sidebar-logo-mark svg { width: 1.25rem; height: 1.25rem; }
+.dark .ds-sidebar-logo-mark { background: var(--next-teal-hi); border: 2px solid; border-color: var(--color-next-bevel-hi) var(--color-next-bevel-lo) var(--color-next-bevel-lo) var(--color-next-bevel-hi); color: var(--color-next-black); }
 .ds-sidebar-logo-rezus { color: var(--fg); }
 .ds-sidebar-logo-cloud { color: var(--accent); }
 .ds-sidebar-nav {

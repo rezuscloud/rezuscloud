@@ -5,5 +5,5 @@ package static
 
 import "embed"
 
-//go:embed logs-stream.js monitor-stream.js
+//go:embed icon.svg logs-stream.js monitor-stream.js
 var Files embed.FS
